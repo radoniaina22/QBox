@@ -4303,7 +4303,7 @@
         $('transfer-add').addEventListener('click', addTransferItem);
         $('transfer-destination').addEventListener('change', transferDestinationChanged);
         $('dashboard-storage-link').addEventListener('click', () => selectView('transfers'));
-        setText('auth-network-status', 'Test local PostgreSQL');
+        setText('auth-network-status', 'Version 2');
         setText('auth-version', 'TEST LOCAL');
         setText('dashboard-live-label', 'Instantané');
         setText('dashboard-fefo-label', 'Lots datés par péremption');
