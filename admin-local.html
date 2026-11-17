@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Q.box — Interface PostgreSQL</title>
+    <link rel="stylesheet" href="admin-local.css">
+    <script defer src="stock-history-csv.js"></script>
+    <script defer src="auth-policy.js"></script>
+    <script defer src="dashboard-report-postgres.js"></script>
+    <script defer src="inventory-report-postgres.js"></script>
+    <script defer src="admin-local.js"></script>
+</head>
+<body class="signup-page">
+    <main>
+        <h1>Q.box — Interface PostgreSQL</h1>
+        <p class="notice">Cette interface utilise la base PostgreSQL configurée sur le serveur. Les opérations enregistrées modifient cette base.</p>
+        <p id="message" role="status" aria-live="polite"></p>
+        <section id="authentication">
+            <div class="signup-shell">
+                <div class="signup-intro">
+                    <div class="signup-brand"><span class="signup-icon" aria-hidden="true">Q.</span><span>Q.box <small>Logistique santé</small></span></div>
+                    <div class="signup-intro-content">
+                        <span class="signup-eyebrow"><span aria-hidden="true"></span> REJOINDRE Q.BOX</span>
+                        <h2>Ensemble, rapprochons les soins.</h2>
+                        <p>Un espace partagé pour suivre les approvisionnements et soutenir les équipes sur le terrain.</p>
+                        <div class="signup-steps" aria-label="Étapes de création du compte">
+                            <div><span>01</span><p><strong>Votre demande</strong><small>Renseignez vos informations</small></p></div>
+                            <div><span>02</span><p><strong>Validation</strong><small>Un administrateur examine votre demande</small></p></div>
+                            <div><span>03</span><p><strong>Bienvenue</strong><small>Accédez à votre espace Q.box</small></p></div>
+                        </div>
+                    </div>
+                    <p class="signup-intro-footer">MADAGASCAR <span aria-hidden="true">·</span> LOGISTIQUE &amp; SANTÉ</p>
+                </div>
+                <div class="signup-card">
+                <div class="signup-heading">
+                    <span class="signup-form-eyebrow">VOTRE ESPACE COMMENCE ICI</span>
+                    <h1>Créer un compte<span aria-hidden="true">.</span></h1>
+                    <p>Renseignez les informations ci-dessous pour demander votre accès.</p>
+                </div>
+                <form id="signup">
+                    <label>Prénom <input name="first_name" required maxlength="120" autocomplete="given-name" placeholder="Votre prénom"></label>
+                    <label>Nom <input name="last_name" required maxlength="120" autocomplete="family-name" placeholder="Votre nom"></label>
+                    <label class="signup-wide">Adresse e-mail <input name="email" type="email" required autocomplete="email" placeholder="vous@exemple.com"></label>
+                    <label class="signup-wide">Mot de passe <input name="password" type="password" required minlength="8" autocomplete="new-password" aria-describedby="signup-password-hint" placeholder="Choisissez un mot de passe"><span id="signup-password-hint" class="signup-hint">8 caractères minimum</span></label>
+                    <label>Téléphone <input name="phone" type="tel" required maxlength="30" autocomplete="tel" placeholder="+261 ..."></label>
+                    <label>Rôle demandé <select name="role"><option value="pilot">Pilote</option><option value="pilot_rd">Pilote RD</option><option value="logistics">Coordinateur logistique</option><option value="unfpa">UNFPA</option></select></label>
+                    <button class="signup-wide" type="submit"><span>Envoyer ma demande</span><span aria-hidden="true">→</span></button>
+                </form>
+                <p id="signup-status" role="status" aria-live="polite"></p>
+                <p class="signup-notice"><span aria-hidden="true">✦</span> Votre compte devra être validé par un administrateur.</p>
+                <p class="signup-return">Vous avez déjà un compte ? <a href="index.html?backend=postgres">Accéder à la connexion <span aria-hidden="true">↗</span></a></p>
+                </div>
+            </div>
+        </section>
+        <section id="session" hidden>
+            <p id="identity"></p>
+            <button type="button" id="logout">Se déconnecter</button>
+            <details id="password-settings">
+                <summary>Changer mon mot de passe</summary>
+                <form id="password-form">
+                    <label>Mot de passe actuel <input id="password-current" type="password" required autocomplete="current-password"></label>
+                    <label>Nouveau mot de passe (8 caractères minimum) <input id="password-new" type="password" required minlength="8" autocomplete="new-password"></label>
+                    <label>Confirmer le nouveau mot de passe <input id="password-confirm" type="password" required minlength="8" autocomplete="new-password"></label>
+                    <p id="password-status" role="status" aria-live="polite"></p>
+                    <button id="password-submit" type="submit">Modifier mon mot de passe</button>
+                </form>
+            </details>
+            <div id="references">
+                <h2>Drone ports et CSB — PostgreSQL local</h2>
+                <p>Les données affichées proviennent de la base configurée sur le serveur.</p>
+                <label>Drone port actif <select id="reference-port"></select></label>
+                <div class="actions">
+                    <button type="button" id="port-new">Ajouter un port</button>
+                    <button type="button" id="port-edit">Modifier le port</button>
+                    <button type="button" id="port-delete">Supprimer le port</button>
+                    <button type="button" id="reference-refresh">Actualiser</button>
+                </div>
+                <form id="reference-port-form" hidden>
+                    <h3 id="port-form-heading"></h3>
+                    <label>Nom du port <input name="name" required maxlength="120"></label>
+                    <label>Région <select name="region" required></select></label>
+                    <div class="actions"><button type="submit">Enregistrer le port</button><button type="button" id="port-cancel">Annuler</button></div>
+                </form>
+                <h3>CSB du port actif</h3>
+                <button type="button" id="csb-new">Ajouter un CSB</button>
+                <form id="reference-csb-form" hidden>
+                    <h3 id="csb-form-heading"></h3>
+                    <label>Nom du CSB <input name="name" required maxlength="150"></label>
+                    <label>Région <select name="region" required></select></label>
+                    <label>District <select name="district" required></select></label>
+                    <label>Distance en km <input name="distance" type="number" min="0" max="99999999.99" step="0.01" required></label>
+                    <label>Chef CSB <input name="chief" maxlength="150"></label>
+                    <label>Numéros de téléphone (un par ligne) <textarea name="phones" rows="3"></textarea></label>
+                    <div class="actions"><button type="submit">Enregistrer le CSB</button><button type="button" id="csb-cancel">Annuler</button></div>
+                </form>
+                <div id="reference-csbs"></div>
+            </div>
+            <div id="dashboard-test">
+                <h2>Tableau de bord — PostgreSQL local</h2>
+                <p>Synthèse du port actif, calculée côté serveur. Les quantités et l'avancement additionnent tous les intrants, sans distinguer leur conditionnement. Les produits en quarantaine sont exclus du stock ; ceux en vol sont réservés. Actualisez après une opération ou pour voir les changements des autres utilisateurs.</p>
+                <button type="button" id="dashboard-refresh">Actualiser le tableau de bord</button>
+                <button type="button" id="dashboard-report-open">Afficher le rapport du planning actif</button>
+                <p id="dashboard-status" role="status"></p>
+                <p id="dashboard-report-status" role="status"></p>
+                <div id="dashboard-report-preview" hidden>
+                    <div class="actions"><button type="button" id="dashboard-report-print">Imprimer le rapport</button><button type="button" id="dashboard-report-close">Fermer le rapport</button></div>
+                    <div id="dashboard-report"></div>
+                </div>
+                <div id="dashboard-summary"></div>
+                <h3>Vols en cours</h3><div id="dashboard-flights"></div>
+                <h3>Expéditions terrestres en cours</h3><div id="dashboard-shipments"></div>
+                <h3>Lots à surveiller par date de péremption</h3><div id="dashboard-expirations"></div>
+            </div>
+            <div id="catalog">
+                <h2>Référentiel des intrants — PostgreSQL local</h2>
+                <p>Catalogue partagé entre tous les ports.</p>
+                <div class="actions">
+                    <button type="button" id="catalog-new">Ajouter un intrant</button>
+                    <button type="button" id="catalog-refresh">Actualiser le catalogue</button>
+                </div>
+                <form id="catalog-form" hidden>
+                    <h3 id="catalog-heading"></h3>
+                    <label>Nom <input name="name" required maxlength="150"></label>
+                    <label>Catégorie <select name="category" required></select></label>
+                    <label>Conditionnement <input name="unit" required maxlength="120"></label>
+                    <label>Seuil d'alerte <input name="threshold" type="number" min="0" max="9007199254740991" step="1" required></label>
+                    <div class="actions"><button type="submit">Enregistrer l'intrant</button><button type="button" id="catalog-cancel">Annuler</button></div>
+                </form>
+                <div id="catalog-products"></div>
+            </div>
+            <div id="stock-test">
+                <h2>Stocks et réceptions SALAMA — PostgreSQL local</h2>
+                <p>Les données concernent le drone port sélectionné ci-dessus.</p>
+                <div class="actions">
+                    <button type="button" id="receipt-new">Nouvelle réception</button>
+                    <button type="button" id="stock-refresh">Actualiser les stocks</button>
+                </div>
+                <form id="receipt-form" hidden>
+                    <label>Référence du bon <input name="reference" maxlength="150" required></label>
+                    <div id="receipt-items"></div>
+                    <div class="actions"><button type="button" id="receipt-add">Ajouter un intrant</button>
+                        <button type="submit" id="receipt-submit">Enregistrer la réception</button>
+                        <button type="button" id="receipt-cancel">Annuler</button></div>
+                </form>
+                <h3>Stocks par lot</h3><div id="stock-list"></div>
+                <h3>Réceptions enregistrées</h3><div id="receipt-list"></div>
+            </div>
+            <div id="stock-history-test">
+                <h2>Historique global des stocks — PostgreSQL local</h2>
+                <p>Port actif, regroupement par intrant sans détail des lots. Les soldes actuels et les mouvements sont actualisés séparément. Les données antérieures à l'enregistrement des mouvements ne peuvent pas être reconstituées.</p>
+                <p id="stock-history-port"></p>
+                <h3>Soldes actuels par intrant</h3><div id="stock-history-summary"></div>
+                <div class="history-visual">
+                    <h3>Stock disponible actuel par intrant</h3>
+                    <p class="history-visual-note">Rouge : sous le seuil · Orange : jusqu'à 1,5 fois le seuil · Vert : au-delà · Gris : seuil inconnu.</p>
+                    <div id="stock-history-bars" aria-label="Graphique des stocks disponibles"></div>
+                </div>
+                <form id="stock-history-filter">
+                    <label>Du <input type="date" name="from"></label>
+                    <label>Au <input type="date" name="to"></label>
+                    <label>Opération <select name="operation"><option value="">Toutes</option>
+                        <option>Réception SALAMA</option><option>Réservation drone</option><option>Modification drone</option><option>Annulation drone</option><option>Clôture drone</option>
+                        <option>Expédition terrestre</option><option>Modification expédition</option><option>Annulation expédition</option>
+                        <option>Inventaire physique</option><option>Mise en quarantaine</option><option>Remise en stock</option></select></label>
+                    <label>Nom d'intrant <input type="search" name="search" maxlength="150"></label>
+                    <div class="actions"><button type="submit">Appliquer les filtres</button><button type="button" id="stock-history-refresh">Actualiser</button></div>
+                </form>
+                <p>Les dates sont filtrées selon le fuseau de Madagascar. La destruction d'un produit déjà en quarantaine ne modifie pas le stock utilisable : consultez les actions de quarantaine pour la retrouver.</p>
+                <p id="stock-history-applied"></p>
+                <p>Le graphique d'évolution, l'export et l'impression portent uniquement sur les mouvements chargés ci-dessous, pas sur les résultats non chargés. Appliquez les filtres puis utilisez « Afficher les 100 mouvements suivants » si nécessaire. Les lignes relient uniquement les points sélectionnés : les mouvements exclus par les filtres ne sont pas représentés. Les mouvements de même date et heure peuvent ne pas être ordonnés selon leur exécution.</p>
+                <div class="actions history-controls"><button type="button" id="stock-history-export">Exporter les mouvements chargés en CSV</button>
+                    <button type="button" id="stock-history-print">Imprimer les mouvements chargés</button></div>
+                <div class="history-visual">
+                    <h3>Évolution du disponible après chaque mouvement chargé</h3>
+                    <p class="history-visual-note">Les courbes représentent uniquement les mouvements chargés.</p>
+                    <div id="stock-history-evolution"></div>
+                </div>
+                <p id="stock-history-status" role="status"></p>
+                <div id="stock-history-list"></div>
+                <button type="button" id="stock-history-more" hidden>Afficher les 100 mouvements suivants</button>
+            </div>
+            <div id="quarantine-test">
+                <h2>Quarantaine — PostgreSQL local</h2>
+                <p>Pour le port actif. Les quantités en vol ne sont pas disponibles.</p>
+                <div class="actions"><button type="button" id="quarantine-new">Mettre un lot en quarantaine</button>
+                    <button type="button" id="quarantine-refresh">Actualiser la quarantaine</button></div>
+                <form id="quarantine-form" hidden>
+                    <p id="quarantine-request-id"></p>
+                    <label>Lot disponible <select name="stock" required></select></label>
+                    <label>Quantité <input name="quantity" type="number" min="1" max="9007199254740991" step="1" required></label>
+                    <label>Motif <select name="reason" required><option>Abîmé</option><option>Cassé</option><option>Non conforme</option><option>Expiré</option></select></label>
+                    <div class="actions"><button type="submit">Enregistrer</button><button type="button" id="quarantine-cancel">Annuler</button></div>
+                </form>
+                <div id="quarantine-list"></div>
+            </div>
+            <div id="inventory-test">
+                <h2>Inventaire physique — PostgreSQL local</h2>
+                <p>Comptez tous les lots du port, même à zéro. Excluez les quantités en vol et en quarantaine. Toute modification du stock ou des réservations impose de recommencer.</p>
+                <div class="actions"><button type="button" id="inventory-new">Commencer un inventaire</button>
+                    <button type="button" id="inventory-refresh">Actualiser l'historique</button></div>
+                <form id="inventory-form" hidden>
+                    <p id="inventory-request-id"></p>
+                    <div id="inventory-items"></div>
+                    <label>Remarques et observations (facultatif, 2 000 caractères maximum)
+                        <textarea id="inventory-observations" maxlength="2000" rows="3"></textarea>
+                    </label>
+                    <div class="actions"><button type="submit">Valider l'inventaire</button><button type="button" id="inventory-cancel">Annuler</button></div>
+                </form>
+                <h3>Inventaires enregistrés</h3>
+                <p>Les rapports regroupent les lots par intrant. Les écarts figurent déjà dans l'historique des mouvements et ne sont pas ajoutés une seconde fois.</p>
+                <div id="inventory-list"></div>
+            </div>
+            <div id="planning-test">
+                <h2>Plannings et archives — PostgreSQL local</h2>
+                <p>Pour le drone port sélectionné ci-dessus. Une campagne active par port.</p>
+                <div class="actions">
+                    <button type="button" id="planning-new">Nouvelle campagne</button>
+                    <button type="button" id="planning-refresh">Actualiser les plannings</button>
+                </div>
+                <form id="planning-form" hidden>
+                    <h3 id="planning-heading"></h3>
+                    <label>Début <input name="start" type="date" required></label>
+                    <label>Fin <input name="end" type="date" required></label>
+                    <p>Une ligne par combinaison CSB et intrant.</p>
+                    <div id="planning-items"></div>
+                    <label id="planning-observations-wrapper-admin" hidden>Remarques et observations sur la modification (facultatif, 2 000 caractères maximum)
+                        <textarea id="planning-observations" maxlength="2000" rows="3"></textarea>
+                    </label>
+                    <div class="actions">
+                        <button type="button" id="planning-add">Ajouter une ligne</button>
+                        <button type="submit" id="planning-submit">Enregistrer</button>
+                        <button type="button" id="planning-cancel">Annuler</button>
+                    </div>
+                </form>
+                <div id="planning-list"></div>
+            </div>
+            <div id="flight-test" hidden>
+                <div class="flight-panel-header">
+                    <div class="flight-panel-heading">
+                        <span class="flight-panel-icon" aria-hidden="true">✈</span>
+                        <div><h2>Opérations et BL des vols</h2>
+                            <p>Consultez les vols du magasin actif et leurs bons de livraison. Un vol correspond à un colis.</p></div>
+                    </div>
+                    <div class="actions flight-panel-toolbar">
+                        <button type="button" id="flight-new" class="flight-primary">Préparer des vols</button>
+                        <button type="button" id="flight-refresh" class="flight-secondary">Actualiser</button>
+                    </div>
+                </div>
+                <form id="flight-form" hidden>
+                    <label>Planning actif <select name="planning" required></select></label>
+                    <label>CSB du planning <select name="csb" required></select></label>
+                    <h3>Besoins du CSB</h3><div id="flight-needs"></div>
+                    <div id="flight-parcels"></div>
+                    <div class="actions">
+                        <button type="button" id="flight-add">Ajouter un vol / colis</button>
+                        <button type="submit" id="flight-submit">Enregistrer les vols</button>
+                        <button type="button" id="flight-cancel">Annuler</button>
+                    </div>
+                </form>
+                <form id="flight-edit-form" hidden>
+                    <h3 id="flight-edit-title"></h3>
+                    <p>Le BL, le CSB et le planning restent inchangés. Les besoins et stocks sont vérifiés à l'enregistrement.</p>
+                    <div id="flight-edit-needs"></div>
+                    <div id="flight-edit-items"></div>
+                    <div class="actions"><button type="button" id="flight-edit-add">Ajouter un intrant</button>
+                        <button type="submit">Enregistrer les modifications</button>
+                        <button type="button" id="flight-edit-cancel">Fermer sans enregistrer</button></div>
+                </form>
+                <div id="flight-list"></div>
+            </div>
+            <div id="shipment-test">
+                <h2>Expéditions terrestres — PostgreSQL local</h2>
+                <p>Le stock est déduit à l'enregistrement.</p>
+                <div class="actions">
+                    <button type="button" id="shipment-new">Nouvelle expédition</button>
+                    <button type="button" id="shipment-refresh">Actualiser les expéditions</button>
+                </div>
+                <form id="shipment-form" hidden>
+                    <label>Planning actif <select name="planning" required></select></label>
+                    <label>CSB du planning <select name="csb" required></select></label>
+                    <label>Transport <input name="transport" maxlength="150" required></label>
+                    <h3>Besoins du CSB</h3><div id="shipment-needs"></div>
+                    <div id="shipment-items"></div>
+                    <div class="actions">
+                        <button type="button" id="shipment-add">Ajouter un intrant</button>
+                        <button type="submit" id="shipment-submit">Enregistrer l'expédition</button>
+                        <button type="button" id="shipment-cancel">Annuler</button>
+                    </div>
+                </form>
+                <form id="shipment-edit-form" hidden>
+                    <h3 id="shipment-edit-title"></h3>
+                    <p>La référence, le CSB et le planning restent inchangés. Toute quantité retirée doit être physiquement revenue et conforme avant sa remise en stock.</p>
+                    <label>Transport <input name="transport" maxlength="150" required></label>
+                    <div id="shipment-edit-needs"></div>
+                    <div id="shipment-edit-items"></div>
+                    <div class="actions"><button type="button" id="shipment-edit-add">Ajouter un intrant</button>
+                        <button type="submit">Enregistrer les modifications</button>
+                        <button type="button" id="shipment-edit-cancel">Fermer sans enregistrer</button></div>
+                </form>
+                <div id="shipment-list"></div>
+            </div>
+            <div id="administration" hidden>
+                <div class="accounts-header">
+                    <div class="accounts-heading">
+                        <div class="accounts-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"></circle><path d="M3 19v-1a6 6 0 0 1 12 0v1M16 5a3 3 0 0 1 0 6M18 13a5 5 0 0 1 3 5v1"></path></svg>
+                        </div>
+                        <div>
+                            <h2>Gestion des utilisateurs</h2>
+                            <p>Consultez les demandes et gérez les accès à Q.box.</p>
+                        </div>
+                    </div>
+                    <div class="accounts-toolbar">
+                        <p id="pending" class="accounts-pending" role="status"></p>
+                        <button type="button" id="refresh" class="accounts-refresh">Actualiser</button>
+                    </div>
+                </div>
+                <div id="users" class="accounts-list"></div>
+                <dialog id="admin-name-dialog" aria-labelledby="admin-name-title">
+                    <form id="admin-name-form">
+                        <h3 id="admin-name-title">Modifier le prénom et le nom</h3>
+                        <p id="admin-name-account"></p>
+                        <label>Prénom <input id="admin-name-first" required maxlength="120" autocomplete="given-name"></label>
+                        <label>Nom <input id="admin-name-last" required maxlength="120" autocomplete="family-name"></label>
+                        <p id="admin-name-status" role="status" aria-live="polite"></p>
+                        <div class="actions">
+                            <button id="admin-name-submit" type="submit">Enregistrer</button>
+                            <button id="admin-name-cancel" type="button">Annuler</button>
+                        </div>
+                    </form>
+                </dialog>
+            </div>
+        </section>
+        <section id="inventory-print-report" hidden aria-label="Rapport d'inventaire physique"></section>
+        <section id="flight-print-report" hidden aria-label="Document imprimable"></section>
+    </main>
+</body>
+</html>

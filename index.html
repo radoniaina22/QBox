@@ -1,0 +1,1606 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full bg-slate-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q.box - Plateforme Logistique Santé & Drones</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="tailwind-config.js"></script>
+
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- Chart.js pour les visualisations avec secours CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="chart-fallback.js"></script>
+
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="styles.css">
+    <script src="hosted-mode.js"></script>
+    <script src="app-bootstrap.js"></script>
+</head>
+<body class="h-full flex flex-col text-slate-800 bg-slate-100 overflow-hidden">
+
+    <!-- ========================================== -->
+    <!-- ÉCRAN D'AUTHENTIFICATION (LOGIN) -->
+    <!-- ========================================== -->
+    <div id="auth-screen" class="fixed inset-0 z-50 bg-slate-950 flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+            <!-- Logos institutionnels Header Auth -->
+            <div class="flex items-center justify-between pb-6 border-b border-slate-800 mb-6">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-400 flex items-center justify-center font-black text-slate-950 text-xl tracking-tighter">
+                        Q.
+                    </div>
+                    <div>
+                        <div class="font-extrabold text-white text-base tracking-tight">Q.box Logistique</div>
+                        <div class="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Drone & Santé Publique</div>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Madagascar</span>
+                    <span id="auth-network-status" class="text-[10px] text-emerald-400 font-semibold flex items-center justify-end">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block mr-1"></span> Réseau Opérationnel
+                    </span>
+                </div>
+            </div>
+
+            <div class="mb-6">
+                <h2 class="text-xl font-bold text-white tracking-tight">Connexion sécurisée</h2>
+                <p class="text-xs text-slate-400 mt-1">Accédez à la plateforme de gestion des approvisionnements vitaux</p>
+            </div>
+
+            <!-- Profils démo rapides -->
+            <div id="demo-profiles" class="mb-6 p-3 bg-slate-800/60 rounded-2xl border border-slate-700/60">
+                <div class="text-[11px] font-semibold text-slate-300 mb-2 flex items-center">
+                    <i class="ph ph-lightning text-amber-400 mr-1.5"></i> Profils de démonstration rapides :
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <button type="button" onclick="quickLogin('op')" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-[11px] font-medium text-slate-200 transition-colors text-center">
+                        Opérateur
+                    </button>
+                    <button type="button" onclick="quickLogin('pharma')" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-[11px] font-medium text-slate-200 transition-colors text-center">
+                        Pharmacien
+                    </button>
+                    <button type="button" onclick="quickLogin('unfpa')" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-[11px] font-medium text-slate-200 transition-colors text-center">
+                        UNFPA
+                    </button>
+                </div>
+            </div>
+
+            <!-- Formulaire Login -->
+            <form id="main-login" onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Identifiant / Email</label>
+                    <div class="relative">
+                        <i class="ph ph-user absolute left-3.5 top-3 text-slate-400 text-sm"></i>
+                        <input type="text" id="login-username" required autocomplete="username" placeholder="Adresse e-mail" class="w-full text-xs pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Mot de passe</label>
+                    <div class="relative">
+                        <i class="ph ph-lock-key absolute left-3.5 top-3 text-slate-400 text-sm"></i>
+                        <input type="password" id="login-password" required autocomplete="current-password" placeholder="Mot de passe" class="w-full text-xs pl-10 pr-10 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors">
+                        <button type="button" onclick="togglePasswordVisibility()" class="absolute right-3.5 top-2.5 text-slate-400 hover:text-slate-200">
+                            <i id="pwd-eye-icon" class="ph ph-eye text-base"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="demo-login-options" class="flex items-center justify-between text-xs text-slate-400 pt-1">
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" checked class="rounded bg-slate-800 border-slate-700 text-amber-400 focus:ring-0">
+                        <span>Mémoriser ma session</span>
+                    </label>
+                    <a href="#" onclick="showToast('Contactez l\'administrateur UNFPA / Ministère', 'info')" class="hover:text-amber-400">Assistance ?</a>
+                </div>
+
+                <button type="submit" class="w-full py-3 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center space-x-2 transition-all mt-4 shadow-lg shadow-amber-400/20">
+                    <span>Ouvrir la session Q.box</span>
+                    <i class="ph ph-arrow-right font-bold text-sm"></i>
+                </button>
+            </form>
+            <p id="postgres-login-status" role="status" aria-live="polite"></p>
+            <p id="postgres-signup-link" class="postgres-hidden"><a href="admin-local.html" target="_blank" rel="noopener noreferrer">Demander un compte</a></p>
+
+            <div class="mt-6 pt-5 border-t border-slate-800/80 flex items-center justify-center space-x-4 text-[11px] text-slate-500">
+                <span>UNFPA Madagascar</span>
+                <span>•</span>
+                <span>MSANP</span>
+                <span>•</span>
+                <span id="auth-version" class="font-mono">v3.4-PROD</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- APPLICATION PRINCIPALE -->
+    <!-- ========================================== -->
+    <div id="main-app" class="flex-1 flex overflow-hidden">
+        
+        <!-- SIDEBAR -->
+        <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 text-slate-300 no-print">
+            <!-- App Brand -->
+            <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-xl bg-amber-400 flex items-center justify-center font-black text-slate-950 text-xl tracking-tighter">
+                        Q.
+                    </div>
+                    <div>
+                        <div class="font-black text-white text-base tracking-tight leading-tight">Q.box</div>
+                        <div class="text-[10px] text-amber-400 font-semibold uppercase tracking-wider">Logistique Santé</div>
+                    </div>
+                </div>
+                <span class="px-2 py-0.5 rounded-md bg-slate-800 text-[10px] font-mono text-slate-400 border border-slate-700">v3.4</span>
+            </div>
+
+            <!-- Sélecteur Drone Port / Base Opérationnelle -->
+            <div class="p-3 border-b border-slate-800 bg-slate-950/60">
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center">
+                    <i class="ph ph-warehouse mr-1 text-amber-400"></i> Magasin actif
+                </label>
+                <select id="drone-port-select" onchange="changeDronePort(this.value)" class="w-full text-xs font-semibold bg-slate-900 border border-slate-700 text-white rounded-xl px-2.5 py-2 focus:outline-none focus:border-amber-400 cursor-pointer">
+                    <!-- Rempli en JS -->
+                </select>
+            </div>
+
+            <!-- Navigation Links -->
+            <nav aria-label="Navigation principale" class="sidebar-nav flex-1 overflow-y-auto p-3">
+                <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all bg-amber-400 text-slate-950">
+                    <i class="ph ph-chart-polar text-base mr-3 shrink-0"></i>
+                    <span>Tableau de Bord</span>
+                </button>
+                <details class="sidebar-group">
+                    <summary>
+                        <i class="ph ph-package" aria-hidden="true"></i>
+                        <span>Stocks & rapports</span>
+                        <i class="ph ph-caret-down sidebar-chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="space-y-1">
+                        <button onclick="switchTab('stocks')" id="nav-stocks" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-package text-base mr-3 shrink-0 text-amber-400"></i>
+                            <span class="flex-1 text-left">Stock & Lots (FEFO)</span>
+                            <span id="badge-stock-count" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">0</span>
+                        </button>
+                        <button onclick="switchTab('inventory')" id="nav-inventory" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-clipboard-text text-base mr-3 shrink-0 text-amber-400"></i>
+                            <span>Inventaire physique</span>
+                        </button>
+                        <button onclick="switchTab('stock-history')" id="nav-stock-history" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-clock-counter-clockwise text-base mr-3 shrink-0 text-sky-400"></i><span>Historique des stocks</span>
+                        </button>
+                        <button id="nav-logistics-report" type="button" class="nav-item postgres-hidden w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-chart-bar text-base mr-3 shrink-0 text-sky-400"></i><span>Rapport logistique</span>
+                        </button>
+                        <button onclick="switchTab('quarantine')" id="nav-quarantine" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-warning-octagon text-base mr-3 shrink-0 text-rose-400"></i>
+                            <span>Quarantaine</span>
+                        </button>
+                        <button onclick="switchTab('salama')" id="nav-salama" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-arrow-down-left text-base mr-3 shrink-0 text-emerald-400"></i>
+                            <span>Réceptions SALAMA</span>
+                        </button>
+                        <button onclick="switchTab('products')" id="nav-products" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-dna text-base mr-3 shrink-0 text-teal-400"></i>
+                            <span class="flex-1 text-left">Référentiel Intrants</span>
+                            <span id="badge-catalog-count" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">0</span>
+                        </button>
+                    </div>
+                </details>
+
+                <details id="planning-navigation" class="sidebar-group">
+                    <summary>
+                        <i class="ph ph-calendar-check" aria-hidden="true"></i>
+                        <span>Planification</span>
+                        <i class="ph ph-caret-down sidebar-chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="space-y-1">
+                        <button onclick="switchTab('planning')" id="nav-planning" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-calendar-check text-base mr-3 shrink-0 text-sky-400"></i>
+                            <span class="flex-1 text-left">Besoins Prévisionnels</span>
+                            <span id="badge-planning-count" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">0</span>
+                        </button>
+                        <button onclick="switchTab('archives')" id="nav-archives" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-folder text-base mr-3 shrink-0 text-purple-400"></i>
+                            <span>Dossiers d'Archives</span>
+                        </button>
+                    </div>
+                </details>
+
+                <details class="sidebar-group">
+                    <summary>
+                        <i class="ph ph-truck" aria-hidden="true"></i>
+                        <span>Opérations logistiques</span>
+                        <i class="ph ph-caret-down sidebar-chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="space-y-1">
+                        <button onclick="switchTab('drones')" id="nav-drones" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-navigation-arrow text-base mr-3 shrink-0 text-cyan-400"></i>
+                            <span class="flex-1 text-left">Vols & Largages Drones</span>
+                            <span id="badge-active-flights" class="text-[10px] bg-cyan-950 text-cyan-400 border border-cyan-800 px-2 py-0.5 rounded-full font-mono">0</span>
+                        </button>
+                        <button onclick="switchTab('sorties')" id="nav-sorties" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-truck text-base mr-3 shrink-0 text-amber-300"></i>
+                            <span>Expéditions Terrestres</span>
+                        </button>
+                        <button id="nav-transfers" type="button" class="nav-item postgres-hidden w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-arrows-left-right text-base mr-3 shrink-0 text-sky-400"></i><span>Transferts & expéditions</span>
+                        </button>
+                        <button onclick="switchTab('history')" id="nav-history" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-clock-counter-clockwise text-base mr-3 shrink-0 text-emerald-400"></i>
+                            <span>Historique Clôtures</span>
+                        </button>
+                    </div>
+                </details>
+
+                <details class="sidebar-group">
+                    <summary>
+                        <i class="ph ph-buildings" aria-hidden="true"></i>
+                        <span>Réseau & administration</span>
+                        <i class="ph ph-caret-down sidebar-chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="space-y-1">
+                        <button onclick="switchTab('csb')" id="nav-csb" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-first-aid text-base mr-3 shrink-0 text-rose-400"></i>
+                            <span class="flex-1 text-left">Réseau des CSB</span>
+                            <span id="badge-csb-count" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">0</span>
+                        </button>
+                        <button onclick="switchTab('ports')" id="nav-ports" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-warehouse text-base mr-3 shrink-0 text-amber-400"></i>
+                            <span class="flex-1 text-left">Magasins & données</span>
+                        </button>
+                        <button id="nav-admin-postgres" type="button" class="nav-item postgres-hidden w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-users-three text-base mr-3 shrink-0 text-amber-400" aria-hidden="true"></i>
+                            <span class="flex-1 text-left">Gestion des comptes</span>
+                        </button>
+                    </div>
+                </details>
+            </nav>
+
+            <!-- Profil Utilisateur en pied de sidebar -->
+            <div class="p-3 border-t border-slate-800 bg-slate-950 flex items-center justify-between">
+                <div class="flex items-center space-x-2.5 min-w-0">
+                    <div id="user-avatar" class="w-8 h-8 rounded-full bg-amber-400 text-slate-950 font-bold flex items-center justify-center text-xs shrink-0">
+                        OP
+                    </div>
+                    <div class="min-w-0 truncate">
+                        <div id="user-display-name" class="text-xs font-bold text-white truncate">Opérateur Drone</div>
+                        <div id="user-display-role" class="text-[10px] text-slate-400 truncate">Base Ranomafana</div>
+                    </div>
+                </div>
+                <button id="password-open" type="button" class="postgres-hidden p-1.5 text-slate-400 hover:text-white" title="Changer mon mot de passe" aria-label="Changer mon mot de passe"><i class="ph ph-key text-lg"></i></button>
+                <button onclick="logout()" title="Déconnexion" class="p-1.5 text-slate-400 hover:text-red-400 rounded-lg hover:bg-slate-800 transition-colors">
+                    <i class="ph ph-sign-out text-lg"></i>
+                </button>
+            </div>
+        </aside>
+
+        <!-- CONTENU CENTRAL -->
+        <main class="flex-1 flex flex-col min-w-0 bg-slate-100 overflow-hidden">
+            
+            <!-- HEADER SUPÉRIEUR -->
+            <header class="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 no-print">
+                <div class="flex items-center space-x-3">
+                    <h1 id="page-title" class="text-base font-bold text-slate-900">Tableau de Bord de Supervision</h1>
+                    <span id="active-port-badge" class="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-medium border border-slate-200">
+                        Port Ranomafana
+                    </span>
+                </div>
+
+                <div id="legacy-header-actions" class="flex items-center space-x-3">
+                    <button id="legacy-new-flight" onclick="openModal('modal-drone')" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center transition-colors">
+                        <i class="ph ph-paper-plane-tilt mr-1.5 text-amber-400"></i> Nouvelle Mission Drone
+                    </button>
+                    <button id="legacy-new-receipt" onclick="openModal('modal-salama')" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold flex items-center transition-colors">
+                        <i class="ph ph-plus-circle mr-1.5"></i> Entrée SALAMA
+                    </button>
+                </div>
+            </header>
+
+            <!-- ZONE D'AFFICHAGE DYNAMIQUE -->
+            <div class="flex-1 overflow-y-auto p-6 space-y-6">
+
+                <section id="postgres-read-view" class="tab-content postgres-hidden">
+                    <div class="postgres-notice">Consultation PostgreSQL locale. Utilisez « Ouvrir les opérations » pour accéder aux formulaires avec la même session.</div>
+                    <h2 id="postgres-read-title"></h2>
+                    <button id="postgres-read-refresh" type="button">Actualiser</button>
+                    <button id="postgres-read-manage" type="button">Ouvrir les opérations</button>
+                    <p id="postgres-read-status" role="status"></p>
+                    <div id="postgres-read-content"></div>
+                </section>
+                <section id="postgres-operations-view" class="tab-content postgres-hidden">
+                    <p id="postgres-operations-notice" class="postgres-notice">Opérations PostgreSQL locales : sélectionnez le drone port dans ce panneau. La session est partagée avec Q.box. Les données de démonstration du navigateur ne sont pas utilisées.</p>
+                    <p id="postgres-operations-status" role="status"></p>
+                    <div id="postgres-frame-container"></div>
+                </section>
+                <section id="view-inventory" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                        <div class="flex flex-wrap justify-between items-center gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm">Inventaire physique complet</h3>
+                                <p class="text-xs text-slate-500">Comptez tous les lots du port actif, y compris les lots à zéro. Excluez les colis drone en livraison et les produits en quarantaine.</p>
+                            </div>
+                            <button id="inventory-new" type="button" onclick="startPhysicalInventory()" class="px-3 py-2 bg-amber-400 hover:bg-amber-500 rounded-xl text-xs font-bold">Commencer un inventaire</button>
+                        </div>
+                        <p id="postgres-inventory-status" class="text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <form id="inventory-form" onsubmit="submitPhysicalInventory(event)" class="hidden space-y-4">
+                            <p class="text-xs text-slate-500">Le stock théorique physique exclut les quantités en cours de livraison. Chaque lot doit être compté ; saisissez 0 si nécessaire.</p>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="text-slate-500"><tr>
+                                        <th class="p-2">Intrant / lot</th><th class="p-2 text-right">Stock théorique physique</th>
+                                        <th class="p-2 text-right">En livraison</th><th class="p-2">Quantité comptée</th><th class="p-2 text-right">Écart</th>
+                                    </tr></thead>
+                                    <tbody id="inventory-count-rows" class="divide-y divide-slate-100"></tbody>
+                                </table>
+                            </div>
+                            <label for="inventory-observations" class="block text-xs font-semibold text-slate-700">Remarques et observations <span class="font-normal text-slate-500">(facultatif, 2 000 caractères maximum)</span></label>
+                            <textarea id="inventory-observations" maxlength="2000" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm" placeholder="Précisez les remarques concernant cet inventaire"></textarea>
+                            <div class="flex justify-end gap-2">
+                                <button id="inventory-cancel" type="button" onclick="cancelPhysicalInventory()" class="px-3 py-2 bg-slate-100 rounded-xl text-xs font-semibold">Annuler</button>
+                                <button type="submit" class="px-3 py-2 bg-amber-400 hover:bg-amber-500 rounded-xl text-xs font-bold">Valider l’inventaire</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                        <h3 class="font-bold text-slate-900 text-sm mb-3">Historique des inventaires</h3>
+                        <div id="inventory-history" class="space-y-3"></div>
+                    </div>
+                </section>
+
+                <section id="view-stock-history" class="tab-content hidden space-y-4">
+                    <div class="stock-history-page bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-5">
+                        <div class="stock-history-header">
+                            <div class="stock-history-title">
+                                <span class="stock-history-title-icon" aria-hidden="true"><i class="ph ph-clock-counter-clockwise"></i></span>
+                                <div><h3 class="font-bold text-slate-900 text-sm">Historique global des stocks</h3>
+                                    <p class="text-xs text-slate-500">Suivez les mouvements, comparez les soldes et consultez les inventaires du port actif.</p></div>
+                            </div>
+                            <div class="stock-history-header-actions">
+                                <button id="stock-history-export" type="button" onclick="exportStockHistory()" class="stock-history-button stock-history-button-muted"><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter CSV</button>
+                                <button id="stock-history-print" type="button" onclick="printStockHistory()" class="stock-history-button stock-history-button-primary"><i class="ph ph-printer" aria-hidden="true"></i>Imprimer</button>
+                            </div>
+                        </div>
+                        <div class="stock-history-filter-panel">
+                            <div class="stock-history-filter-heading">
+                                <div><h4><i class="ph ph-funnel" aria-hidden="true"></i>Filtrer les mouvements</h4>
+                                    <p>Les filtres s’appliquent aux mouvements et inventaires ; la synthèse affiche le stock actuel.</p></div>
+                                <button id="stock-history-reset" type="button" class="stock-history-reset postgres-hidden">Effacer les filtres</button>
+                            </div>
+                            <div class="stock-history-filter-grid">
+                                <label for="stock-history-from">Du
+                                    <input id="stock-history-from" type="date" onchange="renderStockHistory()">
+                                </label>
+                                <label for="stock-history-to">Au
+                                    <input id="stock-history-to" type="date" onchange="renderStockHistory()">
+                                </label>
+                                <label for="stock-history-type">Opération
+                                    <select id="stock-history-type" onchange="renderStockHistory()"><option value="">Toutes les opérations</option><option>Solde initial</option><option>Réception SALAMA</option><option>Réservation drone</option><option>Modification drone</option><option>Clôture drone</option><option>Expédition terrestre</option><option>Inventaire physique</option><option>Mise en quarantaine</option><option>Remise en stock</option><option>Destruction</option></select>
+                                </label>
+                                <label class="stock-history-search-field" for="stock-history-search">Intrant
+                                    <span class="stock-history-search-wrap"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><input id="stock-history-search" type="search" oninput="renderStockHistory()" placeholder="Rechercher un intrant"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="stock-history-results-toolbar">
+                            <p id="stock-history-status" role="status" aria-live="polite"></p>
+                            <div id="postgres-stock-history-actions" class="stock-history-actions postgres-hidden">
+                                <button id="postgres-stock-history-apply" type="button" class="stock-history-button stock-history-button-primary"><i class="ph ph-magnifying-glass" aria-hidden="true"></i>Appliquer les filtres</button>
+                                <button id="postgres-stock-history-more" type="button" class="stock-history-button stock-history-button-muted hidden">Charger la suite</button>
+                                <button id="postgres-stock-history-operations" type="button" class="stock-history-button stock-history-button-muted"><i class="ph ph-chart-line-up" aria-hidden="true"></i>Graphiques avancés</button>
+                            </div>
+                        </div>
+                        <section class="stock-history-section" aria-labelledby="stock-history-summary-title">
+                            <div class="stock-history-section-heading">
+                                <div><h4 id="stock-history-summary-title">Synthèse actuelle</h4><p>Soldes du port actif, tous lots confondus.</p><p id="stock-history-explanation" class="stock-history-section-note">La synthèse montre le stock actuel ; les filtres s’appliquent aux mouvements et inventaires.</p></div>
+                                <span class="stock-history-section-icon" aria-hidden="true"><i class="ph ph-package"></i></span>
+                            </div>
+                            <div class="stock-history-table-wrap"><table class="stock-history-table stock-history-summary-table text-left">
+                                <thead><tr><th>Intrant</th><th>Stock enregistré</th><th>Réservé aux vols</th><th>Disponible</th></tr></thead>
+                                <tbody id="stock-history-summary"></tbody>
+                            </table></div>
+                        </section>
+                        <section id="stock-history-charts" class="stock-history-charts grid grid-cols-1 lg:grid-cols-2 gap-4" aria-label="Graphiques de l'historique des stocks">
+                            <article class="stock-history-chart-card">
+                                <div class="stock-history-chart-heading"><span class="stock-history-chart-icon" aria-hidden="true"><i class="ph ph-chart-bar-horizontal"></i></span>
+                                    <div><h4>Stock disponible par intrant</h4><p>Comparaison des quantités et des seuils actuels.</p></div></div>
+                                <div class="stock-history-chart-legend" aria-label="Légende des seuils">
+                                    <span><i class="stock-history-legend-low"></i>Sous le seuil</span><span><i class="stock-history-legend-watch"></i>Jusqu’à 1,5 × le seuil</span><span><i class="stock-history-legend-good"></i>Au-delà de 1,5 × le seuil</span><span><i class="stock-history-legend-unknown"></i>Seuil non défini</span>
+                                </div>
+                                <div class="stock-history-chart-scroll"><div id="stock-history-bar-container" class="stock-history-chart-canvas"><canvas id="stock-history-bar" role="img" aria-label="Comparaison des stocks disponibles par intrant"></canvas></div></div>
+                            </article>
+                            <article class="stock-history-chart-card">
+                                <div class="stock-history-chart-heading"><span class="stock-history-chart-icon stock-history-chart-icon-line" aria-hidden="true"><i class="ph ph-chart-line-up"></i></span>
+                                    <div><h4>Évolution du stock disponible</h4><p>Cliquez sur une courbe dans la légende pour la masquer ou l’afficher.</p></div></div>
+                                <div class="stock-history-chart-canvas stock-history-line-canvas"><canvas id="stock-history-line" role="img" aria-label="Évolution des stocks disponibles par intrant"></canvas></div>
+                            </article>
+                        </section>
+                        <section class="stock-history-section" aria-labelledby="stock-history-movements-title">
+                            <div class="stock-history-section-heading">
+                                <div><h4 id="stock-history-movements-title">Mouvements enregistrés</h4><p>Variations et soldes au moment de chaque opération.</p></div>
+                                <span class="stock-history-section-icon" aria-hidden="true"><i class="ph ph-arrows-left-right"></i></span>
+                            </div>
+                            <div class="stock-history-table-wrap"><table class="stock-history-table stock-history-movements-table text-left">
+                                <thead><tr><th>Date</th><th>Intrant</th><th>Opération</th><th>Variation stock</th><th>Avant</th><th>Après</th><th>Réservé après</th><th>Disponible après</th><th>Utilisateur</th></tr></thead>
+                                <tbody id="stock-history-movements"></tbody>
+                            </table></div>
+                        </section>
+                        <section class="stock-history-section" aria-labelledby="stock-history-inventories-title">
+                            <div class="stock-history-section-heading">
+                                <div><h4 id="stock-history-inventories-title">Rapports d’inventaire physique</h4><p>Les écarts d’inventaire ne sont pas ajoutés une seconde fois aux mouvements.</p></div>
+                                <span class="stock-history-section-icon" aria-hidden="true"><i class="ph ph-clipboard-text"></i></span>
+                            </div>
+                            <div id="stock-history-inventories" class="stock-history-inventories"></div>
+                        </section>
+                    </div>
+                </section>
+
+                <section id="view-logistics-report" class="tab-content hidden">
+                    <div class="stock-history-page logistics-report-page bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-5">
+                        <div class="logistics-report-print-logo"><img class="report-logo" src="logo-unfpa.svg" alt="Logo UNFPA"></div>
+                        <div class="stock-history-header">
+                            <div class="stock-history-title">
+                                <span class="stock-history-title-icon" aria-hidden="true"><i class="ph ph-chart-bar"></i></span>
+                                <div><h3 class="font-bold text-slate-900 text-sm">Rapport logistique</h3>
+                                    <p class="text-xs text-slate-500">Mouvements mensuels par intrant pour le magasin actif.</p></div>
+                            </div>
+                            <div class="logistics-report-controls">
+                                <label for="logistics-report-year">Année <select id="logistics-report-year"></select></label>
+                                <button id="logistics-report-refresh" type="button" class="stock-history-button stock-history-button-muted"><i class="ph ph-arrows-clockwise" aria-hidden="true"></i>Actualiser</button>
+                                <button id="logistics-report-print" type="button" disabled class="stock-history-button stock-history-button-primary"><i class="ph ph-printer" aria-hidden="true"></i>Imprimer</button>
+                            </div>
+                        </div>
+                        <p id="logistics-report-print-context" class="logistics-report-print-context"></p>
+                        <p class="logistics-report-note">Heure de Madagascar. Le stock physique de fin de mois est indiqué uniquement si un inventaire a été validé le dernier jour du mois. « — » signifie indisponible.</p>
+                        <p id="logistics-report-status" role="status" aria-live="polite"></p>
+                        <div id="logistics-report-months" class="logistics-report-months"></div>
+                    </div>
+                </section>
+
+                <section id="view-quarantine" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                        <div>
+                            <h3 class="font-bold text-slate-900 text-sm">Mise en quarantaine</h3>
+                            <p class="text-xs text-slate-500 mt-1">Les quantités isolées sont retirées du stock disponible. Les produits expirés sont isolés manuellement.</p>
+                        </div>
+                        <p id="postgres-quarantine-status" class="text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <div class="postgres-hidden" id="postgres-quarantine-actions">
+                            <button id="postgres-quarantine-new" type="button" class="px-3 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold">Nouvelle mise en quarantaine</button>
+                            <button id="postgres-quarantine-refresh" type="button" class="px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Actualiser</button>
+                        </div>
+                        <form id="quarantine-form-main" onsubmit="submitQuarantine(event)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+                            <label class="text-xs font-semibold text-slate-700">Intrant et lot
+                                <select id="quarantine-stock" required class="mt-1 w-full text-xs p-2 rounded-xl border border-slate-200 bg-white"></select>
+                            </label>
+                            <label class="text-xs font-semibold text-slate-700">Quantité à isoler
+                                <input id="quarantine-quantity" type="number" min="1" step="1" required class="mt-1 w-full text-xs p-2 rounded-xl border border-slate-200">
+                            </label>
+                            <label class="text-xs font-semibold text-slate-700">Motif
+                                <select id="quarantine-reason" required class="mt-1 w-full text-xs p-2 rounded-xl border border-slate-200 bg-white">
+                                    <option value="">Sélectionner un motif</option>
+                                    <option>Abîmé</option><option>Cassé</option><option>Non conforme</option><option>Expiré</option>
+                                </select>
+                            </label>
+                            <button type="submit" class="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold">Mettre en quarantaine</button>
+                            <button id="postgres-quarantine-cancel" type="button" class="postgres-hidden px-3 py-2 bg-slate-100 rounded-xl text-xs font-semibold">Annuler</button>
+                        </form>
+                    </div>
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-3">
+                        <h3 class="font-bold text-slate-900 text-sm">Produits en quarantaine et historique</h3>
+                        <p class="text-xs text-slate-500">Les sorties concernent toute la quantité encore isolée. Les produits expirés ne peuvent pas être remis en stock.</p>
+                        <div id="quarantine-list" class="space-y-3"></div>
+                    </div>
+                </section>
+
+                <!-- ================= VIEW 1: DASHBOARD ================= -->
+                <section id="view-dashboard" class="tab-content space-y-6">
+                    <div id="postgres-dashboard-notice" hidden></div>
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h2 class="text-sm font-bold text-slate-900">Vue d'ensemble</h2>
+                            <p id="dashboard-site-description" class="text-xs text-slate-500 mt-1">Suivi des activités du drone port</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button id="postgres-dashboard-refresh" type="button" class="postgres-hidden px-3 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center">
+                                <i class="ph ph-arrows-clockwise text-base mr-2"></i> Actualiser
+                            </button>
+                            <button id="legacy-dashboard-report" type="button" onclick="openDashboardReport()" class="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center transition-colors">
+                                <i class="ph ph-file-chart-line text-base mr-2"></i> Générer un rapport
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- KPI CARDS (5 indicateurs majeurs) -->
+                    <div class="dashboard-kpis grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <!-- KPI 1 : Stock global -->
+                        <div class="dashboard-kpi dashboard-kpi-stock">
+                            <div class="dashboard-kpi-header">
+                                <span class="dashboard-kpi-label">Stock Entrepôt</span>
+                                <div class="dashboard-kpi-icon" aria-hidden="true">
+                                    <i class="ph ph-package"></i>
+                                </div>
+                            </div>
+                            <div id="dash-total-stock" class="dashboard-kpi-value font-mono">0</div>
+                            <div class="dashboard-kpi-caption">Unités disponibles</div>
+                        </div>
+
+                        <!-- KPI 2 : Colis en cours de livraison -->
+                        <div id="dashboard-missions-kpi" class="dashboard-kpi dashboard-kpi-missions">
+                            <div class="dashboard-kpi-header">
+                                <span class="dashboard-kpi-label">Colis préparés</span>
+                                <div class="dashboard-kpi-icon" aria-hidden="true">
+                                    <i class="ph ph-navigation-arrow"></i>
+                                </div>
+                            </div>
+                            <div id="dash-active-drones" class="dashboard-kpi-value font-mono">0</div>
+                            <div class="dashboard-kpi-caption dashboard-kpi-live"><span class="dashboard-kpi-dot" aria-hidden="true"></span>Livraisons en cours</div>
+                        </div>
+
+                        <!-- KPI 3 : Plannings actifs -->
+                        <div id="dashboard-planning-kpi" class="dashboard-kpi dashboard-kpi-planning">
+                            <div class="dashboard-kpi-header">
+                                <span class="dashboard-kpi-label">Plannings Actifs</span>
+                                <div class="dashboard-kpi-icon" aria-hidden="true">
+                                    <i class="ph ph-calendar-check"></i>
+                                </div>
+                            </div>
+                            <div id="dash-active-plannings" class="dashboard-kpi-value font-mono">0</div>
+                            <div class="dashboard-kpi-caption">CSB programmés</div>
+                        </div>
+
+                        <!-- KPI 4 : CSB desservis -->
+                        <div id="dashboard-network-kpi" class="dashboard-kpi dashboard-kpi-network">
+                            <div class="dashboard-kpi-header">
+                                <span class="dashboard-kpi-label">Réseau Sanitaire</span>
+                                <div class="dashboard-kpi-icon" aria-hidden="true">
+                                    <i class="ph ph-first-aid"></i>
+                                </div>
+                            </div>
+                            <div id="dash-total-csb" class="dashboard-kpi-value font-mono">0</div>
+                            <div class="dashboard-kpi-caption">Centres de santé reliés</div>
+                        </div>
+
+                        <!-- KPI 5 : AVANCEMENT GÉNÉRAL DU PLANNING -->
+                        <div id="dashboard-progress-kpi" class="dashboard-kpi dashboard-kpi-progress">
+                            <div class="dashboard-kpi-header">
+                                <span class="dashboard-kpi-label">Avancement Global</span>
+                                <div class="dashboard-kpi-icon" aria-hidden="true">
+                                    <i class="ph ph-chart-line-up"></i>
+                                </div>
+                            </div>
+                            <div class="dashboard-kpi-progress-values">
+                                <span id="dash-global-rate" class="dashboard-kpi-value font-mono">0%</span>
+                                <span id="dash-global-ratio" class="dashboard-kpi-ratio font-mono">0 / 0</span>
+                            </div>
+                            <div class="dashboard-kpi-track">
+                                <div id="dash-global-bar" class="dashboard-kpi-bar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GRAPHIQUE DES STOCKS & ROTATIONS EN COURS -->
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <!-- Graphique Chart.js -->
+                        <div id="legacy-stock-chart" class="stock-chart-card lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <div class="stock-chart-header">
+                                <div class="stock-chart-heading">
+                                    <div class="stock-chart-icon" aria-hidden="true"><i class="ph ph-chart-bar-horizontal"></i></div>
+                                    <div>
+                                    <h3 class="font-bold text-slate-900 text-sm">Intrants disponibles</h3>
+                                    <p class="text-xs text-slate-500">Stock du port, hors quantités réservées aux vols et produits en quarantaine. Les produits expirés restent inclus tant qu'ils ne sont pas isolés.</p>
+                                    </div>
+                                </div>
+                                <span class="stock-chart-badge">
+                                    Base active
+                                </span>
+                            </div>
+                            <div class="stock-chart-legend">
+                                <span><i class="stock-legend-dot stock-low"></i>Sous le seuil</span>
+                                <span><i class="stock-legend-dot stock-watch"></i>À surveiller : jusqu'à 1,5 × le seuil</span>
+                                <span><i class="stock-legend-dot stock-good"></i>Au-delà de 1,5 × le seuil</span>
+                                <span><i class="stock-legend-dot stock-unknown"></i>Seuil non défini</span>
+                            </div>
+                            <div id="stock-chart-message" role="status" class="stock-chart-message hidden"></div>
+                            <div id="stock-chart-scroll" class="stock-chart-scroll">
+                                <div id="stock-chart-container" class="stock-chart-container">
+                                    <canvas id="stockBarChart" role="img" aria-label="Quantités disponibles par intrant. Le détail figure dans le tableau ci-dessous."></canvas>
+                                </div>
+                            </div>
+                            <details id="stock-chart-details" class="stock-chart-details">
+                                <summary>Détails des stocks et des lots</summary>
+                                <div class="stock-chart-table-scroll">
+                                    <table class="stock-chart-table">
+                                        <thead><tr><th>Intrant</th><th>Lot</th><th>Péremption</th><th>Stock du lot</th><th>Réservé aux vols</th><th>Disponible du lot</th><th>Disponible total</th><th>Seuil produit</th><th>Niveau produit</th></tr></thead>
+                                        <tbody id="stock-chart-details-body"></tbody>
+                                    </table>
+                                </div>
+                            </details>
+                        </div>
+
+                        <!-- Colis en cours de livraison -->
+                        <div id="dashboard-missions-card" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+                            <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                                <div>
+                                    <h3 class="font-bold text-slate-900 text-sm">Colis en cours de livraison</h3>
+                                    <p class="text-xs text-slate-500">Livraisons sanitaires en transit</p>
+                                </div>
+                                <span id="dashboard-live-label" class="px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 text-[10px] font-bold border border-cyan-200">
+                                    Direct
+                                </span>
+                            </div>
+                            <div id="dash-missions-list" class="flex-1 space-y-3 overflow-y-auto max-h-60 pr-1">
+                                <!-- Rempli en JS -->
+                            </div>
+                        </div>
+                            <div id="dashboard-storage-card" class="postgres-hidden bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <h3 class="font-bold text-slate-900 text-sm">Mouvements entre magasins</h3>
+                                <p class="text-xs text-slate-500 mt-1">Derniers transferts et expéditions terrestres enregistrés.</p>
+                                <div id="dashboard-storage-transfers" class="mt-4 space-y-3 text-xs" role="status"></div>
+                                <button id="dashboard-storage-link" type="button" class="mt-4 text-xs font-bold text-sky-700">Voir toutes les opérations →</button>
+                            </div>
+                    </div>
+
+                    <!-- SECTION AVANCEMENT DÉTAILLÉ DES PLANNINGS CSB -->
+                    <div id="dashboard-planning-card" class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-100 bg-slate-50/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm flex items-center">
+                                    <i class="ph ph-chart-donut text-emerald-600 mr-2 text-base"></i>
+                                    Avancement des Besoins Planifiés par CSB
+                                </h3>
+                                <p class="text-xs text-slate-500">Progression des livraisons réelles par rapport aux besoins exprimés</p>
+                            </div>
+                            <button id="legacy-planning-link" onclick="switchTab('planning')" class="text-xs font-bold text-slate-900 hover:text-amber-600 flex items-center">
+                                Voir tous les plannings <i class="ph ph-arrow-right ml-1"></i>
+                            </button>
+                        </div>
+                        <div id="dash-plannings-table" class="p-5">
+                            <!-- Rempli en JS -->
+                        </div>
+                    </div>
+
+                    <!-- ALERTES PÉREMPTION FEFO -->
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-4 border-b border-slate-100 bg-rose-50/50 flex items-center justify-between">
+                            <h3 class="font-bold text-rose-950 text-xs flex items-center">
+                                <i class="ph ph-warning-circle text-rose-600 mr-2 text-base"></i>
+                                Alertes de Péremption Proche & Déstockage Prioritaire (FEFO)
+                            </h3>
+                            <span id="dashboard-fefo-label" class="text-[11px] font-semibold text-rose-700">Règle FEFO active</span>
+                        </div>
+                        <div id="dash-expirations-list" class="divide-y divide-slate-100 text-xs">
+                            <!-- Rempli en JS -->
+                        </div>
+                    </div>
+
+                </section>
+
+                <!-- ================= VIEW 2: STOCKS ================= -->
+                <section id="view-stocks" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm">Gestion des Stocks et Traçabilité par Lot</h3>
+                                <p id="stocks-fefo-description" class="text-xs text-slate-500">Application stricte du premier périmé, premier sorti (FEFO)</p>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button id="postgres-stocks-refresh" type="button" class="postgres-hidden px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Actualiser</button>
+                                <div class="relative">
+                                    <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                                    <input type="text" id="stock-search" oninput="renderStocks()" placeholder="Rechercher produit, lot..." class="text-xs pl-8 pr-3 py-2 bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 w-48 sm:w-64">
+                                </div>
+                                <button id="stocks-receive" onclick="openModal('modal-salama')" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
+                                    <i class="ph ph-plus mr-1"></i> Réapprovisionner
+                                </button>
+                            </div>
+                        </div>
+                        <p id="postgres-stocks-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider border-b border-slate-200">
+                                        <th class="py-3 px-4 font-semibold">Réf.</th>
+                                        <th class="py-3 px-4 font-semibold">Désignation</th>
+                                        <th class="py-3 px-4 font-semibold">Catégorie</th>
+                                        <th class="py-3 px-4 font-semibold">N° Lot</th>
+                                        <th class="py-3 px-4 font-semibold">Date Péremption</th>
+                                        <th id="stocks-quantity-heading" class="py-3 px-4 font-semibold text-right">Quantité</th>
+                                        <th id="stocks-status-heading" class="py-3 px-4 font-semibold text-center">Statut</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="stocks-table-body" class="divide-y divide-slate-100 text-xs">
+                                    <!-- Rempli en JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ================= VIEW 3: SALAMA ================= -->
+                <section id="view-salama" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm">Historique des Réceptions SALAMA Centrale</h3>
+                                <p id="salama-description" class="text-xs text-slate-500">Réapprovisionnements regroupés par numéro de bon SALAMA</p>
+                            </div>
+                            <div class="flex items-center gap-2"><button id="postgres-salama-refresh" type="button" class="postgres-hidden px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Actualiser</button>
+                            <button id="salama-receive" onclick="openModal('modal-salama')" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
+                                <i class="ph ph-plus-circle mr-1.5 text-sm"></i> Enregistrer Réception
+                            </button></div>
+                        </div>
+                        <p id="postgres-salama-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider border-b border-slate-200">
+                                        <th class="py-3 px-4 font-semibold">N° Bordereau</th>
+                                        <th class="py-3 px-4 font-semibold">Date d'Entrée</th>
+                                        <th class="py-3 px-4 font-semibold">Intrant Réceptionné</th>
+                                        <th class="py-3 px-4 font-semibold">N° de Lot (Traçabilité)</th>
+                                        <th class="py-3 px-4 font-semibold text-right">Quantité</th>
+                                        <th class="py-3 px-4 font-semibold text-center">Statut</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="salama-table-body" class="divide-y divide-slate-100 text-xs">
+                                    <!-- Rempli en JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ================= VIEW NOUVELLE: RÉFÉRENTIEL INTRANTS ================= -->
+                <section id="view-products" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm">Catalogue & Référentiel des Intrants Médicaux</h3>
+                                <p class="text-xs text-slate-500">Base officielle des intrants disponibles pour les commandes et vols</p>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button id="postgres-products-refresh" type="button" class="postgres-hidden px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Actualiser</button>
+                                <div class="relative">
+                                    <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                                    <input type="text" id="catalog-search" oninput="renderCatalog()" placeholder="Rechercher code, nom..." class="text-xs pl-8 pr-3 py-2 bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 w-48 sm:w-64">
+                                </div>
+                                <button id="catalog-new" onclick="openProductModal()" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
+                                    <i class="ph ph-plus-circle mr-1.5 text-sm"></i> Ajouter un Intrant
+                                </button>
+                            </div>
+                        </div>
+
+                        <p id="postgres-products-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider border-b border-slate-200">
+                                        <th class="py-3 px-4 font-semibold">Code Produit</th>
+                                        <th class="py-3 px-4 font-semibold">Désignation Officielle</th>
+                                        <th class="py-3 px-4 font-semibold">Catégorie</th>
+                                        <th class="py-3 px-4 font-semibold">Conditionnement</th>
+                                        <th class="py-3 px-4 font-semibold text-center">Seuil Minimum Alerte</th>
+                                        <th class="py-3 px-4 font-semibold text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="catalog-table-body" class="divide-y divide-slate-100 text-xs">
+                                    <!-- Rempli en JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ================= VIEW 4: PLANNINGS ACTIFS ================= -->
+                <section id="view-planning" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm">Plannings Prévisionnels des Besoins par CSB</h3>
+                                <p class="text-xs text-slate-500">Dotation groupée multi-intrants par formation sanitaire avec suivi en temps réel</p>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button id="planning-archive" onclick="openArchiveModal()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center transition-colors">
+                                    <i class="ph ph-archive-box mr-1.5"></i> Tout Archiver
+                                </button>
+                                <button id="planning-new" onclick="openPlanningModal()" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
+                                    <i class="ph ph-plus-circle mr-1.5 text-sm"></i> Nouveau Planning CSB
+                                </button>
+                            </div>
+                        </div>
+
+                        <p id="postgres-planning-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <div id="planning-cards-container" class="p-5 space-y-4">
+                            <!-- Rempli dynamiquement en JS (Plannings groupés par CSB) -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ================= VIEW 5: DOSSIERS D'ARCHIVES ================= -->
+                <section id="view-archives" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-5">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-slate-100">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm">Dossiers d'Archives des Plannings</h3>
+                                <p class="text-xs text-slate-500">Consultation des plannings historiques classés par dossiers nommés</p>
+                            </div>
+                            <span class="text-xs font-semibold text-slate-500 px-3 py-1 bg-slate-100 rounded-lg">
+                                Données verrouillées
+                            </span>
+                        </div>
+                        <p id="postgres-archives-status" class="py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <div id="archives-container" class="mt-5 space-y-4">
+                            <!-- Rempli en JS -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ================= VIEW 6: MISSIONS DRONES ================= -->
+                <section id="view-drones" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm">Centre de Contrôle & Largages Aériens</h3>
+                                <p class="text-xs text-slate-500">Gestion des vols actifs, impression du BL et clôture des décharges</p>
+                            </div>
+                            <button id="drone-new" onclick="openModal('modal-drone')" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center transition-colors">
+                                <i class="ph ph-paper-plane-tilt mr-1.5 text-amber-400"></i> Lancer une Mission
+                            </button>
+                        </div>
+
+                        <p id="postgres-drones-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <div id="drones-groups" class="p-4 space-y-4">
+                            <!-- Livraisons regroupées par CSB, rempli en JS -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ================= VIEW 7: SORTIES TERRESTRES ================= -->
+                <section id="view-sorties" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm">Expéditions par Voie Terrestre</h3>
+                                <p class="text-xs text-slate-500">Envois par véhicule ou moto vers les CSB accessibles</p>
+                            </div>
+                            <button id="sortie-new" onclick="openModal('modal-sortie')" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center transition-colors">
+                                <i class="ph ph-plus-circle mr-1.5 text-amber-400"></i> Nouvelle Expédition Terrestre
+                            </button>
+                        </div>
+
+                        <p id="postgres-sorties-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider border-b border-slate-200">
+                                        <th class="py-3 px-4 font-semibold">N° Expédition / BL</th>
+                                        <th class="py-3 px-4 font-semibold">Date Départ</th>
+                                        <th class="py-3 px-4 font-semibold">Destination (CSB)</th>
+                                        <th class="py-3 px-4 font-semibold">Mode Transport</th>
+                                        <th class="py-3 px-4 font-semibold">Intrants Transportés</th>
+                                        <th class="py-3 px-4 font-semibold">Statut</th>
+                                        <th class="py-3 px-4 font-semibold text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sorties-table-body" class="divide-y divide-slate-100 text-xs">
+                                    <!-- Rempli en JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ================= VIEW 8: HISTORIQUE VOLS ================= -->
+                <section id="view-history" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm">Historique des Livraisons Clôturées</h3>
+                                <p class="text-xs text-slate-500">Registre complet des missions terminées avec réimpression des BL</p>
+                            </div>
+                            <button id="delete-missing-csb-history" type="button" onclick="deleteMissingCsbHistory()" class="hidden px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold">
+                                Supprimer les clôtures sans CSB
+                            </button>
+                        </div>
+
+                        <p id="postgres-history-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider border-b border-slate-200">
+                                        <th id="history-bl-heading" class="py-3 px-4 font-semibold">N° Drone & BL</th>
+                                        <th class="py-3 px-4 font-semibold">Date Clôture</th>
+                                        <th class="py-3 px-4 font-semibold">CSB Livré</th>
+                                        <th class="py-3 px-4 font-semibold">Intrants Largués</th>
+                                        <th class="py-3 px-4 font-semibold">Statut</th>
+                                        <th class="py-3 px-4 font-semibold text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-table-body" class="divide-y divide-slate-100 text-xs">
+                                    <!-- Rempli en JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="view-transfers" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+                        <div><h3 class="font-bold text-slate-900 text-sm">Transferts et expéditions terrestres</h3>
+                            <p class="text-xs text-slate-500 mt-1">Un transfert met immédiatement à jour les stocks des deux magasins. Une expédition externe sort du stock du magasin de stockage.</p></div>
+                        <p id="transfer-status" class="text-xs text-slate-600" role="status" aria-live="polite"></p>
+                        <form id="transfer-form" class="space-y-3">
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                <label class="text-xs font-semibold">Destination
+                                    <select id="transfer-destination" required class="block w-full mt-1 text-xs p-2 rounded-xl border border-slate-200 bg-white"></select></label>
+                                <label id="transfer-external-field" class="hidden text-xs font-semibold">Destinataire externe
+                                    <input id="transfer-external" maxlength="150" class="block w-full mt-1 text-xs p-2 rounded-xl border border-slate-200"></label>
+                                <label class="text-xs font-semibold">Transport
+                                    <input id="transfer-transport" maxlength="150" required class="block w-full mt-1 text-xs p-2 rounded-xl border border-slate-200"></label>
+                            </div>
+                            <div id="transfer-items" class="space-y-2"></div>
+                            <div class="flex flex-wrap gap-2">
+                                <button id="transfer-add" type="button" class="px-3 py-2 rounded-xl bg-slate-100 text-xs font-bold">Ajouter un lot</button>
+                                <button id="transfer-submit" type="submit" class="px-3 py-2 rounded-xl bg-amber-400 text-xs font-bold">Enregistrer l’expédition</button>
+                            </div>
+                        </form>
+                        <section class="transfer-history" aria-labelledby="transfer-history-title">
+                            <div class="transfer-history-heading">
+                                <span class="transfer-history-icon" aria-hidden="true"><i class="ph ph-clock-counter-clockwise"></i></span>
+                                <div><h4 id="transfer-history-title">Historique des transferts et expéditions</h4>
+                                    <p>Consultez les opérations du magasin sélectionné et le détail des lots.</p></div>
+                            </div>
+                            <div id="transfer-list" class="transfer-history-list"></div>
+                        </section>
+                    </div>
+                </section>
+
+                <section id="view-ports" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                            <div><h3 class="font-bold text-slate-900 text-sm">Gestion des magasins</h3>
+                                <p class="text-xs text-slate-500">Un magasin contenant des données ou un historique ne peut pas être supprimé. Au moins un magasin doit être conservé.</p></div>
+                            <div class="flex gap-2"><button id="postgres-ports-refresh" type="button" class="postgres-hidden px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Actualiser</button>
+                            <button id="port-new" type="button" onclick="editPort()" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 rounded-xl text-xs font-bold">+ Ajouter un magasin</button></div>
+                        </div>
+                        <p id="postgres-ports-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <form id="port-form" onsubmit="submitPort(event)" class="hidden p-5 border-b border-slate-100 space-y-3">
+                            <h4 id="port-form-title" class="font-bold text-sm"></h4>
+                            <input type="hidden" id="port-edit-id">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div><label for="port-name" class="block text-xs font-semibold mb-1">Nom</label>
+                                    <input id="port-name" required maxlength="120" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200"></div>
+                                <div><label for="port-region" class="block text-xs font-semibold mb-1">Région</label>
+                                    <select id="port-region" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-white"></select></div>
+                                <div id="port-type-field" class="postgres-hidden"><label for="port-type" class="block text-xs font-semibold mb-1">Type de magasin</label>
+                                    <select id="port-type" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-white"><option value="drone_port">Drone port</option><option value="storage">Magasin de stockage</option></select>
+                                    <p class="text-xs text-slate-500 mt-1">Le type est définitif après création.</p></div>
+                            </div>
+                            <div class="flex gap-2"><button type="submit" class="px-4 py-2 bg-amber-400 rounded-xl text-xs font-bold">Enregistrer</button>
+                                <button id="port-cancel" type="button" onclick="document.getElementById('port-form').classList.add('hidden')" class="px-4 py-2 bg-slate-100 rounded-xl text-xs font-semibold">Annuler</button></div>
+                        </form>
+                        <div class="overflow-x-auto"><table class="w-full text-left text-xs">
+                            <thead class="bg-slate-50 text-slate-500"><tr><th class="py-3 px-4">Code</th><th class="py-3 px-4">Nom</th><th class="py-3 px-4">Région</th><th class="py-3 px-4 text-right">Actions</th></tr></thead>
+                            <tbody id="ports-table-body" class="divide-y divide-slate-100"></tbody>
+                        </table></div>
+                    </div>
+                    <div id="legacy-reset-data" class="bg-white rounded-2xl border border-red-200 p-5 space-y-2">
+                        <h3 class="text-sm font-bold text-red-800">Réinitialisation des données locales</h3>
+                        <p class="text-xs text-slate-600">Efface le catalogue, les CSB et toutes les données et historiques opérationnels de tous les ports dans ce navigateur. Les ports, catégories, régions et districts sont conservés. Une sauvegarde JSON est conservée localement et son téléchargement est lancé avant l'effacement ; vérifiez que le navigateur l'autorise.</p>
+                        <button type="button" onclick="resetApplicationData()" class="px-3.5 py-2 bg-red-700 hover:bg-red-800 text-white rounded-xl text-xs font-bold">Réinitialiser les données</button>
+                    </div>
+                </section>
+
+                <!-- ================= VIEW 9: CSB ================= -->
+                <section id="view-csb" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm">Cartographie & Réseau des CSB</h3>
+                                <p class="text-xs text-slate-500">Centres de Santé de Base rattachés au Drone Port actif</p>
+                            </div>
+                            <div class="flex gap-2"><button id="postgres-csb-refresh" type="button" class="postgres-hidden px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Actualiser</button>
+                            <button id="csb-new" onclick="openCSBModal()" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
+                                <i class="ph ph-plus-circle mr-1.5 text-sm"></i> Nouveau CSB
+                            </button></div>
+                        </div>
+                        <p id="postgres-csb-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider border-b border-slate-200">
+                                        <th class="py-3 px-4 font-semibold">Code CSB</th>
+                                        <th class="py-3 px-4 font-semibold">Nom de la Formation Sanitaire</th>
+                                        <th class="py-3 px-4 font-semibold">Région</th>
+                                        <th class="py-3 px-4 font-semibold">District</th>
+                                        <th class="py-3 px-4 font-semibold">Chef CSB</th>
+                                        <th class="py-3 px-4 font-semibold">Téléphones</th>
+                                        <th class="py-3 px-4 font-semibold text-right">Distance Base</th>
+                                        <th class="py-3 px-4 font-semibold text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="csb-table-body" class="divide-y divide-slate-100 text-xs">
+                                    <!-- Rempli en JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODALES DE FORMULAIRES ET IMPRESSION -->
+    <!-- ========================================== -->
+
+    <!-- Modal: Réception SALAMA -->
+    <div id="modal-salama" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-white rounded-2xl shadow-2xl z-50 hidden overflow-hidden no-print">
+        <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+            <h3 class="font-bold text-slate-900 text-sm flex items-center">
+                <i class="ph ph-arrow-down-left text-emerald-600 mr-2 text-lg"></i> Réception SALAMA Centrale
+            </h3>
+            <button id="salama-close" type="button" onclick="closeModal('modal-salama')" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+        </div>
+        <form id="salama-form" onsubmit="handleSalamaSubmit(event)" class="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">N° Bordereau / Bon SALAMA</label>
+                <input type="text" id="salama-id" required placeholder="Ex: BL-SLM-2026-088" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 font-mono">
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-slate-800">Intrants du bon</span>
+                <button id="salama-add-row" type="button" onclick="addSalamaRow()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">+ Ajouter un intrant</button>
+            </div>
+            <div id="salama-items" class="space-y-3"></div>
+            <p id="postgres-salama-form-status" class="text-xs text-rose-700 postgres-hidden" role="status" aria-live="polite"></p>
+            <div class="pt-2 flex justify-end space-x-2">
+                <button id="salama-cancel" type="button" onclick="closeModal('modal-salama')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button type="submit" id="salama-submit-btn" class="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold transition-colors">Valider l'Entrée</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Modal: Référentiel Intrants -->
+    <div id="modal-product" role="dialog" aria-modal="true" aria-labelledby="product-modal-title" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md max-h-[90vh] bg-white rounded-2xl shadow-2xl z-50 hidden flex flex-col overflow-hidden no-print">
+        <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
+            <h3 id="product-modal-title" class="font-bold text-slate-900 text-sm flex items-center">
+                <i class="ph ph-dna text-teal-600 mr-2 text-lg"></i> Référencer un Intrant Médical
+            </h3>
+            <button id="product-close" type="button" onclick="closeProductModal()" aria-label="Fermer la fenêtre des intrants" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+        </div>
+        <form id="form-product" onsubmit="handleProductSubmit(event)" class="flex flex-col flex-1 min-h-0">
+            <div class="p-5 space-y-4 overflow-y-auto min-h-0">
+            <input type="hidden" id="product-edit-id">
+            <div>
+                <label for="product-code" class="block text-xs font-semibold text-slate-700 mb-1">Code interne <span class="font-normal text-slate-400">(généré automatiquement)</span></label>
+                <input type="text" id="product-code" readonly class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-600 font-mono">
+            </div>
+            <div>
+                <label for="product-name" class="block text-xs font-semibold text-slate-700 mb-1">Désignation Officielle du Produit</label>
+                <input type="text" id="product-name" required placeholder="Ex: Ocytocine 10 UI / ml Injectable" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400">
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label for="product-category" class="block text-xs font-semibold text-slate-700 mb-1">Catégorie</label>
+                    <select id="product-category" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white">
+                        <option value="Prévention">Prévention</option>
+                        <option value="Contraception">Contraception</option>
+                        <option value="Dépistage">Dépistage</option>
+                        <option value="Urgence">Urgence</option>
+                        <option value="Maternité & Santé Reproductive">Maternité & Santé Reproductive</option>
+                        <option value="Médicaments Essentiels">Médicaments Essentiels</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="product-unit" class="block text-xs font-semibold text-slate-700 mb-1">Conditionnement</label>
+                    <input type="text" id="product-unit" required placeholder="Ex: Boîte de 10 ampoules" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400">
+                </div>
+            </div>
+            <div>
+                <label for="product-min-threshold" class="block text-xs font-semibold text-slate-700 mb-1">Seuil Alerte Stock Minimum (Unités)</label>
+                <input type="number" id="product-min-threshold" min="0" value="500" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 font-mono">
+            </div>
+            </div>
+            <div class="p-4 border-t border-slate-100 bg-white shrink-0 space-y-2">
+                <p id="postgres-product-form-status" class="text-xs text-rose-700 postgres-hidden" role="status" aria-live="polite"></p>
+                <div class="flex flex-wrap justify-end gap-2">
+                <button id="product-cancel" type="button" onclick="closeProductModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button type="submit" id="product-submit-btn" class="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold">Enregistrer</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Modal: Planifier des Vols Drone (un colis par vol) -->
+    <div id="modal-drone" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-6xl bg-white rounded-2xl shadow-2xl z-50 hidden overflow-hidden no-print">
+        <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
+            <h3 class="font-bold text-slate-900 text-sm flex items-center">
+                <i class="ph ph-paper-plane-tilt text-cyan-600 mr-2 text-lg"></i> <span id="drone-modal-title">Planifier des Vols Drone</span>
+                <span class="ml-3 text-[11px] font-medium text-slate-500">1 drone = 1 colis = 1 N° BL</span>
+            </h3>
+            <button id="drone-close" type="button" onclick="closeModal('modal-drone')" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+        </div>
+        <form id="drone-form-main" onsubmit="handleDroneSubmit(event)" class="flex flex-col max-h-[85vh]">
+            <div class="grid grid-cols-1 lg:grid-cols-5 flex-1 min-h-0 overflow-hidden">
+                <!-- Colonne gauche : vols et colis -->
+                <div class="lg:col-span-3 p-5 space-y-4 overflow-y-auto max-h-[70vh]">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Planning actif <span class="text-red-500">*</span></label>
+                        <select id="drone-plan" required onchange="onDronePlanChange()" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white font-bold text-slate-800">
+                            <!-- Rempli en JS -->
+                        </select>
+                        <p id="drone-plan-hint" class="text-[11px] text-amber-600 mt-1 hidden">Aucun planning actif : créez d'abord un planning dans l'onglet Planification.</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Destination (CSB Cible)</label>
+                        <select id="drone-target" required disabled onchange="updateDronePlanningInfo()" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white font-bold text-slate-800 disabled:bg-slate-100 disabled:text-slate-400">
+                            <!-- Rempli en JS -->
+                        </select>
+                    </div>
+
+                    <div id="drone-flights-section" class="pt-3 border-t border-slate-200 hidden">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                                Vols programmés <span id="drone-flights-count" class="ml-1 px-1.5 py-0.5 bg-cyan-100 text-cyan-800 rounded-full text-[10px]">0</span>
+                            </span>
+                            <button id="drone-add" type="button" onclick="addDroneFlight()" class="px-2.5 py-1 bg-cyan-600 text-white hover:bg-cyan-700 rounded-lg text-[11px] font-bold flex items-center transition-colors">
+                                <i class="ph ph-plus mr-1"></i> Ajouter un vol
+                            </button>
+                        </div>
+                        <div id="drone-flights-container" class="space-y-4">
+                            <!-- Les vols (un colis chacun) sont injectés ici -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Colonne droite : planning actif du CSB -->
+                <aside class="lg:col-span-2 p-5 bg-sky-50/60 border-t lg:border-t-0 lg:border-l border-sky-200 overflow-y-auto max-h-[70vh]">
+                    <div class="text-xs font-bold text-sky-900 uppercase tracking-wider mb-3 flex items-center">
+                        <i class="ph ph-calendar-check mr-1.5 text-sky-600 text-base"></i> Planning actif du CSB
+                    </div>
+                    <div id="drone-active-planning">
+                        <!-- Rempli en JS -->
+                    </div>
+                </aside>
+            </div>
+
+            <p id="postgres-drone-form-status" class="px-5 text-xs text-rose-700 postgres-hidden" role="status"></p>
+            <div class="p-4 flex justify-end space-x-2 shrink-0 border-t border-slate-100 bg-white">
+                <button id="drone-cancel" type="button" onclick="closeModal('modal-drone')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button type="submit" id="drone-submit-btn" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold">Lancer les Vols</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Modal: Clôturer Vol avec Date -->
+    <div id="modal-close-drone" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-white rounded-2xl shadow-2xl z-50 hidden overflow-hidden no-print">
+        <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+            <h3 id="close-delivery-title" class="font-bold text-slate-900 text-sm flex items-center">
+                <i class="ph ph-check-circle text-emerald-600 mr-2 text-lg"></i> Confirmer la Clôture du Vol
+            </h3>
+            <button id="close-delivery-x" type="button" onclick="closeModal('modal-close-drone')" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+        </div>
+        <form id="close-delivery-form" onsubmit="handleCloseDroneSubmit(event)" class="p-5 space-y-4">
+            <input type="hidden" id="close-drone-id">
+            <p id="close-delivery-description" class="text-xs text-slate-600">
+                La clôture déduira définitivement les intrants du stock et actualisera en temps réel l'avancement du planning prévisionnel du CSB.
+            </p>
+            <div id="postgres-close-delivery-detail" class="text-xs text-slate-700 postgres-hidden"></div>
+            <p id="postgres-close-delivery-status" class="text-xs text-rose-700 postgres-hidden" role="status"></p>
+            <div id="close-delivery-date-field">
+                <label id="close-delivery-date-label" for="close-drone-date" class="block text-xs font-semibold text-slate-700 mb-1">Date exacte du largage / décharge</label>
+                <input type="date" id="close-drone-date" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400">
+            </div>
+            <div class="pt-2 flex justify-end space-x-2">
+                <button id="close-delivery-cancel" type="button" onclick="closeModal('modal-close-drone')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button id="close-delivery-submit" type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold">Confirmer la Clôture</button>
+            </div>
+        </form>
+    </div>
+
+    <div id="modal-delivery-edit" role="dialog" aria-modal="true" aria-labelledby="delivery-edit-title" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-6xl max-h-[90vh] bg-white rounded-2xl shadow-2xl z-50 hidden flex flex-col overflow-hidden no-print">
+        <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
+            <h3 class="font-bold text-slate-900 text-sm flex items-center min-w-0"><i class="ph ph-pencil-simple text-cyan-600 mr-2 text-lg shrink-0"></i><span id="delivery-edit-title" class="break-words"></span></h3>
+            <button id="delivery-edit-close" type="button" aria-label="Fermer la modification" class="text-slate-400 hover:text-slate-600 shrink-0"><i class="ph ph-x text-lg"></i></button>
+        </div>
+        <form id="delivery-edit-form" class="flex flex-col flex-1 min-h-0">
+            <div class="grid grid-cols-1 lg:grid-cols-5 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+                <div class="lg:col-span-3 p-5 space-y-4 lg:overflow-y-auto">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div><span class="block text-xs font-semibold text-slate-700 mb-1">Planning</span><div id="delivery-edit-plan" class="text-xs px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-700"></div></div>
+                        <div><span class="block text-xs font-semibold text-slate-700 mb-1">Destination (CSB cible)</span><div id="delivery-edit-target" class="text-xs px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-700"></div></div>
+                    </div>
+                    <label id="delivery-edit-transport-label" class="block text-xs font-semibold text-slate-700">Moyen de transport
+                        <input id="delivery-edit-transport" type="text" maxlength="150" class="mt-1 w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400">
+                    </label>
+                    <div class="pt-3 border-t border-slate-200">
+                        <div class="flex items-center gap-2 mb-3"><span id="delivery-edit-section-title" class="text-xs font-bold text-slate-800 uppercase tracking-wider"></span></div>
+                        <div class="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                            <h4 class="text-xs font-extrabold text-slate-900 flex items-center"><i id="delivery-edit-icon" class="ph ph-airplane-tilt text-cyan-600 mr-1.5 text-base"></i><span id="delivery-edit-parcel-title"></span></h4>
+                            <div id="delivery-edit-reference" class="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-100 text-slate-600 font-mono font-bold break-all"></div>
+                            <div class="flex flex-wrap items-center justify-between gap-2"><span id="delivery-edit-content-label" class="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Contenu du colis</span>
+                                <button id="delivery-edit-add" type="button" class="px-2 py-1 bg-white border border-cyan-300 text-cyan-700 hover:bg-cyan-50 rounded-lg text-[10px] font-bold">+ Ajouter un intrant</button>
+                            </div>
+                            <div id="delivery-edit-items" class="space-y-2"></div>
+                        </div>
+                    </div>
+                </div>
+                <aside class="lg:col-span-2 p-5 bg-sky-50/60 border-t lg:border-t-0 lg:border-l border-sky-200 lg:overflow-y-auto">
+                    <div class="text-xs font-bold text-sky-900 uppercase tracking-wider mb-3 flex items-center"><i class="ph ph-calendar-check mr-1.5 text-sky-600 text-base"></i> Planning du CSB</div>
+                    <p class="text-[11px] text-sky-800 mb-3">Le restant est actualisé selon le contenu saisi.</p>
+                    <div id="delivery-edit-needs" class="space-y-2"></div>
+                </aside>
+            </div>
+            <p id="delivery-edit-status" class="px-5 text-xs text-rose-700 shrink-0" role="status" aria-live="polite"></p>
+            <div class="p-4 flex justify-end gap-2 shrink-0 border-t border-slate-100 bg-white">
+                <button id="delivery-edit-cancel" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button type="submit" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold">Enregistrer les modifications</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Modal: Expédition Terrestre -->
+    <div id="modal-sortie" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-white rounded-2xl shadow-2xl z-50 hidden overflow-hidden no-print">
+        <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+            <h3 class="font-bold text-slate-900 text-sm flex items-center">
+                <i class="ph ph-truck text-amber-600 mr-2 text-lg"></i> Expédition par Voie Terrestre
+            </h3>
+            <button id="sortie-close" type="button" onclick="closeModal('modal-sortie')" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+        </div>
+        <form id="sortie-form-main" onsubmit="handleSortieSubmit(event)" class="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label for="sortie-id" class="block text-xs font-semibold text-slate-700 mb-1">N° Expédition / BL <span class="font-normal text-slate-400">(automatique)</span></label>
+                    <input type="text" id="sortie-id" readonly class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-600 font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Moyen de transport</label>
+                    <select id="sortie-transport" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white">
+                        <option value="Véhicule 4x4 Santé">Véhicule 4x4 Santé</option>
+                        <option value="Moto Tout-Terrain">Moto Tout-Terrain</option>
+                        <option value="Camion SALAMA">Camion SALAMA</option>
+                        <option value="Pirogue / Voie fluviale">Pirogue / Voie fluviale</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label for="sortie-plan" class="block text-xs font-semibold text-slate-700 mb-1">Planning actif</label>
+                <select id="sortie-plan" required onchange="updateSortieTargets()" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white"></select>
+                <p class="text-[11px] text-slate-500 mt-1">L'expédition est affectée à ce planning et reste en transit jusqu'à sa clôture.</p>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Destination (CSB)</label>
+                <select id="sortie-target" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white">
+                    <!-- Rempli en JS -->
+                </select>
+            </div>
+            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Contenu du convoi</span>
+                    <button id="sortie-add" type="button" onclick="addSortieRow()" class="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-bold">+ Ajouter un intrant</button>
+                </div>
+                <div id="sortie-items" class="space-y-3"></div>
+            </div>
+            <div id="postgres-sortie-needs" class="space-y-1 text-xs text-slate-600 postgres-hidden"></div>
+            <p id="postgres-sortie-form-status" class="text-xs text-rose-700 postgres-hidden" role="status"></p>
+            <div class="pt-2 flex justify-end space-x-2">
+                <button id="sortie-cancel" type="button" onclick="closeModal('modal-sortie')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button type="submit" class="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold">Enregistrer l'Expédition</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Modal: Nouveau Planning CSB (Multi-intrants) -->
+    <div id="modal-planning" role="dialog" aria-modal="true" aria-labelledby="planning-modal-title" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-2xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[90vh] flex flex-col overflow-hidden no-print">
+        <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
+            <h3 id="planning-modal-title" class="font-bold text-slate-900 text-sm flex items-center">
+                <i class="ph ph-calendar-plus text-sky-600 mr-2 text-lg"></i> Nouvelle Campagne de Planning
+            </h3>
+            <button id="planning-close" type="button" onclick="closeModal('modal-planning')" aria-label="Fermer la fenêtre du planning" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+        </div>
+        <form id="planning-form-main" onsubmit="handlePlanningSubmit(event)" class="flex flex-col flex-1 min-h-0">
+            <div class="p-5 space-y-4 overflow-y-auto min-h-0">
+            <input type="hidden" id="plan-edit-id">
+            
+            <!-- Choix global de l'intervalle de date -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-sky-50/50 border border-sky-100 rounded-xl">
+                <div>
+                    <label for="plan-start" class="block text-xs font-semibold text-slate-700 mb-1">Date de Début (Globale)</label>
+                    <input type="date" id="plan-start" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400">
+                </div>
+                <div>
+                    <label for="plan-end" class="block text-xs font-semibold text-slate-700 mb-1">Date de Fin (Globale)</label>
+                    <input type="date" id="plan-end" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400">
+                </div>
+            </div>
+
+            <!-- Liste dynamique des CSB et de leurs intrants -->
+            <div id="planning-observations-wrapper" hidden>
+                <label for="plan-observations" class="block text-xs font-semibold text-slate-700 mb-1">Remarques et observations sur la modification (facultatif)</label>
+                <textarea id="plan-observations" maxlength="2000" rows="3" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200"></textarea>
+            </div>
+            <div>
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <span class="text-xs font-bold text-slate-800">Centres Sanitaires (CSB) inclus dans cette campagne</span>
+                    <button id="planning-add" type="button" onclick="addPlanningCsbBlock()" class="px-2.5 py-1.5 bg-sky-600 text-white hover:bg-sky-700 rounded-lg text-xs font-bold flex items-center transition-colors">
+                        <i class="ph ph-plus mr-1"></i> Ajouter un CSB
+                    </button>
+                </div>
+
+                <div id="plan-csb-blocks" class="space-y-3">
+                    <!-- Les blocs CSB générés en JS se mettront ici -->
+                </div>
+            </div>
+
+            </div>
+            <div class="p-4 border-t border-slate-100 bg-white shrink-0 space-y-2">
+                <p id="postgres-plan-form-status" class="text-xs text-rose-700 postgres-hidden" role="status" aria-live="polite"></p>
+                <div class="flex flex-wrap justify-end gap-2">
+                <button id="planning-cancel" type="button" onclick="closeModal('modal-planning')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button type="submit" id="plan-submit-btn" class="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold">Enregistrer la Campagne</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Modal: Archivage Dossier -->
+    <div id="modal-archive" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-white rounded-2xl shadow-2xl z-50 hidden overflow-hidden no-print">
+        <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+            <h3 class="font-bold text-slate-900 text-sm flex items-center">
+                <i class="ph ph-folder text-purple-600 mr-2 text-lg"></i> Archiver les Plannings
+            </h3>
+            <button id="archive-close" type="button" onclick="closeModal('modal-archive')" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+        </div>
+        <form id="archive-form-main" onsubmit="handleArchiveSubmit(event)" class="p-5 space-y-4">
+            <p class="text-xs text-slate-600">
+                Saisissez le nom du dossier pour regrouper tous les plannings actuellement actifs.
+            </p>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Nom du dossier d'archive</label>
+                <input type="text" id="archive-folder-name" required placeholder="Ex: Besoins S1 - 2026" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400">
+            </div>
+            <p id="postgres-archive-form-status" class="text-xs text-rose-700 postgres-hidden" role="status"></p>
+            <div class="pt-2 flex justify-end space-x-2">
+                <button id="archive-cancel" type="button" onclick="closeModal('modal-archive')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold">Créer l'Archive</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Modal: CSB (Création / Édition) -->
+    <div id="modal-csb" role="dialog" aria-modal="true" aria-labelledby="csb-modal-title" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md max-h-[90vh] bg-white rounded-2xl shadow-2xl z-50 hidden flex flex-col overflow-hidden no-print">
+        <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
+            <h3 id="csb-modal-title" class="font-bold text-slate-900 text-sm flex items-center">
+                <i class="ph ph-first-aid text-rose-600 mr-2 text-lg"></i> Enregistrer un CSB
+            </h3>
+            <button id="csb-close" type="button" onclick="closeModal('modal-csb')" aria-label="Fermer la fenêtre du CSB" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+        </div>
+        <form id="form-csb" onsubmit="handleCSBSubmit(event)" class="flex flex-col flex-1 min-h-0">
+            <div class="p-5 space-y-4 overflow-y-auto min-h-0">
+            <input type="hidden" id="csb-edit-id">
+            <div>
+                <label for="csb-code" class="block text-xs font-semibold text-slate-700 mb-1">Code CSB</label>
+                <input type="text" id="csb-code" required placeholder="Ex: CSB-08" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 uppercase font-mono">
+            </div>
+            <div>
+                <label for="csb-name" class="block text-xs font-semibold text-slate-700 mb-1">Nom du Centre Sanitaire</label>
+                <input type="text" id="csb-name" required placeholder="Ex: CSB2 Andrambovato" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400">
+            </div>
+            <div>
+                <label for="csb-chief" class="block text-xs font-semibold text-slate-700 mb-1">Nom du chef CSB <span class="font-normal text-slate-400">(facultatif)</span></label>
+                <input type="text" id="csb-chief" maxlength="150" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400">
+            </div>
+            <div>
+                <label for="csb-phones" class="block text-xs font-semibold text-slate-700 mb-1">Numéros de téléphone <span class="font-normal text-slate-400">(facultatif, un numéro par ligne)</span></label>
+                <textarea id="csb-phones" rows="3" placeholder="034 00 000 00&#10;+261 34 00 000 00" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400"></textarea>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label for="csb-region" class="block text-xs font-semibold text-slate-700 mb-1">Région</label>
+                    <select id="csb-region" onchange="updateCSBDistricts()" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white">
+                        <!-- Rempli en JS -->
+                    </select>
+                </div>
+                <div>
+                    <label for="csb-district" class="block text-xs font-semibold text-slate-700 mb-1">District</label>
+                    <select id="csb-district" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white">
+                        <!-- Rempli en JS -->
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label for="csb-dist" class="block text-xs font-semibold text-slate-700 mb-1">Distance depuis le Drone Port (km)</label>
+                <input type="number" step="0.1" id="csb-dist" required placeholder="Ex: 35.5" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 font-mono">
+            </div>
+            </div>
+            <div class="p-4 border-t border-slate-100 bg-white shrink-0 space-y-2">
+                <p id="postgres-csb-form-status" class="text-xs text-rose-700 postgres-hidden" role="status" aria-live="polite"></p>
+                <div class="flex flex-wrap justify-end gap-2">
+                <button id="csb-cancel" type="button" onclick="closeModal('modal-csb')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button type="submit" id="csb-submit-btn" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold">Enregistrer</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- ========================================== -->
+    <div id="stock-history-print-modal" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[95vh] flex flex-col overflow-hidden">
+        <div class="p-4 border-b flex items-center justify-between no-print">
+            <h3 class="font-bold text-sm">Aperçu de l'historique des stocks</h3>
+            <div class="flex gap-2"><button id="stock-history-print-confirm" type="button" onclick="window.print()" class="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold">Imprimer</button>
+                <button id="stock-history-print-close" type="button" onclick="closeModal('stock-history-print-modal')" class="px-3 py-2 text-xs" aria-label="Fermer">Fermer</button></div>
+        </div>
+        <div class="report-preview-scroll"><article id="stock-history-print-content" class="dashboard-report"></article></div>
+    </div>
+
+    <div id="planning-print-modal" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[95vh] flex flex-col overflow-hidden">
+        <div class="p-4 border-b flex items-center justify-between no-print">
+            <h3 class="font-bold text-sm">Aperçu des besoins par CSB</h3>
+            <div class="flex gap-2">
+                <button id="planning-print-button" type="button" class="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold">Imprimer</button>
+                <button id="planning-print-close" type="button" class="px-3 py-2 text-xs" aria-label="Fermer">Fermer</button>
+            </div>
+        </div>
+        <div class="report-preview-scroll"><article id="planning-print-content" class="dashboard-report"></article></div>
+    </div>
+
+    <div id="inventory-print-modal" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[95vh] flex flex-col overflow-hidden">
+        <div class="p-4 border-b flex items-center justify-between no-print">
+            <h3 class="font-bold text-sm">Aperçu du rapport d’inventaire</h3>
+            <div class="flex gap-2">
+                <button id="inventory-print-button" type="button" class="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold">Imprimer</button>
+                <button id="inventory-print-close" type="button" class="px-3 py-2 text-xs" aria-label="Fermer">Fermer</button>
+            </div>
+        </div>
+        <div class="report-preview-scroll"><article id="inventory-print-report" class="dashboard-report"></article></div>
+    </div>
+
+    <!-- APERÇU DU RAPPORT DE SUIVI -->
+    <div id="report-preview-modal" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[95vh] flex flex-col overflow-hidden">
+        <div class="p-4 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 shrink-0 no-print">
+            <div class="flex flex-wrap items-center gap-3">
+                <h3 class="font-bold text-slate-900 text-sm">Rapport de suivi</h3>
+                <label id="report-plan-label" class="text-xs font-semibold text-slate-600">Planning actif
+                    <select id="report-plan-select" onchange="renderDashboardReport()" class="ml-1 p-2 rounded-lg border border-slate-200 bg-white"></select>
+                </label>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="dashboard-report-print" type="button" onclick="window.print()" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl">Imprimer le rapport</button>
+                <button id="dashboard-report-close" type="button" onclick="closeModal('report-preview-modal')" aria-label="Fermer le rapport" class="p-2 text-slate-500 hover:text-slate-800"><i class="ph ph-x text-lg"></i></button>
+            </div>
+        </div>
+        <div class="report-preview-scroll">
+            <article id="dashboard-report" class="dashboard-report"></article>
+        </div>
+    </div>
+
+    <!-- MODALE APERÇU AVANT IMPRESSION (BON DE LIVRAISON) -->
+    <!-- ========================================== -->
+    <div id="print-preview-modal" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-4xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[95vh] flex flex-col overflow-hidden">
+        <div class="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0 no-print">
+            <div class="flex items-center space-x-2">
+                <i class="ph ph-printer text-amber-500 text-lg"></i>
+                <h3 class="font-bold text-slate-900 text-sm">Aperçu du Bon de Livraison (BL) - Format Officiel A4</h3>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button id="postgres-print-document" onclick="window.print()" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center transition-colors">
+                    <i class="ph ph-printer mr-1.5"></i> Imprimer le Document
+                </button>
+                <button id="postgres-print-close" onclick="closeModal('print-preview-modal')" class="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
+                    <i class="ph ph-x text-lg"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-8 bg-slate-200/60 flex justify-center">
+            <!-- FEUILLE A4 BLANCHE -->
+            <div id="print-area-wrapper" class="bg-white w-full max-w-[210mm] min-h-[297mm] p-8 shadow-md rounded-lg text-slate-900 flex flex-col justify-between">
+                <div>
+                    <!-- EN-TÊTE OFFICIEL -->
+                    <div class="delivery-document-header">
+                        <img src="logo-msanp.png" alt="Logo du Ministère de la Santé publique" class="delivery-document-logo delivery-ministry-logo">
+                        <div class="delivery-document-reference">
+                            <span id="print-doc-title" class="delivery-document-title">
+                                BON DE LIVRAISON
+                            </span>
+                            <div id="print-bl-number" class="text-base font-black font-mono text-slate-900">BL-0000</div>
+                            <div id="print-bl-date" class="text-xs text-slate-500 font-medium">Date : --/--/----</div>
+                        </div>
+                        <img src="logo-unfpa.svg" alt="Logo UNFPA" class="delivery-document-logo delivery-unfpa-logo">
+                    </div>
+
+                    <!-- BLOC INFOS EXPÉDITEUR & DESTINATAIRE -->
+                    <div class="grid grid-cols-2 gap-6 mb-6">
+                        <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 text-xs">
+                            <div class="font-bold text-slate-700 uppercase tracking-wider text-[10px] mb-1">Origine / Expéditeur</div>
+                            <div id="print-origin" class="font-black text-slate-900 text-sm">Drone Port Ranomafana</div>
+                            <div id="print-region" class="text-slate-600">Région : Vatovavy</div>
+                            <div id="print-operator" class="text-slate-500 text-[11px] mt-1">Opérateur : Équipe Logistique Q.box</div>
+                            <div id="print-planning-period" class="text-slate-600"></div>
+                        </div>
+
+                        <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 text-xs">
+                            <div class="font-bold text-slate-700 uppercase tracking-wider text-[10px] mb-1">Formation Sanitaire Destinataire</div>
+                            <div id="print-dest" class="font-black text-slate-900 text-sm">CSB2 Tolongoina</div>
+                            <div id="print-dest-area" class="text-slate-600"></div>
+                            <div id="print-dest-region" class="text-slate-600">District Sanitaire : Manakara</div>
+                            <div id="print-transport-mode" class="text-emerald-700 font-bold text-[11px] mt-1">Acheminement : Largage Aérien Drone</div>
+                        </div>
+                    </div>
+
+                    <!-- TABLEAU DES PRODUITS LIVRÉS -->
+                    <div class="mb-6">
+                        <table class="w-full text-left border-collapse border border-slate-300 text-xs">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider border-b border-slate-300">
+                                    <th id="print-th-article" class="py-2.5 px-3 border-r border-slate-300 font-bold">Articles</th>
+                                    <th class="py-2.5 px-3 border-r border-slate-300 font-bold">Désignation de l'Intrant Médical</th>
+                                    <th id="print-th-col3" class="py-2.5 px-3 border-r border-slate-300 font-bold">N° Lot (FEFO)</th>
+                                    <th id="print-th-expiry" class="py-2.5 px-3 border-r border-slate-300 font-bold">Date de péremption</th>
+                                    <th id="print-th-col4" class="py-2.5 px-3 text-right font-bold">Quantité Livrée</th>
+                                </tr>
+                            </thead>
+                            <tbody id="print-items-body" class="divide-y divide-slate-200">
+                                <!-- Rempli en JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <p id="print-article-count" class="text-xs font-semibold mb-6"></p>
+
+                    <!-- CERTIFICATION / MENTIONS LÉGALES -->
+                    <div id="print-footer-note" hidden class="border border-slate-200 rounded-xl p-3 bg-slate-50 text-[10px] text-slate-600 mb-8 leading-relaxed">
+                        <span id="print-footer-title" class="font-bold text-slate-900"></span>
+                        <span id="print-footer-desc"></span>
+                    </div>
+                </div>
+
+                <!-- SIGNATURES EN PIED DE PAGE -->
+                <div class="delivery-signatures grid grid-cols-2 gap-8 pt-4 border-t-2 border-slate-300 text-xs">
+                    <div>
+                        <div class="font-bold text-slate-800 mb-1">Pour l'Expéditeur (Drone Port) :</div>
+                        <div class="text-[11px] text-slate-500 mb-8">Visa de l'opérateur logistique / pilote</div>
+                        <div class="border-b border-dashed border-slate-400 w-44"></div>
+                    </div>
+                    <div>
+                        <div class="font-bold text-slate-800 mb-1">Pour la Formation Sanitaire (CSB) :</div>
+                        <div class="text-[11px] text-slate-500 mb-8">Date, Nom, Visa et Cachet du responsable</div>
+                        <div class="border-b border-dashed border-slate-400 w-44"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <dialog id="password-dialog" aria-labelledby="password-title" class="rounded-2xl shadow-2xl p-6 w-[calc(100%-2rem)] max-w-sm">
+        <form id="password-form" class="space-y-4">
+            <h2 id="password-title" class="text-base font-bold text-slate-900">Changer mon mot de passe</h2>
+            <label class="block text-xs font-semibold">Mot de passe actuel<input id="password-current" type="password" required autocomplete="current-password" class="block mt-1 w-full rounded-lg border border-slate-300 p-2"></label>
+            <label class="block text-xs font-semibold">Nouveau mot de passe (8 caractères minimum)<input id="password-new" type="password" required minlength="8" autocomplete="new-password" class="block mt-1 w-full rounded-lg border border-slate-300 p-2"></label>
+            <label class="block text-xs font-semibold">Confirmer le nouveau mot de passe<input id="password-confirm" type="password" required minlength="8" autocomplete="new-password" class="block mt-1 w-full rounded-lg border border-slate-300 p-2"></label>
+            <p id="password-status" role="status" aria-live="polite" class="text-xs text-rose-700"></p>
+            <div class="flex justify-end gap-2"><button id="password-cancel" type="button" class="px-3 py-2 rounded-lg bg-slate-100 text-xs">Annuler</button><button id="password-submit" type="submit" class="px-3 py-2 rounded-lg bg-amber-400 text-xs font-bold">Modifier</button></div>
+        </form>
+    </dialog>
+    <!-- BACKDROP MODALES -->
+    <div id="modal-backdrop" onclick="closeAllModals()" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 hidden no-print"></div>
+
+    <!-- TOAST NOTIFICATIONS -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none no-print"></div>
+
+    <script src="stock-history-csv.js"></script>
+    <script src="auth-policy.js"></script>
+    <script src="dashboard-report-postgres.js"></script>
+    <script src="inventory-report-postgres.js"></script>
+    <script src="stock-history-chart-style.js"></script>
+    <script src="app-entry.js"></script>
+</body>
+</html>
