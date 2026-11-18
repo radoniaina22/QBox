@@ -17,7 +17,7 @@
         try { localStorage.setItem(STORAGE_KEY, value); } catch (error) { /* stockage indisponible : choix limité à la session */ }
     };
     const isDark = () => root.classList.contains('qb-dark');
-    const FRAME_CSS = 'admin-dark.css';
+    const FRAME_CSS = 'admin-dark.css?v=20261118';
 
     // Cadres intégrés du même site (ex. admin-local.html?embedded=1) :
     // on y ajoute la feuille sombre et la même classe, sans toucher à leur contenu.

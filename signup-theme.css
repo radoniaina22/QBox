@@ -1,0 +1,102 @@
+/* ==========================================================================
+   Q.box — Page « Demander un compte » (admin-local.html), design « Horizon »
+   --------------------------------------------------------------------------
+   Purement visuel, chargé après admin-local.css. Ne s'applique qu'à la page
+   d'inscription (body.signup-page) affichée seule, pas au cadre intégré.
+   Reprend le style de l'écran de connexion de index.html.
+   ========================================================================== */
+
+@media screen {
+    html:not(.embedded) body.signup-page {
+        background:
+            radial-gradient(50% 60% at 0% 0%, rgba(29, 88, 201, .16), transparent 70%),
+            radial-gradient(45% 55% at 100% 100%, rgba(14, 147, 132, .14), transparent 70%),
+            #eef2f8;
+        color: #33425a;
+        font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+    }
+    html:not(.embedded) body.signup-page main { max-width: 1080px; }
+    html:not(.embedded) body.signup-page #message:not(:empty) { border-color: #c3d6f7; background: #e8f0fd; color: #1e3a6b; }
+
+    body.signup-page .signup-shell {
+        border: 1px solid #dfe6f0;
+        border-radius: 24px;
+        background: #ffffff;
+        box-shadow: 0 30px 60px -18px rgba(15, 35, 70, .3), 0 6px 16px -6px rgba(15, 35, 70, .1);
+    }
+
+    /* Panneau de marque bleu */
+    body.signup-page .signup-intro {
+        background: linear-gradient(118deg, #15479a 0%, #1d58c9 48%, #0f7f99 100%);
+    }
+    body.signup-page .signup-intro::before {
+        width: 22rem; height: 22rem; top: -8rem; right: -9rem;
+        background: none;
+        filter: none;
+        border: 1px solid rgba(255, 255, 255, .16);
+        box-shadow: 0 0 0 3rem rgba(255, 255, 255, .04), 0 0 0 6rem rgba(255, 255, 255, .03);
+        animation: none;
+    }
+    body.signup-page .signup-intro::after {
+        width: 16rem; height: 16rem; left: -6rem; bottom: -7rem;
+        border: 0;
+        box-shadow: none;
+        background: radial-gradient(circle, rgba(245, 158, 11, .45), transparent 70%);
+        filter: blur(10px);
+    }
+    body.signup-page .signup-brand { font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; }
+    body.signup-page .signup-brand small { color: rgba(255, 255, 255, .72); }
+    body.signup-page .signup-icon { background: #f59e0b; color: #0e2d5c; box-shadow: 0 8px 20px -8px rgba(245, 158, 11, .8); }
+    body.signup-page .signup-eyebrow { color: #fde68a; }
+    body.signup-page .signup-eyebrow > span { background: #fde68a; box-shadow: 0 0 0 5px rgba(253, 230, 138, .18); }
+    body.signup-page .signup-intro h2 { color: #fff; font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; }
+    body.signup-page .signup-intro-content > p { color: rgba(255, 255, 255, .82); }
+    body.signup-page .signup-steps > div > span {
+        border-color: rgba(255, 255, 255, .22);
+        background: rgba(255, 255, 255, .12);
+        color: #fde68a;
+    }
+    body.signup-page .signup-steps strong { color: #fff; }
+    body.signup-page .signup-steps small { color: rgba(255, 255, 255, .75); }
+    body.signup-page .signup-intro-footer { color: rgba(255, 255, 255, .7); }
+    body.signup-page .signup-intro-footer span { color: #fde68a; }
+
+    /* Formulaire clair */
+    body.signup-page .signup-card { background: #ffffff; }
+    body.signup-page .signup-form-eyebrow { color: #1a4fb5; }
+    body.signup-page .signup-heading h1 { color: #0f1b2d; font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; }
+    body.signup-page .signup-heading h1 span { color: #f59e0b; }
+    body.signup-page .signup-heading p { color: #5f6f88; }
+    body.signup-page #signup label { color: #33425a; font-weight: 600; }
+    body.signup-page #signup input,
+    body.signup-page #signup select {
+        border: 1px solid #cdd7e5;
+        background: #ffffff;
+        color: #0f1b2d;
+        box-shadow: 0 1px 2px rgba(15, 35, 70, .06);
+    }
+    body.signup-page #signup input::placeholder { color: #98a5b9; }
+    body.signup-page #signup :is(input, select):hover { border-color: #b3c0d3; }
+    body.signup-page #signup :is(input, select):focus {
+        border-color: #1d58c9;
+        background: #ffffff;
+        box-shadow: 0 0 0 3px rgba(29, 88, 201, .2);
+    }
+    body.signup-page #signup :is(input, select, button):focus-visible,
+    body.signup-page .signup-return a:focus-visible { outline-color: #1d58c9; }
+    body.signup-page .signup-hint { color: #5f6f88; }
+    body.signup-page #signup button {
+        background: #1d58c9;
+        color: #ffffff;
+        font-weight: 700;
+        box-shadow: 0 10px 22px -10px rgba(29, 88, 201, .7);
+    }
+    body.signup-page #signup button:hover { transform: none; background: #1749ab; box-shadow: 0 10px 22px -10px rgba(29, 88, 201, .8); }
+    body.signup-page .signup-notice { color: #5f6f88; }
+    body.signup-page .signup-notice span { color: #f59e0b; }
+    body.signup-page #signup-status:not(:empty) { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
+    body.signup-page #signup-status.is-error:not(:empty) { border-color: #fecdd3; background: #fff1f2; color: #be123c; }
+    body.signup-page .signup-return { border-top-color: #dfe6f0; color: #5f6f88; }
+    body.signup-page .signup-return a { color: #1a4fb5; }
+}

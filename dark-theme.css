@@ -1,76 +1,103 @@
 /* ==========================================================================
-   Q.box — Mode sombre
+   Q.box — Design « Horizon » : mode sombre
    --------------------------------------------------------------------------
    Activé par la classe "qb-dark" sur <html> (voir theme-toggle.js).
    Purement visuel, uniquement à l'écran : les impressions et les aperçus
    de documents (BL, rapports) gardent leur rendu papier clair.
-   Fichier en partie généré à partir des couleurs de styles.css.
+   Redéfinit les jetons (--qb-*) de modern-theme.css, puis convertit les
+   utilitaires Tailwind clairs.
    ========================================================================== */
 
 @media screen {
 
-    /* ---------- Jetons sombres ---------- */
+    /* ---------- Jetons sombres (bleu nuit) ---------- */
     html.qb-dark {
         color-scheme: dark;
-        --qb-canvas: #0a0f1d;
-        --qb-surface: #111a2c;
+        --qb-canvas: #0a1120;
+        --qb-surface: #111a2b;
         --qb-surface-2: #152036;
         --qb-surface-3: #1b2740;
         --qb-surface-4: #24314d;
-        --qb-header-bg: rgba(10, 15, 29, .72);
-        --qb-line: rgba(148, 163, 184, .14);
-        --qb-line-soft: rgba(148, 163, 184, .09);
-        --qb-line-strong: rgba(148, 163, 184, .24);
-        --qb-line-hover: rgba(148, 163, 184, .38);
-        --qb-row-hover: rgba(148, 163, 184, .06);
-        --qb-text: #e8edf6;
-        --qb-text-2: #c3cede;
-        --qb-muted: #94a3b8;
-        --qb-faint: #6f7f96;
-        --qb-placeholder: #6f7f96;
-        --qb-ring: 0 0 0 4px rgba(251, 191, 36, .2);
-        --qb-shadow-xs: 0 1px 2px rgba(0, 0, 0, .3);
-        --qb-shadow-sm: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 18px -8px rgba(0, 0, 0, .5);
-        --qb-shadow-md: 0 1px 3px rgba(0, 0, 0, .35), 0 16px 36px -14px rgba(0, 0, 0, .6);
-        --qb-shadow-lg: 0 30px 70px -20px rgba(0, 0, 0, .75), 0 10px 24px -10px rgba(0, 0, 0, .5);
+        --qb-header-bg: #0f182a;
+
+        --qb-line: rgba(148, 170, 205, .14);
+        --qb-line-soft: rgba(148, 170, 205, .09);
+        --qb-line-strong: rgba(148, 170, 205, .24);
+        --qb-line-hover: rgba(148, 170, 205, .38);
+        --qb-row-hover: rgba(96, 145, 230, .07);
+
+        --qb-text: #e8eef8;
+        --qb-text-2: #c3cfe0;
+        --qb-muted: #8fa0b9;
+        --qb-faint: #8193ad;
+        --qb-placeholder: #6b7d97;
+
+        --qb-primary: #2f6fe0;
+        --qb-primary-hover: #3f7ef0;
+        --qb-on-primary: #ffffff;
+        --qb-primary-ink: #8fb6fb;
+        --qb-primary-soft: rgba(79, 142, 247, .14);
+        --qb-primary-line: rgba(79, 142, 247, .34);
+
+        --qb-accent: #f5a524;
+        --qb-accent-hover: #f7b444;
+        --qb-accent-ink: #fbbf24;
+        --qb-accent-soft: rgba(245, 158, 11, .14);
+        --qb-success: #34d399;
+        --qb-success-soft: rgba(52, 211, 153, .14);
+        --qb-danger: #fb7185;
+        --qb-danger-soft: rgba(251, 113, 133, .14);
+
+        --qb-ring: 0 0 0 3px rgba(79, 142, 247, .3);
+
+        --qb-side-bg: linear-gradient(180deg, #0f2a55 0%, #0b1f40 55%, #08172f 100%);
+        --qb-hero: linear-gradient(118deg, #123a7a 0%, #1a4fb0 50%, #0b647a 100%);
+
+        --qb-shadow-xs: 0 1px 2px rgba(0, 0, 0, .35);
+        --qb-shadow-sm: 0 1px 2px rgba(0, 0, 0, .35), 0 6px 18px -8px rgba(0, 0, 0, .5);
+        --qb-shadow-md: 0 2px 4px rgba(0, 0, 0, .4), 0 16px 36px -14px rgba(0, 0, 0, .6);
+        --qb-shadow-lg: 0 30px 70px -20px rgba(0, 0, 0, .75), 0 0 0 1px rgba(148, 170, 205, .08);
+
         /* Variables utilisées par styles.css */
-        --qb-bg-app: #0a0f1d;
-        --qb-bg-surface: #111a2c;
+        --qb-bg-app: #0a1120;
+        --qb-bg-surface: #111a2b;
         --qb-bg-subtle: #152036;
-        --qb-border: rgba(148, 163, 184, .14);
-        --qb-border-strong: rgba(148, 163, 184, .24);
-        --qb-text-primary: #e8edf6;
-        --qb-text-secondary: #c3cede;
-        --qb-text-muted: #94a3b8;
+        --qb-border: rgba(148, 170, 205, .14);
+        --qb-border-strong: rgba(148, 170, 205, .24);
+        --qb-text-primary: #e8eef8;
+        --qb-text-secondary: #c3cfe0;
+        --qb-text-muted: #8fa0b9;
         --qb-info-soft: rgba(56, 189, 248, .12);
-        --qb-accent-soft: rgba(251, 191, 36, .14);
     }
     /* Les aperçus de documents imprimables restent "papier" (clairs) */
     html.qb-dark :is(#report-preview-modal, #print-preview-modal, #stock-history-print-modal,
                      #planning-print-modal, #inventory-print-modal) {
         color-scheme: light;
         --qb-surface: #ffffff;
-        --qb-surface-2: #f8fafc;
-        --qb-surface-3: #eef2f7;
-        --qb-surface-4: #e2e8f0;
-        --qb-line: #e6eaf2;
-        --qb-line-soft: #eef1f6;
-        --qb-line-strong: #d5dbe7;
-        --qb-line-hover: #c3cad8;
-        --qb-row-hover: #fafbfe;
-        --qb-text: #0f172a;
-        --qb-text-2: #334155;
-        --qb-muted: #64748b;
-        --qb-faint: #94a3b8;
-        --qb-placeholder: #9aa6b8;
-        --qb-bg-app: #f4f7fb;
+        --qb-surface-2: #f6f9fd;
+        --qb-surface-3: #edf2f9;
+        --qb-surface-4: #e2e9f3;
+        --qb-line: #dfe6f0;
+        --qb-line-soft: #ebf0f6;
+        --qb-line-strong: #cdd7e5;
+        --qb-line-hover: #b3c0d3;
+        --qb-row-hover: #f4f8fe;
+        --qb-text: #0f1b2d;
+        --qb-text-2: #33425a;
+        --qb-muted: #5f6f88;
+        --qb-faint: #93a1b6;
+        --qb-placeholder: #98a5b9;
+        --qb-primary-soft: #e8f0fd;
+        --qb-primary-line: #c3d6f7;
+        --qb-primary-ink: #1a4fb5;
+        --qb-bg-app: #eef2f8;
         --qb-bg-surface: #ffffff;
-        --qb-bg-subtle: #f8fafc;
-        --qb-border: #e2e8f0;
-        --qb-border-strong: #cbd5e1;
-        --qb-text-primary: #0f172a;
-        --qb-text-secondary: #475569;
-        --qb-text-muted: #64748b;
+        --qb-bg-subtle: #f6f9fd;
+        --qb-border: #dfe6f0;
+        --qb-border-strong: #cdd7e5;
+        --qb-text-primary: #0f1b2d;
+        --qb-text-secondary: #33425a;
+        --qb-text-muted: #5f6f88;
         --qb-info-soft: #f0f9ff;
     }
 
@@ -83,63 +110,35 @@
 
     /* ---------- Structure ---------- */
     html.qb-dark body { background-color: var(--qb-canvas); color: var(--qb-text-2); }
-    html.qb-dark #main-app > main {
+    html.qb-dark #auth-screen {
         background:
-            radial-gradient(900px 480px at 100% -10%, rgba(99, 102, 241, .14), transparent 60%),
-            radial-gradient(700px 420px at -10% 0%, rgba(14, 165, 233, .08), transparent 60%),
-            radial-gradient(600px 400px at 60% 120%, rgba(251, 191, 36, .05), transparent 60%),
+            radial-gradient(50% 60% at 0% 0%, rgba(47, 111, 224, .22), transparent 70%),
+            radial-gradient(45% 55% at 100% 100%, rgba(14, 147, 132, .16), transparent 70%),
             var(--qb-canvas);
     }
-    html.qb-dark #main-app > aside {
-        background:
-            radial-gradient(420px 260px at 0% 0%, rgba(251, 191, 36, .06), transparent 70%),
-            linear-gradient(180deg, #0c1322 0%, #070b15 100%);
-    }
-    html.qb-dark #main-app > main > header { background: var(--qb-header-bg) !important; border-bottom-color: var(--qb-line) !important; }
-    html.qb-dark #active-port-badge {
-        background: rgba(251, 191, 36, .12) !important;
-        border-color: rgba(251, 191, 36, .3) !important;
-        color: #fcd34d !important;
-    }
+    html.qb-dark #auth-screen::before { background-image: radial-gradient(rgba(143, 182, 251, .12) 1px, transparent 1.3px); }
 
-    /* ---------- Graphiques Chart.js : inversion des couleurs du canevas ---------- */
-    html.qb-dark #main-app canvas { filter: invert(1) hue-rotate(180deg) saturate(1.15); }
+    /* ---------- Graphiques Chart.js ----------
+       Plus d'inversion de couleurs : chart-theme.js applique directement la
+       palette sombre au dessin des graphiques. */
 
     /* ---------- Formulaires & tableaux ---------- */
     html.qb-dark :is(#main-app, .modal-box) :is(input, select, textarea) { color: var(--qb-text); }
     html.qb-dark :is(#main-app, .modal-box) :is(input, select, textarea):disabled { background-color: var(--qb-surface-3); color: var(--qb-faint); }
     html.qb-dark :is(#main-app, .modal-box) select option { background: var(--qb-surface); color: var(--qb-text); }
-    html.qb-dark #main-app .tab-content table thead :is(tr, th) { background-color: var(--qb-surface-2); }
+    html.qb-dark #main-app .tab-content table thead :is(tr, th),
+    html.qb-dark .stock-history-table th,
+    html.qb-dark .postgres-read-table th { background-color: var(--qb-surface-2); color: var(--qb-muted); }
     html.qb-dark :is(#main-app, .modal-box) :is(code, kbd) { color: var(--qb-text); }
 
-    /* ---------- Boutons ---------- */
-    html.qb-dark :is(#main-app, .modal-box) button.bg-slate-900:not(#view-dashboard button) {
-        background: linear-gradient(180deg, #334155 0%, #1e293b 100%);
-        box-shadow: 0 1px 0 rgba(255, 255, 255, .08) inset, 0 0 0 1px rgba(148, 163, 184, .18);
-    }
-    html.qb-dark .stock-history-button-primary {
-        background: linear-gradient(180deg, #334155 0%, #1e293b 100%);
-        border-color: rgba(148, 163, 184, .25);
-    }
-    html.qb-dark .postgres-notice button,
-    html.qb-dark #postgres-read-refresh,
-    html.qb-dark #postgres-read-manage { background: #0369a1; }
-
     /* ---------- Tableau de bord ---------- */
-    html.qb-dark .dashboard-kpi { box-shadow: 0 1px 0 rgba(255, 255, 255, .2) inset, 0 16px 34px -18px var(--kpi-glow); }
-    html.qb-dark #view-dashboard > #postgres-dashboard-notice + div {
-        box-shadow: 0 0 0 1px rgba(165, 180, 252, .14), 0 22px 50px -24px rgba(67, 56, 202, .9);
-    }
-    html.qb-dark #view-dashboard .stock-chart-badge { background: rgba(251, 191, 36, .16); color: #fcd34d; }
+    html.qb-dark #view-dashboard > div.bg-white:last-child > div:first-child { background: linear-gradient(180deg, rgba(251, 113, 133, .08), var(--qb-surface)); }
+    html.qb-dark #dashboard-live-label { background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
+    html.qb-dark #view-dashboard > #postgres-dashboard-notice + div button.bg-slate-900 { background: #fff; color: #1a4fb5; }
 
     /* ---------- Modales & notifications ---------- */
-    html.qb-dark #modal-backdrop { background: rgba(0, 0, 0, .62); }
-    html.qb-dark .modal-box.bg-white { border-color: rgba(148, 163, 184, .14); }
-    html.qb-dark .modal-box > div:first-child > button:last-child:hover { color: var(--qb-text); }
-
-    /* ---------- Bouton de bascule ---------- */
-    html.qb-dark .qb-theme-toggle { color: #fcd34d; }
-    html.qb-dark .qb-theme-toggle:hover { color: #fde68a; }
+    html.qb-dark #modal-backdrop { background: rgba(0, 0, 0, .6); }
+    html.qb-dark .postgres-notice { color: var(--qb-text-2); }
 
     /* ---------- Utilitaires Tailwind ---------- */
     html.qb-dark .bg-white, html.qb-dark .hover\:bg-white:hover { background-color: var(--qb-surface); }
@@ -365,4 +364,10 @@
     html.qb-dark .postgres-item { background: var(--qb-surface); }
     html.qb-dark .postgres-read-table { background: var(--qb-surface); }
     html.qb-dark #postgres-frame-container iframe { background: var(--qb-surface); }
+
+    /* ---------- Horizon : harmonisation finale ---------- */
+    html.qb-dark .stock-history-title-icon,
+    html.qb-dark #view-dashboard .stock-chart-icon { background: var(--qb-primary-soft); color: var(--qb-primary-ink); }
+    html.qb-dark #view-dashboard .stock-chart-badge { background: var(--qb-primary-soft); border-color: var(--qb-primary-line); color: var(--qb-primary-ink); }
+    html.qb-dark .postgres-notice { background: var(--qb-primary-soft); border: 1px solid var(--qb-primary-line); border-left: 4px solid var(--qb-primary); color: var(--qb-text-2); }
 }

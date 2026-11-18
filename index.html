@@ -1,123 +1,141 @@
 <!DOCTYPE html>
 <html lang="fr" class="h-full bg-slate-900">
 <head>
-    <link rel="icon" type="image/svg+xml" href="logo-unfpa.svg">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Q.box - Plateforme Logistique Santé & Drones</title>
 
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="tailwind-config.js"></script>
+    <script src="tailwind-config.js?v=20261118"></script>
 
     <!-- Phosphor Icons -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
     <!-- Chart.js pour les visualisations avec secours CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="chart-fallback.js"></script>
+    <script src="chart-fallback.js?v=20261118"></script>
+    <script src="chart-theme.js?v=20261118"></script>
 
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-    <link rel="stylesheet" href="styles.css">
-    <script src="hosted-mode.js"></script>
-    <script src="app-bootstrap.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=20261118">
+    <link rel="stylesheet" href="modern-theme.css?v=20261118">
+    <link rel="stylesheet" href="dark-theme.css?v=20261118">
+    <script src="theme-toggle.js?v=20261118"></script>
+    <script src="hosted-mode.js?v=20261118"></script>
+    <script src="app-bootstrap.js?v=20261118"></script>
 </head>
 <body class="h-full flex flex-col text-slate-800 bg-slate-100 overflow-hidden">
 
     <!-- ========================================== -->
     <!-- ÉCRAN D'AUTHENTIFICATION (LOGIN) -->
     <!-- ========================================== -->
-    <div id="auth-screen" class="fixed inset-0 z-50 bg-slate-950 flex items-center justify-center p-4">
-        <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
-            <!-- Logos institutionnels Header Auth -->
-            <div class="flex items-center justify-between pb-6 border-b border-slate-800 mb-6">
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 rounded-xl bg-amber-400 flex items-center justify-center font-black text-slate-950 text-xl tracking-tighter">
-                        Q.
-                    </div>
+    <div id="auth-screen" class="qb-auth fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div class="qb-auth-card w-full max-w-4xl grid md:grid-cols-[1fr_1.05fr] relative overflow-hidden">
+
+            <!-- Panneau de marque -->
+            <aside class="qb-auth-brand hidden md:flex flex-col justify-between" aria-hidden="true">
+                <div class="qb-auth-brand-top">
+                    <div class="qb-auth-logo">Q.</div>
                     <div>
-                        <div class="font-extrabold text-white text-base tracking-tight">Q.box Logistique</div>
-                        <div class="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Drone & Santé Publique</div>
+                        <div class="qb-auth-brand-name">Q.box Logistique</div>
+                        <div class="qb-auth-brand-sub">Drone &amp; Santé publique</div>
                     </div>
                 </div>
-                <div class="text-right">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Madagascar</span>
-                    <span id="auth-network-status" class="text-[10px] text-emerald-400 font-semibold flex items-center justify-end">
-                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block mr-1"></span> Réseau Opérationnel
-                    </span>
+                <div class="qb-auth-brand-body">
+                    <h1>Les intrants vitaux, au bon endroit, au bon moment.</h1>
+                    <p>Plateforme de gestion des stocks, des livraisons par drone et du réseau des centres de santé de base à Madagascar.</p>
+                    <ul class="qb-auth-features">
+                        <li><span><i class="ph ph-package"></i></span>Stocks et lots tracés selon la règle FEFO</li>
+                        <li><span><i class="ph ph-navigation-arrow"></i></span>Missions drone et expéditions terrestres</li>
+                        <li><span><i class="ph ph-first-aid"></i></span>Suivi des besoins de chaque CSB</li>
+                    </ul>
                 </div>
-            </div>
-
-            <div class="mb-6">
-                <h2 class="text-xl font-bold text-white tracking-tight">Connexion sécurisée</h2>
-                <p class="text-xs text-slate-400 mt-1">Accédez à la plateforme de gestion des approvisionnements vitaux</p>
-            </div>
-
-            <!-- Profils démo rapides -->
-            <div id="demo-profiles" class="mb-6 p-3 bg-slate-800/60 rounded-2xl border border-slate-700/60">
-                <div class="text-[11px] font-semibold text-slate-300 mb-2 flex items-center">
-                    <i class="ph ph-lightning text-amber-400 mr-1.5"></i> Profils de démonstration rapides :
+                <div class="qb-auth-partners">
+                    <span class="qb-auth-partners-label">En partenariat avec UNFPA Madagascar et le MSANP</span>
                 </div>
-                <div class="grid grid-cols-3 gap-2">
-                    <button type="button" onclick="quickLogin('op')" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-[11px] font-medium text-slate-200 transition-colors text-center">
-                        Opérateur
-                    </button>
-                    <button type="button" onclick="quickLogin('pharma')" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-[11px] font-medium text-slate-200 transition-colors text-center">
-                        Pharmacien
-                    </button>
-                    <button type="button" onclick="quickLogin('unfpa')" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-[11px] font-medium text-slate-200 transition-colors text-center">
-                        UNFPA
-                    </button>
-                </div>
-            </div>
+            </aside>
 
-            <!-- Formulaire Login -->
-            <form id="main-login" onsubmit="handleLogin(event)" class="space-y-4">
-                <div>
-                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Identifiant / Email</label>
-                    <div class="relative">
-                        <i class="ph ph-user absolute left-3.5 top-3 text-slate-400 text-sm"></i>
-                        <input type="text" id="login-username" required autocomplete="username" placeholder="Adresse e-mail" class="w-full text-xs pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors">
+            <!-- Formulaire -->
+            <div class="qb-auth-form-panel">
+                <div class="qb-auth-form-head">
+                    <div class="flex items-center gap-3 md:hidden">
+                        <div class="qb-auth-logo qb-auth-logo-sm">Q.</div>
+                        <div class="qb-auth-brand-name qb-auth-brand-name-dark">Q.box Logistique</div>
+                    </div>
+                    <div class="qb-auth-status ml-auto">
+                        <span class="qb-auth-country">Madagascar</span>
+                        <span id="auth-network-status" class="qb-auth-network">Réseau opérationnel</span>
                     </div>
                 </div>
 
-                <div>
-                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Mot de passe</label>
-                    <div class="relative">
-                        <i class="ph ph-lock-key absolute left-3.5 top-3 text-slate-400 text-sm"></i>
-                        <input type="password" id="login-password" required autocomplete="current-password" placeholder="Mot de passe" class="w-full text-xs pl-10 pr-10 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors">
-                        <button type="button" onclick="togglePasswordVisibility()" class="absolute right-3.5 top-2.5 text-slate-400 hover:text-slate-200">
-                            <i id="pwd-eye-icon" class="ph ph-eye text-base"></i>
-                        </button>
+                <div class="qb-auth-title">
+                    <h2>Connexion</h2>
+                    <p>Accédez à la plateforme de gestion des approvisionnements vitaux.</p>
+                </div>
+
+                <!-- Profils démo rapides -->
+                <div id="demo-profiles" class="qb-auth-demo">
+                    <div class="qb-auth-demo-label">
+                        <i class="ph ph-lightning"></i> Profils de démonstration
+                    </div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button type="button" onclick="quickLogin('op')">Opérateur</button>
+                        <button type="button" onclick="quickLogin('pharma')">Pharmacien</button>
+                        <button type="button" onclick="quickLogin('unfpa')">UNFPA</button>
                     </div>
                 </div>
 
-                <div id="demo-login-options" class="flex items-center justify-between text-xs text-slate-400 pt-1">
-                    <label class="flex items-center space-x-2 cursor-pointer">
-                        <input type="checkbox" checked class="rounded bg-slate-800 border-slate-700 text-amber-400 focus:ring-0">
-                        <span>Mémoriser ma session</span>
-                    </label>
-                    <a href="#" onclick="showToast('Contactez l\'administrateur UNFPA / Ministère', 'info')" class="hover:text-amber-400">Assistance ?</a>
+                <!-- Formulaire Login -->
+                <form id="main-login" onsubmit="handleLogin(event)" class="qb-auth-form">
+                    <div>
+                        <label for="login-username">Identifiant / Email</label>
+                        <div class="qb-auth-field">
+                            <i class="ph ph-envelope-simple" aria-hidden="true"></i>
+                            <input type="text" id="login-username" required autocomplete="username" placeholder="nom@exemple.org">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="login-password">Mot de passe</label>
+                        <div class="qb-auth-field">
+                            <i class="ph ph-lock-key" aria-hidden="true"></i>
+                            <input type="password" id="login-password" required autocomplete="current-password" placeholder="Votre mot de passe">
+                            <button type="button" onclick="togglePasswordVisibility()" class="qb-auth-eye" aria-label="Afficher ou masquer le mot de passe">
+                                <i id="pwd-eye-icon" class="ph ph-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="demo-login-options" class="qb-auth-options">
+                        <label>
+                            <input type="checkbox" checked>
+                            <span>Mémoriser ma session</span>
+                        </label>
+                        <a href="#" onclick="showToast('Contactez l\'administrateur UNFPA / Ministère', 'info')">Assistance ?</a>
+                    </div>
+
+                    <button type="submit" class="qb-auth-submit">
+                        <span>Ouvrir la session</span>
+                        <i class="ph ph-arrow-right"></i>
+                    </button>
+                </form>
+                <p id="postgres-login-status" role="status" aria-live="polite"></p>
+                <p id="postgres-signup-link" class="postgres-hidden">Pas encore de compte ? <a href="admin-local.html" target="_blank" rel="noopener noreferrer">Demander un compte</a></p>
+
+                <div class="qb-auth-foot">
+                    <span>UNFPA Madagascar</span>
+                    <span aria-hidden="true">•</span>
+                    <span>MSANP</span>
+                    <span aria-hidden="true">•</span>
+                    <span id="auth-version" class="font-mono">v3.4-PROD</span>
                 </div>
-
-                <button type="submit" class="w-full py-3 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center space-x-2 transition-all mt-4 shadow-lg shadow-amber-400/20">
-                    <span>Ouvrir la session Q.box</span>
-                    <i class="ph ph-arrow-right font-bold text-sm"></i>
-                </button>
-            </form>
-            <p id="postgres-login-status" role="status" aria-live="polite"></p>
-            <p id="postgres-signup-link" class="postgres-hidden"><a href="admin-local.html" target="_blank" rel="noopener noreferrer">Demander un compte</a></p>
-
-            <div class="mt-6 pt-5 border-t border-slate-800/80 flex items-center justify-center space-x-4 text-[11px] text-slate-500">
-                <span>UNFPA Madagascar</span>
-                <span>•</span>
-                <span>MSANP</span>
-                <span>•</span>
-                <span id="auth-version" class="font-mono">v3.4-PROD</span>
             </div>
         </div>
     </div>
@@ -508,6 +526,7 @@
                         <div>
                             <h2 class="text-sm font-bold text-slate-900">Vue d'ensemble</h2>
                             <p id="dashboard-site-description" class="text-xs text-slate-500 mt-1">Suivi des activités du drone port</p>
+                            <p id="qb-dashboard-updated" class="qb-hero-updated" aria-live="polite"></p>
                         </div>
                         <div class="flex flex-wrap gap-2">
                             <button id="postgres-dashboard-refresh" type="button" class="postgres-hidden px-3 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center">
@@ -1597,11 +1616,13 @@
     <!-- TOAST NOTIFICATIONS -->
     <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none no-print"></div>
 
-    <script src="stock-history-csv.js"></script>
-    <script src="auth-policy.js"></script>
-    <script src="dashboard-report-postgres.js"></script>
-    <script src="inventory-report-postgres.js"></script>
-    <script src="stock-history-chart-style.js"></script>
-    <script src="app-entry.js"></script>
+    <script src="stock-history-csv.js?v=20261118"></script>
+    <script src="auth-policy.js?v=20261118"></script>
+    <script src="dashboard-report-postgres.js?v=20261118"></script>
+    <script src="inventory-report-postgres.js?v=20261118"></script>
+    <script src="stock-history-chart-style.js?v=20261118"></script>
+    <script src="dashboard-notice.js?v=20261118"></script>
+    <script src="layout-nav.js?v=20261118"></script>
+    <script src="app-entry.js?v=20261118"></script>
 </body>
 </html>
