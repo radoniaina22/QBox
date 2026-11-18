@@ -1,0 +1,257 @@
+/* ==========================================================================
+   Q.box — Animations « Horizon »
+   --------------------------------------------------------------------------
+   Purement visuel, chargé après modern-theme.css et dark-theme.css.
+   - Uniquement à l'écran, et seulement si l'utilisateur n'a pas demandé
+     de réduire les animations (réglage système « réduire les animations »).
+   - Ne touche jamais à display/visibility : seuls opacity, transform,
+     background-position et box-shadow sont animés.
+   Pour tout désactiver : retirer la ligne <link> de ce fichier.
+   ========================================================================== */
+
+@media screen and (prefers-reduced-motion: no-preference) {
+
+    /* ---------- Courbes et durées ---------- */
+    :root {
+        --qb-spring: cubic-bezier(.34, 1.56, .64, 1);
+        --qb-out: cubic-bezier(.16, 1, .3, 1);
+    }
+
+    /* ---------- Images clés ---------- */
+    @keyframes qb-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+    @keyframes qb-fade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes qb-slide-in-left { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+    @keyframes qb-slide-in-right { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+    @keyframes qb-pop { 0% { transform: scale(.92); opacity: .4; } 60% { transform: scale(1.06); opacity: 1; } 100% { transform: scale(1); } }
+    @keyframes qb-float { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-14px, 12px); } }
+    @keyframes qb-float-2 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(18px, -10px) scale(1.08); } }
+    @keyframes qb-spin-slow { to { transform: rotate(360deg); } }
+    @keyframes qb-gradient-pan { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+    @keyframes qb-strip-pan { from { background-position: 0% 0; } to { background-position: 200% 0; } }
+    @keyframes qb-pulse-ring { 0% { box-shadow: 0 0 0 0 currentColor; } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+    @keyframes qb-bar-stripes { from { background-position: 0 0; } to { background-position: 28px 0; } }
+    @keyframes qb-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+    @keyframes qb-wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-10deg); } 75% { transform: rotate(8deg); } }
+    @keyframes qb-shine { from { transform: translateX(-120%) skewX(-18deg); } to { transform: translateX(260%) skewX(-18deg); } }
+
+    /* ======================================================================
+       1. Écran de connexion
+       ====================================================================== */
+    html .qb-auth-card { animation: qb-rise .7s var(--qb-out) backwards; }
+    html .qb-auth-brand::before { animation: qb-spin-slow 60s linear infinite; }
+    html .qb-auth-brand::after { animation: qb-float-2 9s ease-in-out infinite; }
+    html .qb-auth-brand { background-size: 180% 180%; animation: qb-gradient-pan 16s ease-in-out infinite; }
+
+    html .qb-auth-brand-top { animation: qb-slide-in-left .6s .15s var(--qb-out) backwards; }
+    html .qb-auth-brand-body h1 { animation: qb-rise .7s .25s var(--qb-out) backwards; }
+    html .qb-auth-brand-body > p { animation: qb-rise .7s .35s var(--qb-out) backwards; }
+    html .qb-auth-features li { animation: qb-slide-in-left .55s var(--qb-out) backwards; }
+    html .qb-auth-features li:nth-child(1) { animation-delay: .45s; }
+    html .qb-auth-features li:nth-child(2) { animation-delay: .55s; }
+    html .qb-auth-features li:nth-child(3) { animation-delay: .65s; }
+    html .qb-auth-features li > span { transition: transform .3s var(--qb-spring), background-color .2s ease; }
+    html .qb-auth-features li:hover > span { transform: scale(1.12) rotate(-6deg); background: rgba(255, 255, 255, .24); }
+    html .qb-auth-partners { animation: qb-fade .8s .8s ease backwards; }
+
+    html .qb-auth-logo { animation: qb-pop .6s .2s var(--qb-spring) backwards; transition: transform .3s var(--qb-spring); }
+    html .qb-auth-logo:hover { transform: rotate(-8deg) scale(1.06); }
+
+    html .qb-auth-form-head { animation: qb-fade .6s .2s ease backwards; }
+    html .qb-auth-title { animation: qb-rise .6s .25s var(--qb-out) backwards; }
+    html .qb-auth-demo,
+    html .qb-auth-form > div,
+    html .qb-auth-options,
+    html .qb-auth-submit,
+    html #postgres-signup-link { animation: qb-rise .55s var(--qb-out) backwards; }
+    html .qb-auth-demo { animation-delay: .3s; }
+    html .qb-auth-form > div:nth-child(1) { animation-delay: .35s; }
+    html .qb-auth-form > div:nth-child(2) { animation-delay: .42s; }
+    html .qb-auth-options { animation-delay: .49s; }
+    html .qb-auth-submit { animation-delay: .56s; }
+    html #postgres-signup-link { animation-delay: .63s; }
+    html .qb-auth-foot { animation: qb-fade .6s .7s ease backwards; }
+
+    html .qb-auth-network::before { color: #10b981; animation: qb-pulse-ring 2s ease-out infinite; }
+    html .qb-auth-field > i { transition: color .2s ease, transform .3s var(--qb-spring); }
+    html .qb-auth-field:focus-within > i { transform: translateY(-50%) scale(1.15); }
+
+    /* Bouton : reflet qui traverse au survol */
+    html .qb-auth-submit { position: relative; overflow: hidden; }
+    html .qb-auth-submit::after {
+        content: '';
+        position: absolute;
+        top: 0; bottom: 0; left: 0;
+        width: 35%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .28), transparent);
+        transform: translateX(-120%) skewX(-18deg);
+        pointer-events: none;
+    }
+    html .qb-auth-submit:hover::after { animation: qb-shine .8s ease; }
+    html .qb-auth-submit:active { transform: scale(.98); }
+
+    /* ======================================================================
+       2. Structure : barre latérale, en-tête
+       ====================================================================== */
+    /* Liseré coloré de l'en-tête : défilement lent */
+    html #main-app > main > header::before,
+    html .modal-box > div:first-child.border-b::before {
+        background-image: linear-gradient(90deg, #1d58c9, #0e9384, #f59e0b, #0e9384, #1d58c9);
+        background-size: 200% 100%;
+        animation: qb-strip-pan 8s linear infinite;
+    }
+
+    /* Rubriques : glissement de l'icône au survol, entrée en cascade à l'ouverture */
+    html #main-app .nav-item > i { transition: transform .25s var(--qb-spring), color .2s ease; }
+    html #main-app .nav-item:hover > i { transform: translateX(2px) scale(1.12); }
+    html #main-app .nav-item { transition: background-color .2s ease, color .2s ease, box-shadow .25s ease, transform .2s ease; }
+    html #main-app .nav-item:active { transform: scale(.98); }
+    html #main-app .nav-item.bg-amber-400 { animation: qb-pop .35s var(--qb-out); }
+    html .sidebar-group[open] > div > .nav-item { animation: qb-slide-in-left .35s var(--qb-out) backwards; }
+    html .sidebar-group[open] > div > .nav-item:nth-child(2) { animation-delay: .03s; }
+    html .sidebar-group[open] > div > .nav-item:nth-child(3) { animation-delay: .06s; }
+    html .sidebar-group[open] > div > .nav-item:nth-child(4) { animation-delay: .09s; }
+    html .sidebar-group[open] > div > .nav-item:nth-child(5) { animation-delay: .12s; }
+    html .sidebar-group[open] > div > .nav-item:nth-child(6) { animation-delay: .15s; }
+    html .sidebar-group[open] > div > .nav-item:nth-child(7) { animation-delay: .18s; }
+    html .sidebar-group > summary > i:first-child { transition: transform .3s var(--qb-spring); }
+    html .sidebar-group > summary:hover > i:first-child { transform: scale(1.15) rotate(-6deg); }
+    html .sidebar-chevron { transition: transform .3s var(--qb-spring); }
+
+    html :is(#main-app > aside) .bg-amber-400.w-9 { transition: transform .35s var(--qb-spring); }
+    html :is(#main-app > aside) .bg-amber-400.w-9:hover { transform: rotate(-8deg) scale(1.08); }
+    html #user-avatar { transition: transform .3s var(--qb-spring); }
+    html #main-app > aside > div:last-child:hover #user-avatar { transform: scale(1.08); }
+    html #active-port-badge::before { color: #10b981; animation: qb-pulse-ring 2.2s ease-out infinite; }
+
+    /* Menu mobile : rubriques en cascade quand il s'ouvre */
+    html.qb-nav-open .sidebar-nav > * { animation: qb-slide-in-left .4s var(--qb-out) backwards; }
+    html.qb-nav-open .sidebar-nav > *:nth-child(2) { animation-delay: .04s; }
+    html.qb-nav-open .sidebar-nav > *:nth-child(3) { animation-delay: .08s; }
+    html.qb-nav-open .sidebar-nav > *:nth-child(4) { animation-delay: .12s; }
+    html.qb-nav-open .sidebar-nav > *:nth-child(5) { animation-delay: .16s; }
+    html .qb-menu-toggle i { transition: transform .3s var(--qb-spring); }
+    html.qb-nav-open .qb-menu-toggle i { transform: rotate(90deg); }
+
+    /* ======================================================================
+       3. Tableau de bord
+       ====================================================================== */
+    /* Bandeau : dégradé qui ondule, cercles qui flottent */
+    html #view-dashboard > #postgres-dashboard-notice + div {
+        background-size: 180% 180%;
+        animation: qb-gradient-pan 14s ease-in-out infinite;
+    }
+    html #view-dashboard > #postgres-dashboard-notice + div::before { animation: qb-float 10s ease-in-out infinite; }
+    html #view-dashboard > #postgres-dashboard-notice + div::after { animation: qb-float-2 8s ease-in-out infinite; }
+    html #view-dashboard > #postgres-dashboard-notice + div h2 { animation: qb-slide-in-left .6s var(--qb-out) backwards; }
+    html #view-dashboard > #postgres-dashboard-notice + div p { animation: qb-fade .7s .15s ease backwards; }
+    html #view-dashboard .qb-hero-updated::before { color: #6ee7b7; animation: qb-pulse-ring 2s ease-out infinite; }
+    html #view-dashboard .qb-hero-updated { animation: qb-pop .5s var(--qb-spring); }
+
+    /* Indicateurs : entrée en cascade, icône qui s'anime au survol */
+    html .dashboard-kpi { transition: transform .35s var(--qb-spring), box-shadow .3s ease, border-color .3s ease; }
+    html .dashboard-kpi:hover { transform: translateY(-4px); }
+    html .dashboard-kpi-icon { transition: transform .4s var(--qb-spring), box-shadow .3s ease; }
+    html .dashboard-kpi:hover .dashboard-kpi-icon { transform: rotate(-10deg) scale(1.12); box-shadow: 0 10px 20px -8px var(--kpi-color); }
+    html .dashboard-kpi::before { transform-origin: left; transition: transform .4s var(--qb-out); }
+    html .dashboard-kpi:hover::before { transform: scaleY(1.6); }
+    /* Valeur mise à jour : petit rebond (classe posée par motion.js) */
+    html .dashboard-kpi-value.qb-value-pop { transform-origin: left center; animation: qb-pop .55s var(--qb-spring); }
+    html .dashboard-kpi-live .dashboard-kpi-dot { color: var(--kpi-color); animation: qb-pulse-ring 1.8s ease-out infinite; }
+    /* Barre d'avancement : remplissage souple + rayures qui défilent */
+    html .dashboard-kpi-bar {
+        transition: width 1.2s var(--qb-out);
+        background-image: repeating-linear-gradient(-45deg, rgba(255, 255, 255, .22) 0 7px, transparent 7px 14px);
+        background-size: 28px 100%;
+        animation: qb-bar-stripes 1.2s linear infinite;
+    }
+
+    /* Cartes : entrée en cascade à l'ouverture d'une vue */
+    html .tab-content:not(.hidden) > *,
+    html .tab-content:not(.hidden) > .grid > * { animation: qb-rise .5s var(--qb-out) backwards; }
+    html .tab-content:not(.hidden) > :nth-child(2) { animation-delay: .05s; }
+    html .tab-content:not(.hidden) > :nth-child(3) { animation-delay: .1s; }
+    html .tab-content:not(.hidden) > :nth-child(4) { animation-delay: .15s; }
+    html .tab-content:not(.hidden) > :nth-child(5) { animation-delay: .2s; }
+    html .tab-content:not(.hidden) > :nth-child(6) { animation-delay: .25s; }
+    html .tab-content:not(.hidden) > .grid > :nth-child(2) { animation-delay: .12s; }
+    html .tab-content:not(.hidden) > .grid > :nth-child(3) { animation-delay: .18s; }
+    /* Les indicateurs gardent leur propre cascade (styles.css) */
+    html .tab-content:not(.hidden) > .dashboard-kpis { animation: none; }
+    html .dashboard-kpi { animation: qb-rise .55s var(--qb-out) backwards; }
+    html .dashboard-kpi:nth-child(2) { animation-delay: .06s; }
+    html .dashboard-kpi:nth-child(3) { animation-delay: .12s; }
+    html .dashboard-kpi:nth-child(4) { animation-delay: .18s; }
+    html .dashboard-kpi:nth-child(5) { animation-delay: .24s; }
+
+    html #main-app .tab-content .bg-white:is(.rounded-2xl, .rounded-3xl) { transition: box-shadow .3s ease, border-color .3s ease, transform .3s var(--qb-out); }
+    html #main-app .tab-content .bg-white:is(.rounded-2xl, .rounded-3xl):hover { box-shadow: var(--qb-shadow-md); }
+
+    /* Icônes de titre de carte : léger balancement au survol de la carte */
+    html #view-dashboard .stock-chart-icon,
+    html #dashboard-planning-card h3 > i,
+    html #view-dashboard > div.bg-white:last-child h3 > i { transition: transform .4s var(--qb-spring); }
+    html #legacy-stock-chart:hover .stock-chart-icon,
+    html #dashboard-planning-card:hover h3 > i { transform: rotate(-8deg) scale(1.1); }
+    html #view-dashboard > div.bg-white:last-child:hover h3 > i { animation: qb-wiggle .5s ease; }
+    html #dashboard-live-label::before { color: #06b6d4; animation: qb-pulse-ring 1.8s ease-out infinite; }
+
+    /* Listes du tableau de bord : éléments en cascade */
+    html :is(#dash-missions-list, #dash-expirations-list) > * { animation: qb-rise .45s var(--qb-out) backwards; }
+    html :is(#dash-missions-list, #dash-expirations-list) > :nth-child(2) { animation-delay: .05s; }
+    html :is(#dash-missions-list, #dash-expirations-list) > :nth-child(3) { animation-delay: .1s; }
+    html :is(#dash-missions-list, #dash-expirations-list) > :nth-child(4) { animation-delay: .15s; }
+    html :is(#dash-missions-list, #dash-expirations-list) > :nth-child(5) { animation-delay: .2s; }
+    html :is(#dash-missions-list, #dash-expirations-list) > :nth-child(n+6) { animation-delay: .25s; }
+    html #dash-missions-list > div { transition: transform .25s var(--qb-out), box-shadow .25s ease, border-color .25s ease; }
+    html #dash-missions-list > div:hover { transform: translateX(3px); box-shadow: var(--qb-shadow-sm); border-color: var(--qb-primary-line); }
+
+    /* États vides : icône qui flotte doucement */
+    html :is(#dash-missions-list, #dash-plannings-table, #dash-expirations-list, #dashboard-storage-transfers) > p:only-child::before { animation: qb-bob 3s ease-in-out infinite; }
+
+    /* ======================================================================
+       4. Tableaux, boutons, champs, pastilles
+       ====================================================================== */
+    /* Lignes de tableau : apparition en fondu échelonné (10 premières lignes) */
+    html #main-app .tab-content tbody > tr { animation: qb-fade .4s ease backwards; }
+    html #main-app .tab-content tbody > tr:nth-child(2) { animation-delay: .03s; }
+    html #main-app .tab-content tbody > tr:nth-child(3) { animation-delay: .06s; }
+    html #main-app .tab-content tbody > tr:nth-child(4) { animation-delay: .09s; }
+    html #main-app .tab-content tbody > tr:nth-child(5) { animation-delay: .12s; }
+    html #main-app .tab-content tbody > tr:nth-child(6) { animation-delay: .15s; }
+    html #main-app .tab-content tbody > tr:nth-child(7) { animation-delay: .18s; }
+    html #main-app .tab-content tbody > tr:nth-child(8) { animation-delay: .21s; }
+    html #main-app .tab-content tbody > tr:nth-child(9) { animation-delay: .24s; }
+    html #main-app .tab-content tbody > tr:nth-child(n+10) { animation-delay: .27s; }
+
+    /* Boutons : léger soulèvement + enfoncement au clic */
+    html :is(#main-app, .modal-box) button:is(.bg-slate-900, .bg-amber-400):not(.nav-item) {
+        transition: background-color .2s ease, box-shadow .25s ease, transform .2s var(--qb-spring);
+    }
+    html :is(#main-app, .modal-box) button:is(.bg-slate-900, .bg-amber-400):not(.nav-item):not(:disabled):hover { transform: translateY(-2px); }
+    html :is(#main-app, .modal-box, #auth-screen) button:not(.nav-item):not(:disabled):active { transform: translateY(0) scale(.97); }
+    html :is(#main-app, .modal-box) button > i.ph { transition: transform .3s var(--qb-spring); }
+    html :is(#main-app, .modal-box) button:not(.nav-item):hover > i.ph-arrows-clockwise { transform: rotate(180deg); }
+    html :is(#main-app, .modal-box) button:not(.nav-item):hover > i:is(.ph-plus-circle, .ph-plus) { transform: rotate(90deg); }
+    html :is(#main-app, .modal-box) button:not(.nav-item):hover > i:is(.ph-paper-plane-tilt, .ph-arrow-right, .ph-file-chart-line, .ph-printer, .ph-file-csv) { transform: translateX(2px) scale(1.1); }
+    html .qb-theme-toggle:active { transform: scale(.92); }
+
+    /* Champs : halo de focus qui s'installe en douceur */
+    html :is(#main-app .tab-content, .modal-box) :is(input, select, textarea) { transition: border-color .2s ease, box-shadow .3s var(--qb-out); }
+
+    /* Pastilles de statut : apparition en « pop » */
+    html :is(#main-app .tab-content, .modal-box) span.rounded-full[class*="bg-"]:not([id^="badge-"]) { animation: qb-pop .4s var(--qb-spring) backwards; }
+
+    /* Badges de compteurs de la barre latérale : rebond quand la valeur change (motion.js) */
+    html #main-app .nav-item > span[id^="badge-"].qb-value-pop { animation: qb-pop .5s var(--qb-spring); }
+
+    /* ======================================================================
+       5. Fenêtres, encarts, notifications
+       ====================================================================== */
+    html .modal-box:not(.hidden) > * { animation: qb-fade .35s .08s ease backwards; }
+    html .modal-box > div:first-child > button:last-child { transition: transform .3s var(--qb-spring), background-color .2s ease, color .2s ease; }
+    html .modal-box > div:first-child > button:last-child:hover { transform: rotate(90deg); }
+    html #view-dashboard > #postgres-dashboard-notice.qb-notice-error { animation: qb-slide-in-right .45s var(--qb-out); }
+    html #view-dashboard > #postgres-dashboard-notice.qb-notice-error::before { animation: qb-wiggle .6s .3s ease 2; }
+    html #toast-container > div { animation: qb-slide-in-right .45s var(--qb-spring) backwards; }
+    html .postgres-notice { animation: qb-fade .5s ease backwards; }
+}
