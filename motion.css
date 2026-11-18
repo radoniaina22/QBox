@@ -147,15 +147,14 @@
     html #view-dashboard .qb-hero-updated::before { color: #6ee7b7; animation: qb-pulse-ring 2s ease-out infinite; }
     html #view-dashboard .qb-hero-updated { animation: qb-pop .5s var(--qb-spring); }
 
-    /* Indicateurs : entrée en cascade, icône qui s'anime au survol */
-    html .dashboard-kpi { transition: transform .35s var(--qb-spring), box-shadow .3s ease, border-color .3s ease; }
-    html .dashboard-kpi:hover { transform: translateY(-4px); }
-    html .dashboard-kpi-icon { transition: transform .4s var(--qb-spring), box-shadow .3s ease; }
-    html .dashboard-kpi:hover .dashboard-kpi-icon { transform: rotate(-10deg) scale(1.12); box-shadow: 0 10px 20px -8px var(--kpi-color); }
-    html .dashboard-kpi::before { transform-origin: left; transition: transform .4s var(--qb-out); }
-    html .dashboard-kpi:hover::before { transform: scaleY(1.6); }
-    /* Valeur mise à jour : petit rebond (classe posée par motion.js) */
-    html .dashboard-kpi-value.qb-value-pop { transform-origin: left center; animation: qb-pop .55s var(--qb-spring); }
+    /* Indicateurs : soulèvement discret au survol, sans rebond */
+    html .dashboard-kpi { transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
+    html .dashboard-kpi:hover { transform: translateY(-2px); }
+    html .dashboard-kpi-icon { transition: transform .25s ease, box-shadow .25s ease; }
+    html .dashboard-kpi:hover .dashboard-kpi-icon { transform: scale(1.06); }
+    /* Valeur mise à jour : simple fondu (classe posée par motion.js) */
+    @keyframes qb-value-in { from { opacity: .25; } to { opacity: 1; } }
+    html .dashboard-kpi-value.qb-value-pop { animation: qb-value-in .45s ease; }
     html .dashboard-kpi-live .dashboard-kpi-dot { color: var(--kpi-color); animation: qb-pulse-ring 1.8s ease-out infinite; }
     /* Barre d'avancement : remplissage souple + rayures qui défilent */
     html .dashboard-kpi-bar {
@@ -165,45 +164,34 @@
         animation: qb-bar-stripes 1.2s linear infinite;
     }
 
-    /* Cartes : entrée en cascade à l'ouverture d'une vue */
-    html .tab-content:not(.hidden) > *,
-    html .tab-content:not(.hidden) > .grid > * { animation: qb-rise .5s var(--qb-out) backwards; }
-    html .tab-content:not(.hidden) > :nth-child(2) { animation-delay: .05s; }
-    html .tab-content:not(.hidden) > :nth-child(3) { animation-delay: .1s; }
-    html .tab-content:not(.hidden) > :nth-child(4) { animation-delay: .15s; }
-    html .tab-content:not(.hidden) > :nth-child(5) { animation-delay: .2s; }
-    html .tab-content:not(.hidden) > :nth-child(6) { animation-delay: .25s; }
-    html .tab-content:not(.hidden) > .grid > :nth-child(2) { animation-delay: .12s; }
-    html .tab-content:not(.hidden) > .grid > :nth-child(3) { animation-delay: .18s; }
-    /* Les indicateurs gardent leur propre cascade (styles.css) */
-    html .tab-content:not(.hidden) > .dashboard-kpis { animation: none; }
-    html .dashboard-kpi { animation: qb-rise .55s var(--qb-out) backwards; }
-    html .dashboard-kpi:nth-child(2) { animation-delay: .06s; }
-    html .dashboard-kpi:nth-child(3) { animation-delay: .12s; }
-    html .dashboard-kpi:nth-child(4) { animation-delay: .18s; }
-    html .dashboard-kpi:nth-child(5) { animation-delay: .24s; }
+    /* Cartes : une seule entrée douce (fondu + léger glissement) à l'ouverture
+       d'une vue, en cascade courte. Remplace l'animation de styles.css pour
+       éviter que deux animations se superposent. */
+    @keyframes qb-card-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    html body .tab-content:not(.hidden) > :not(.dashboard-kpis) { animation: qb-card-in .4s ease-out backwards; }
+    html body .tab-content:not(.hidden) > :nth-child(3) { animation-delay: .04s; }
+    html body .tab-content:not(.hidden) > :nth-child(4) { animation-delay: .08s; }
+    html body .tab-content:not(.hidden) > :nth-child(5) { animation-delay: .12s; }
+    html body .tab-content:not(.hidden) > :nth-child(n+6) { animation-delay: .16s; }
+    html body .tab-content:not(.hidden) > .dashboard-kpis { animation: none; }
+    html body .dashboard-kpi { animation: qb-card-in .4s ease-out backwards; }
+    html body .dashboard-kpi:nth-child(2) { animation-delay: .04s; }
+    html body .dashboard-kpi:nth-child(3) { animation-delay: .08s; }
+    html body .dashboard-kpi:nth-child(4) { animation-delay: .12s; }
+    html body .dashboard-kpi:nth-child(5) { animation-delay: .16s; }
 
-    html #main-app .tab-content .bg-white:is(.rounded-2xl, .rounded-3xl) { transition: box-shadow .3s ease, border-color .3s ease, transform .3s var(--qb-out); }
-    html #main-app .tab-content .bg-white:is(.rounded-2xl, .rounded-3xl):hover { box-shadow: var(--qb-shadow-md); }
-
-    /* Icônes de titre de carte : léger balancement au survol de la carte */
-    html #view-dashboard .stock-chart-icon,
-    html #dashboard-planning-card h3 > i,
-    html #view-dashboard > div.bg-white:last-child h3 > i { transition: transform .4s var(--qb-spring); }
-    html #legacy-stock-chart:hover .stock-chart-icon,
-    html #dashboard-planning-card:hover h3 > i { transform: rotate(-8deg) scale(1.1); }
-    html #view-dashboard > div.bg-white:last-child:hover h3 > i { animation: qb-wiggle .5s ease; }
+    html #main-app .tab-content .bg-white:is(.rounded-2xl, .rounded-3xl) { transition: box-shadow .25s ease, border-color .25s ease; }
     html #dashboard-live-label::before { color: #06b6d4; animation: qb-pulse-ring 1.8s ease-out infinite; }
 
     /* Listes du tableau de bord : éléments en cascade */
-    html :is(#dash-missions-list, #dash-expirations-list) > * { animation: qb-rise .45s var(--qb-out) backwards; }
+    html :is(#dash-missions-list, #dash-expirations-list) > * { animation: qb-card-in .35s ease-out backwards; }
     html :is(#dash-missions-list, #dash-expirations-list) > :nth-child(2) { animation-delay: .05s; }
     html :is(#dash-missions-list, #dash-expirations-list) > :nth-child(3) { animation-delay: .1s; }
     html :is(#dash-missions-list, #dash-expirations-list) > :nth-child(4) { animation-delay: .15s; }
     html :is(#dash-missions-list, #dash-expirations-list) > :nth-child(5) { animation-delay: .2s; }
     html :is(#dash-missions-list, #dash-expirations-list) > :nth-child(n+6) { animation-delay: .25s; }
-    html #dash-missions-list > div { transition: transform .25s var(--qb-out), box-shadow .25s ease, border-color .25s ease; }
-    html #dash-missions-list > div:hover { transform: translateX(3px); box-shadow: var(--qb-shadow-sm); border-color: var(--qb-primary-line); }
+    html #dash-missions-list > div { transition: box-shadow .2s ease, border-color .2s ease; }
+    html #dash-missions-list > div:hover { box-shadow: var(--qb-shadow-sm); border-color: var(--qb-primary-line); }
 
     /* États vides : icône qui flotte doucement */
     html :is(#dash-missions-list, #dash-plannings-table, #dash-expirations-list, #dashboard-storage-transfers) > p:only-child::before { animation: qb-bob 3s ease-in-out infinite; }
