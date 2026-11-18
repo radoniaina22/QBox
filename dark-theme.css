@@ -1,0 +1,368 @@
+/* ==========================================================================
+   Q.box — Mode sombre
+   --------------------------------------------------------------------------
+   Activé par la classe "qb-dark" sur <html> (voir theme-toggle.js).
+   Purement visuel, uniquement à l'écran : les impressions et les aperçus
+   de documents (BL, rapports) gardent leur rendu papier clair.
+   Fichier en partie généré à partir des couleurs de styles.css.
+   ========================================================================== */
+
+@media screen {
+
+    /* ---------- Jetons sombres ---------- */
+    html.qb-dark {
+        color-scheme: dark;
+        --qb-canvas: #0a0f1d;
+        --qb-surface: #111a2c;
+        --qb-surface-2: #152036;
+        --qb-surface-3: #1b2740;
+        --qb-surface-4: #24314d;
+        --qb-header-bg: rgba(10, 15, 29, .72);
+        --qb-line: rgba(148, 163, 184, .14);
+        --qb-line-soft: rgba(148, 163, 184, .09);
+        --qb-line-strong: rgba(148, 163, 184, .24);
+        --qb-line-hover: rgba(148, 163, 184, .38);
+        --qb-row-hover: rgba(148, 163, 184, .06);
+        --qb-text: #e8edf6;
+        --qb-text-2: #c3cede;
+        --qb-muted: #94a3b8;
+        --qb-faint: #6f7f96;
+        --qb-placeholder: #6f7f96;
+        --qb-ring: 0 0 0 4px rgba(251, 191, 36, .2);
+        --qb-shadow-xs: 0 1px 2px rgba(0, 0, 0, .3);
+        --qb-shadow-sm: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 18px -8px rgba(0, 0, 0, .5);
+        --qb-shadow-md: 0 1px 3px rgba(0, 0, 0, .35), 0 16px 36px -14px rgba(0, 0, 0, .6);
+        --qb-shadow-lg: 0 30px 70px -20px rgba(0, 0, 0, .75), 0 10px 24px -10px rgba(0, 0, 0, .5);
+        /* Variables utilisées par styles.css */
+        --qb-bg-app: #0a0f1d;
+        --qb-bg-surface: #111a2c;
+        --qb-bg-subtle: #152036;
+        --qb-border: rgba(148, 163, 184, .14);
+        --qb-border-strong: rgba(148, 163, 184, .24);
+        --qb-text-primary: #e8edf6;
+        --qb-text-secondary: #c3cede;
+        --qb-text-muted: #94a3b8;
+        --qb-info-soft: rgba(56, 189, 248, .12);
+        --qb-accent-soft: rgba(251, 191, 36, .14);
+    }
+    /* Les aperçus de documents imprimables restent "papier" (clairs) */
+    html.qb-dark :is(#report-preview-modal, #print-preview-modal, #stock-history-print-modal,
+                     #planning-print-modal, #inventory-print-modal) {
+        color-scheme: light;
+        --qb-surface: #ffffff;
+        --qb-surface-2: #f8fafc;
+        --qb-surface-3: #eef2f7;
+        --qb-surface-4: #e2e8f0;
+        --qb-line: #e6eaf2;
+        --qb-line-soft: #eef1f6;
+        --qb-line-strong: #d5dbe7;
+        --qb-line-hover: #c3cad8;
+        --qb-row-hover: #fafbfe;
+        --qb-text: #0f172a;
+        --qb-text-2: #334155;
+        --qb-muted: #64748b;
+        --qb-faint: #94a3b8;
+        --qb-placeholder: #9aa6b8;
+        --qb-bg-app: #f4f7fb;
+        --qb-bg-surface: #ffffff;
+        --qb-bg-subtle: #f8fafc;
+        --qb-border: #e2e8f0;
+        --qb-border-strong: #cbd5e1;
+        --qb-text-primary: #0f172a;
+        --qb-text-secondary: #475569;
+        --qb-text-muted: #64748b;
+        --qb-info-soft: #f0f9ff;
+    }
+
+    /* Transition douce au moment de la bascule */
+    html.qb-theme-switching *,
+    html.qb-theme-switching *::before,
+    html.qb-theme-switching *::after {
+        transition: background-color .3s ease, border-color .3s ease, color .3s ease, box-shadow .3s ease !important;
+    }
+
+    /* ---------- Structure ---------- */
+    html.qb-dark body { background-color: var(--qb-canvas); color: var(--qb-text-2); }
+    html.qb-dark #main-app > main {
+        background:
+            radial-gradient(900px 480px at 100% -10%, rgba(99, 102, 241, .14), transparent 60%),
+            radial-gradient(700px 420px at -10% 0%, rgba(14, 165, 233, .08), transparent 60%),
+            radial-gradient(600px 400px at 60% 120%, rgba(251, 191, 36, .05), transparent 60%),
+            var(--qb-canvas);
+    }
+    html.qb-dark #main-app > aside {
+        background:
+            radial-gradient(420px 260px at 0% 0%, rgba(251, 191, 36, .06), transparent 70%),
+            linear-gradient(180deg, #0c1322 0%, #070b15 100%);
+    }
+    html.qb-dark #main-app > main > header { background: var(--qb-header-bg) !important; border-bottom-color: var(--qb-line) !important; }
+    html.qb-dark #active-port-badge {
+        background: rgba(251, 191, 36, .12) !important;
+        border-color: rgba(251, 191, 36, .3) !important;
+        color: #fcd34d !important;
+    }
+
+    /* ---------- Graphiques Chart.js : inversion des couleurs du canevas ---------- */
+    html.qb-dark #main-app canvas { filter: invert(1) hue-rotate(180deg) saturate(1.15); }
+
+    /* ---------- Formulaires & tableaux ---------- */
+    html.qb-dark :is(#main-app, .modal-box) :is(input, select, textarea) { color: var(--qb-text); }
+    html.qb-dark :is(#main-app, .modal-box) :is(input, select, textarea):disabled { background-color: var(--qb-surface-3); color: var(--qb-faint); }
+    html.qb-dark :is(#main-app, .modal-box) select option { background: var(--qb-surface); color: var(--qb-text); }
+    html.qb-dark #main-app .tab-content table thead :is(tr, th) { background-color: var(--qb-surface-2); }
+    html.qb-dark :is(#main-app, .modal-box) :is(code, kbd) { color: var(--qb-text); }
+
+    /* ---------- Boutons ---------- */
+    html.qb-dark :is(#main-app, .modal-box) button.bg-slate-900:not(#view-dashboard button) {
+        background: linear-gradient(180deg, #334155 0%, #1e293b 100%);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, .08) inset, 0 0 0 1px rgba(148, 163, 184, .18);
+    }
+    html.qb-dark .stock-history-button-primary {
+        background: linear-gradient(180deg, #334155 0%, #1e293b 100%);
+        border-color: rgba(148, 163, 184, .25);
+    }
+    html.qb-dark .postgres-notice button,
+    html.qb-dark #postgres-read-refresh,
+    html.qb-dark #postgres-read-manage { background: #0369a1; }
+
+    /* ---------- Tableau de bord ---------- */
+    html.qb-dark .dashboard-kpi { box-shadow: 0 1px 0 rgba(255, 255, 255, .2) inset, 0 16px 34px -18px var(--kpi-glow); }
+    html.qb-dark #view-dashboard > #postgres-dashboard-notice + div {
+        box-shadow: 0 0 0 1px rgba(165, 180, 252, .14), 0 22px 50px -24px rgba(67, 56, 202, .9);
+    }
+    html.qb-dark #view-dashboard .stock-chart-badge { background: rgba(251, 191, 36, .16); color: #fcd34d; }
+
+    /* ---------- Modales & notifications ---------- */
+    html.qb-dark #modal-backdrop { background: rgba(0, 0, 0, .62); }
+    html.qb-dark .modal-box.bg-white { border-color: rgba(148, 163, 184, .14); }
+    html.qb-dark .modal-box > div:first-child > button:last-child:hover { color: var(--qb-text); }
+
+    /* ---------- Bouton de bascule ---------- */
+    html.qb-dark .qb-theme-toggle { color: #fcd34d; }
+    html.qb-dark .qb-theme-toggle:hover { color: #fde68a; }
+
+    /* ---------- Utilitaires Tailwind ---------- */
+    html.qb-dark .bg-white, html.qb-dark .hover\:bg-white:hover { background-color: var(--qb-surface); }
+    html.qb-dark .bg-slate-50, html.qb-dark .bg-slate-50\/30, html.qb-dark .bg-slate-50\/50, html.qb-dark .bg-slate-50\/60, html.qb-dark .bg-slate-50\/80, html.qb-dark .hover\:bg-slate-50:hover, html.qb-dark .hover\:bg-slate-50\/30:hover, html.qb-dark .hover\:bg-slate-50\/50:hover, html.qb-dark .hover\:bg-slate-50\/60:hover, html.qb-dark .hover\:bg-slate-50\/80:hover { background-color: var(--qb-surface-2); }
+    html.qb-dark .bg-slate-100, html.qb-dark .bg-slate-100\/50, html.qb-dark .hover\:bg-slate-100:hover, html.qb-dark .hover\:bg-slate-100\/50:hover { background-color: var(--qb-surface-3); }
+    html.qb-dark .bg-slate-200, html.qb-dark .bg-slate-200\/60, html.qb-dark .hover\:bg-slate-200:hover, html.qb-dark .hover\:bg-slate-200\/60:hover { background-color: var(--qb-surface-4); }
+    html.qb-dark .text-slate-900, html.qb-dark .hover\:text-slate-900:hover { color: var(--qb-text); }
+    html.qb-dark .text-slate-800, html.qb-dark .hover\:text-slate-800:hover { color: var(--qb-text); }
+    html.qb-dark .text-slate-700, html.qb-dark .hover\:text-slate-700:hover { color: var(--qb-text-2); }
+    html.qb-dark .text-slate-600, html.qb-dark .hover\:text-slate-600:hover { color: var(--qb-text-2); }
+    html.qb-dark .text-slate-500, html.qb-dark .hover\:text-slate-500:hover { color: var(--qb-muted); }
+    html.qb-dark .text-slate-400, html.qb-dark .hover\:text-slate-400:hover { color: var(--qb-faint); }
+    html.qb-dark .border-slate-100 { border-color: var(--qb-line-soft); }
+    html.qb-dark .border-slate-200 { border-color: var(--qb-line); }
+    html.qb-dark .border-slate-300 { border-color: var(--qb-line-strong); }
+    html.qb-dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--qb-line-soft); }
+    html.qb-dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--qb-line); }
+    html.qb-dark .placeholder-slate-400::placeholder, html.qb-dark .placeholder-slate-500::placeholder { color: var(--qb-placeholder); }
+    html.qb-dark .bg-gray-50, html.qb-dark .bg-gray-50\/30, html.qb-dark .bg-gray-50\/50, html.qb-dark .bg-gray-50\/60, html.qb-dark .bg-gray-50\/80, html.qb-dark .hover\:bg-gray-50:hover, html.qb-dark .hover\:bg-gray-50\/30:hover, html.qb-dark .hover\:bg-gray-50\/50:hover, html.qb-dark .hover\:bg-gray-50\/60:hover, html.qb-dark .hover\:bg-gray-50\/80:hover { background-color: var(--qb-surface-2); }
+    html.qb-dark .bg-gray-100, html.qb-dark .bg-gray-100\/50, html.qb-dark .hover\:bg-gray-100:hover, html.qb-dark .hover\:bg-gray-100\/50:hover { background-color: var(--qb-surface-3); }
+    html.qb-dark .bg-gray-200, html.qb-dark .bg-gray-200\/60, html.qb-dark .hover\:bg-gray-200:hover, html.qb-dark .hover\:bg-gray-200\/60:hover { background-color: var(--qb-surface-4); }
+    html.qb-dark .text-gray-900, html.qb-dark .hover\:text-gray-900:hover { color: var(--qb-text); }
+    html.qb-dark .text-gray-800, html.qb-dark .hover\:text-gray-800:hover { color: var(--qb-text); }
+    html.qb-dark .text-gray-700, html.qb-dark .hover\:text-gray-700:hover { color: var(--qb-text-2); }
+    html.qb-dark .text-gray-600, html.qb-dark .hover\:text-gray-600:hover { color: var(--qb-text-2); }
+    html.qb-dark .text-gray-500, html.qb-dark .hover\:text-gray-500:hover { color: var(--qb-muted); }
+    html.qb-dark .text-gray-400, html.qb-dark .hover\:text-gray-400:hover { color: var(--qb-faint); }
+    html.qb-dark .border-gray-100 { border-color: var(--qb-line-soft); }
+    html.qb-dark .border-gray-200 { border-color: var(--qb-line); }
+    html.qb-dark .border-gray-300 { border-color: var(--qb-line-strong); }
+    html.qb-dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--qb-line-soft); }
+    html.qb-dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--qb-line); }
+    html.qb-dark .placeholder-gray-400::placeholder, html.qb-dark .placeholder-gray-500::placeholder { color: var(--qb-placeholder); }
+    html.qb-dark .bg-rose-50, html.qb-dark .bg-rose-50\/50, html.qb-dark .bg-rose-50\/60, html.qb-dark .bg-rose-50\/80 { background-color: rgba(251, 113, 133, .12); }
+    html.qb-dark .bg-rose-100, html.qb-dark .hover\:bg-rose-100:hover, html.qb-dark .hover\:bg-rose-50:hover { background-color: rgba(251, 113, 133, .18); }
+    html.qb-dark .bg-rose-200 { background-color: rgba(251, 113, 133, .26); }
+    html.qb-dark .text-rose-600, html.qb-dark .text-rose-700, html.qb-dark .text-rose-800, html.qb-dark .text-rose-900, html.qb-dark .text-rose-950, html.qb-dark .hover\:text-rose-600:hover, html.qb-dark .hover\:text-rose-700:hover, html.qb-dark .hover\:text-rose-800:hover { color: #fda4af; }
+    html.qb-dark .border-rose-100, html.qb-dark .border-rose-200, html.qb-dark .border-rose-300 { border-color: rgba(251, 113, 133, .35); }
+    html.qb-dark .bg-red-50, html.qb-dark .bg-red-50\/50, html.qb-dark .bg-red-50\/60, html.qb-dark .bg-red-50\/80 { background-color: rgba(248, 113, 113, .12); }
+    html.qb-dark .bg-red-100, html.qb-dark .hover\:bg-red-100:hover, html.qb-dark .hover\:bg-red-50:hover { background-color: rgba(248, 113, 113, .18); }
+    html.qb-dark .bg-red-200 { background-color: rgba(248, 113, 113, .26); }
+    html.qb-dark .text-red-600, html.qb-dark .text-red-700, html.qb-dark .text-red-800, html.qb-dark .text-red-900, html.qb-dark .text-red-950, html.qb-dark .hover\:text-red-600:hover, html.qb-dark .hover\:text-red-700:hover, html.qb-dark .hover\:text-red-800:hover { color: #fca5a5; }
+    html.qb-dark .border-red-100, html.qb-dark .border-red-200, html.qb-dark .border-red-300 { border-color: rgba(248, 113, 113, .35); }
+    html.qb-dark .bg-orange-50, html.qb-dark .bg-orange-50\/50, html.qb-dark .bg-orange-50\/60, html.qb-dark .bg-orange-50\/80 { background-color: rgba(251, 146, 60, .12); }
+    html.qb-dark .bg-orange-100, html.qb-dark .hover\:bg-orange-100:hover, html.qb-dark .hover\:bg-orange-50:hover { background-color: rgba(251, 146, 60, .18); }
+    html.qb-dark .bg-orange-200 { background-color: rgba(251, 146, 60, .26); }
+    html.qb-dark .text-orange-600, html.qb-dark .text-orange-700, html.qb-dark .text-orange-800, html.qb-dark .text-orange-900, html.qb-dark .text-orange-950, html.qb-dark .hover\:text-orange-600:hover, html.qb-dark .hover\:text-orange-700:hover, html.qb-dark .hover\:text-orange-800:hover { color: #fdba74; }
+    html.qb-dark .border-orange-100, html.qb-dark .border-orange-200, html.qb-dark .border-orange-300 { border-color: rgba(251, 146, 60, .35); }
+    html.qb-dark .bg-amber-50, html.qb-dark .bg-amber-50\/50, html.qb-dark .bg-amber-50\/60, html.qb-dark .bg-amber-50\/80 { background-color: rgba(251, 191, 36, .12); }
+    html.qb-dark .bg-amber-100, html.qb-dark .hover\:bg-amber-100:hover, html.qb-dark .hover\:bg-amber-50:hover { background-color: rgba(251, 191, 36, .18); }
+    html.qb-dark .bg-amber-200 { background-color: rgba(251, 191, 36, .26); }
+    html.qb-dark .text-amber-600, html.qb-dark .text-amber-700, html.qb-dark .text-amber-800, html.qb-dark .text-amber-900, html.qb-dark .text-amber-950, html.qb-dark .hover\:text-amber-600:hover, html.qb-dark .hover\:text-amber-700:hover, html.qb-dark .hover\:text-amber-800:hover { color: #fcd34d; }
+    html.qb-dark .border-amber-100, html.qb-dark .border-amber-200, html.qb-dark .border-amber-300 { border-color: rgba(251, 191, 36, .35); }
+    html.qb-dark .bg-yellow-50, html.qb-dark .bg-yellow-50\/50, html.qb-dark .bg-yellow-50\/60, html.qb-dark .bg-yellow-50\/80 { background-color: rgba(250, 204, 21, .12); }
+    html.qb-dark .bg-yellow-100, html.qb-dark .hover\:bg-yellow-100:hover, html.qb-dark .hover\:bg-yellow-50:hover { background-color: rgba(250, 204, 21, .18); }
+    html.qb-dark .bg-yellow-200 { background-color: rgba(250, 204, 21, .26); }
+    html.qb-dark .text-yellow-600, html.qb-dark .text-yellow-700, html.qb-dark .text-yellow-800, html.qb-dark .text-yellow-900, html.qb-dark .text-yellow-950, html.qb-dark .hover\:text-yellow-600:hover, html.qb-dark .hover\:text-yellow-700:hover, html.qb-dark .hover\:text-yellow-800:hover { color: #fde047; }
+    html.qb-dark .border-yellow-100, html.qb-dark .border-yellow-200, html.qb-dark .border-yellow-300 { border-color: rgba(250, 204, 21, .35); }
+    html.qb-dark .bg-lime-50, html.qb-dark .bg-lime-50\/50, html.qb-dark .bg-lime-50\/60, html.qb-dark .bg-lime-50\/80 { background-color: rgba(163, 230, 53, .12); }
+    html.qb-dark .bg-lime-100, html.qb-dark .hover\:bg-lime-100:hover, html.qb-dark .hover\:bg-lime-50:hover { background-color: rgba(163, 230, 53, .18); }
+    html.qb-dark .bg-lime-200 { background-color: rgba(163, 230, 53, .26); }
+    html.qb-dark .text-lime-600, html.qb-dark .text-lime-700, html.qb-dark .text-lime-800, html.qb-dark .text-lime-900, html.qb-dark .text-lime-950, html.qb-dark .hover\:text-lime-600:hover, html.qb-dark .hover\:text-lime-700:hover, html.qb-dark .hover\:text-lime-800:hover { color: #bef264; }
+    html.qb-dark .border-lime-100, html.qb-dark .border-lime-200, html.qb-dark .border-lime-300 { border-color: rgba(163, 230, 53, .35); }
+    html.qb-dark .bg-green-50, html.qb-dark .bg-green-50\/50, html.qb-dark .bg-green-50\/60, html.qb-dark .bg-green-50\/80 { background-color: rgba(74, 222, 128, .12); }
+    html.qb-dark .bg-green-100, html.qb-dark .hover\:bg-green-100:hover, html.qb-dark .hover\:bg-green-50:hover { background-color: rgba(74, 222, 128, .18); }
+    html.qb-dark .bg-green-200 { background-color: rgba(74, 222, 128, .26); }
+    html.qb-dark .text-green-600, html.qb-dark .text-green-700, html.qb-dark .text-green-800, html.qb-dark .text-green-900, html.qb-dark .text-green-950, html.qb-dark .hover\:text-green-600:hover, html.qb-dark .hover\:text-green-700:hover, html.qb-dark .hover\:text-green-800:hover { color: #86efac; }
+    html.qb-dark .border-green-100, html.qb-dark .border-green-200, html.qb-dark .border-green-300 { border-color: rgba(74, 222, 128, .35); }
+    html.qb-dark .bg-emerald-50, html.qb-dark .bg-emerald-50\/50, html.qb-dark .bg-emerald-50\/60, html.qb-dark .bg-emerald-50\/80 { background-color: rgba(52, 211, 153, .12); }
+    html.qb-dark .bg-emerald-100, html.qb-dark .hover\:bg-emerald-100:hover, html.qb-dark .hover\:bg-emerald-50:hover { background-color: rgba(52, 211, 153, .18); }
+    html.qb-dark .bg-emerald-200 { background-color: rgba(52, 211, 153, .26); }
+    html.qb-dark .text-emerald-600, html.qb-dark .text-emerald-700, html.qb-dark .text-emerald-800, html.qb-dark .text-emerald-900, html.qb-dark .text-emerald-950, html.qb-dark .hover\:text-emerald-600:hover, html.qb-dark .hover\:text-emerald-700:hover, html.qb-dark .hover\:text-emerald-800:hover { color: #6ee7b7; }
+    html.qb-dark .border-emerald-100, html.qb-dark .border-emerald-200, html.qb-dark .border-emerald-300 { border-color: rgba(52, 211, 153, .35); }
+    html.qb-dark .bg-teal-50, html.qb-dark .bg-teal-50\/50, html.qb-dark .bg-teal-50\/60, html.qb-dark .bg-teal-50\/80 { background-color: rgba(45, 212, 191, .12); }
+    html.qb-dark .bg-teal-100, html.qb-dark .hover\:bg-teal-100:hover, html.qb-dark .hover\:bg-teal-50:hover { background-color: rgba(45, 212, 191, .18); }
+    html.qb-dark .bg-teal-200 { background-color: rgba(45, 212, 191, .26); }
+    html.qb-dark .text-teal-600, html.qb-dark .text-teal-700, html.qb-dark .text-teal-800, html.qb-dark .text-teal-900, html.qb-dark .text-teal-950, html.qb-dark .hover\:text-teal-600:hover, html.qb-dark .hover\:text-teal-700:hover, html.qb-dark .hover\:text-teal-800:hover { color: #5eead4; }
+    html.qb-dark .border-teal-100, html.qb-dark .border-teal-200, html.qb-dark .border-teal-300 { border-color: rgba(45, 212, 191, .35); }
+    html.qb-dark .bg-cyan-50, html.qb-dark .bg-cyan-50\/50, html.qb-dark .bg-cyan-50\/60, html.qb-dark .bg-cyan-50\/80 { background-color: rgba(34, 211, 238, .12); }
+    html.qb-dark .bg-cyan-100, html.qb-dark .hover\:bg-cyan-100:hover, html.qb-dark .hover\:bg-cyan-50:hover { background-color: rgba(34, 211, 238, .18); }
+    html.qb-dark .bg-cyan-200 { background-color: rgba(34, 211, 238, .26); }
+    html.qb-dark .text-cyan-600, html.qb-dark .text-cyan-700, html.qb-dark .text-cyan-800, html.qb-dark .text-cyan-900, html.qb-dark .text-cyan-950, html.qb-dark .hover\:text-cyan-600:hover, html.qb-dark .hover\:text-cyan-700:hover, html.qb-dark .hover\:text-cyan-800:hover { color: #67e8f9; }
+    html.qb-dark .border-cyan-100, html.qb-dark .border-cyan-200, html.qb-dark .border-cyan-300 { border-color: rgba(34, 211, 238, .35); }
+    html.qb-dark .bg-sky-50, html.qb-dark .bg-sky-50\/50, html.qb-dark .bg-sky-50\/60, html.qb-dark .bg-sky-50\/80 { background-color: rgba(56, 189, 248, .12); }
+    html.qb-dark .bg-sky-100, html.qb-dark .hover\:bg-sky-100:hover, html.qb-dark .hover\:bg-sky-50:hover { background-color: rgba(56, 189, 248, .18); }
+    html.qb-dark .bg-sky-200 { background-color: rgba(56, 189, 248, .26); }
+    html.qb-dark .text-sky-600, html.qb-dark .text-sky-700, html.qb-dark .text-sky-800, html.qb-dark .text-sky-900, html.qb-dark .text-sky-950, html.qb-dark .hover\:text-sky-600:hover, html.qb-dark .hover\:text-sky-700:hover, html.qb-dark .hover\:text-sky-800:hover { color: #7dd3fc; }
+    html.qb-dark .border-sky-100, html.qb-dark .border-sky-200, html.qb-dark .border-sky-300 { border-color: rgba(56, 189, 248, .35); }
+    html.qb-dark .bg-blue-50, html.qb-dark .bg-blue-50\/50, html.qb-dark .bg-blue-50\/60, html.qb-dark .bg-blue-50\/80 { background-color: rgba(96, 165, 250, .12); }
+    html.qb-dark .bg-blue-100, html.qb-dark .hover\:bg-blue-100:hover, html.qb-dark .hover\:bg-blue-50:hover { background-color: rgba(96, 165, 250, .18); }
+    html.qb-dark .bg-blue-200 { background-color: rgba(96, 165, 250, .26); }
+    html.qb-dark .text-blue-600, html.qb-dark .text-blue-700, html.qb-dark .text-blue-800, html.qb-dark .text-blue-900, html.qb-dark .text-blue-950, html.qb-dark .hover\:text-blue-600:hover, html.qb-dark .hover\:text-blue-700:hover, html.qb-dark .hover\:text-blue-800:hover { color: #93c5fd; }
+    html.qb-dark .border-blue-100, html.qb-dark .border-blue-200, html.qb-dark .border-blue-300 { border-color: rgba(96, 165, 250, .35); }
+    html.qb-dark .bg-indigo-50, html.qb-dark .bg-indigo-50\/50, html.qb-dark .bg-indigo-50\/60, html.qb-dark .bg-indigo-50\/80 { background-color: rgba(129, 140, 248, .12); }
+    html.qb-dark .bg-indigo-100, html.qb-dark .hover\:bg-indigo-100:hover, html.qb-dark .hover\:bg-indigo-50:hover { background-color: rgba(129, 140, 248, .18); }
+    html.qb-dark .bg-indigo-200 { background-color: rgba(129, 140, 248, .26); }
+    html.qb-dark .text-indigo-600, html.qb-dark .text-indigo-700, html.qb-dark .text-indigo-800, html.qb-dark .text-indigo-900, html.qb-dark .text-indigo-950, html.qb-dark .hover\:text-indigo-600:hover, html.qb-dark .hover\:text-indigo-700:hover, html.qb-dark .hover\:text-indigo-800:hover { color: #a5b4fc; }
+    html.qb-dark .border-indigo-100, html.qb-dark .border-indigo-200, html.qb-dark .border-indigo-300 { border-color: rgba(129, 140, 248, .35); }
+    html.qb-dark .bg-violet-50, html.qb-dark .bg-violet-50\/50, html.qb-dark .bg-violet-50\/60, html.qb-dark .bg-violet-50\/80 { background-color: rgba(167, 139, 250, .12); }
+    html.qb-dark .bg-violet-100, html.qb-dark .hover\:bg-violet-100:hover, html.qb-dark .hover\:bg-violet-50:hover { background-color: rgba(167, 139, 250, .18); }
+    html.qb-dark .bg-violet-200 { background-color: rgba(167, 139, 250, .26); }
+    html.qb-dark .text-violet-600, html.qb-dark .text-violet-700, html.qb-dark .text-violet-800, html.qb-dark .text-violet-900, html.qb-dark .text-violet-950, html.qb-dark .hover\:text-violet-600:hover, html.qb-dark .hover\:text-violet-700:hover, html.qb-dark .hover\:text-violet-800:hover { color: #c4b5fd; }
+    html.qb-dark .border-violet-100, html.qb-dark .border-violet-200, html.qb-dark .border-violet-300 { border-color: rgba(167, 139, 250, .35); }
+    html.qb-dark .bg-purple-50, html.qb-dark .bg-purple-50\/50, html.qb-dark .bg-purple-50\/60, html.qb-dark .bg-purple-50\/80 { background-color: rgba(192, 132, 252, .12); }
+    html.qb-dark .bg-purple-100, html.qb-dark .hover\:bg-purple-100:hover, html.qb-dark .hover\:bg-purple-50:hover { background-color: rgba(192, 132, 252, .18); }
+    html.qb-dark .bg-purple-200 { background-color: rgba(192, 132, 252, .26); }
+    html.qb-dark .text-purple-600, html.qb-dark .text-purple-700, html.qb-dark .text-purple-800, html.qb-dark .text-purple-900, html.qb-dark .text-purple-950, html.qb-dark .hover\:text-purple-600:hover, html.qb-dark .hover\:text-purple-700:hover, html.qb-dark .hover\:text-purple-800:hover { color: #d8b4fe; }
+    html.qb-dark .border-purple-100, html.qb-dark .border-purple-200, html.qb-dark .border-purple-300 { border-color: rgba(192, 132, 252, .35); }
+    html.qb-dark .bg-fuchsia-50, html.qb-dark .bg-fuchsia-50\/50, html.qb-dark .bg-fuchsia-50\/60, html.qb-dark .bg-fuchsia-50\/80 { background-color: rgba(232, 121, 249, .12); }
+    html.qb-dark .bg-fuchsia-100, html.qb-dark .hover\:bg-fuchsia-100:hover, html.qb-dark .hover\:bg-fuchsia-50:hover { background-color: rgba(232, 121, 249, .18); }
+    html.qb-dark .bg-fuchsia-200 { background-color: rgba(232, 121, 249, .26); }
+    html.qb-dark .text-fuchsia-600, html.qb-dark .text-fuchsia-700, html.qb-dark .text-fuchsia-800, html.qb-dark .text-fuchsia-900, html.qb-dark .text-fuchsia-950, html.qb-dark .hover\:text-fuchsia-600:hover, html.qb-dark .hover\:text-fuchsia-700:hover, html.qb-dark .hover\:text-fuchsia-800:hover { color: #f0abfc; }
+    html.qb-dark .border-fuchsia-100, html.qb-dark .border-fuchsia-200, html.qb-dark .border-fuchsia-300 { border-color: rgba(232, 121, 249, .35); }
+    html.qb-dark .bg-pink-50, html.qb-dark .bg-pink-50\/50, html.qb-dark .bg-pink-50\/60, html.qb-dark .bg-pink-50\/80 { background-color: rgba(244, 114, 182, .12); }
+    html.qb-dark .bg-pink-100, html.qb-dark .hover\:bg-pink-100:hover, html.qb-dark .hover\:bg-pink-50:hover { background-color: rgba(244, 114, 182, .18); }
+    html.qb-dark .bg-pink-200 { background-color: rgba(244, 114, 182, .26); }
+    html.qb-dark .text-pink-600, html.qb-dark .text-pink-700, html.qb-dark .text-pink-800, html.qb-dark .text-pink-900, html.qb-dark .text-pink-950, html.qb-dark .hover\:text-pink-600:hover, html.qb-dark .hover\:text-pink-700:hover, html.qb-dark .hover\:text-pink-800:hover { color: #f9a8d4; }
+    html.qb-dark .border-pink-100, html.qb-dark .border-pink-200, html.qb-dark .border-pink-300 { border-color: rgba(244, 114, 182, .35); }
+
+    /* ---------- Composants de styles.css (généré) ---------- */
+    html.qb-dark .tab-content details > summary:hover { color: rgb(115, 204, 252); }
+    html.qb-dark .stock-chart-legend { color: var(--qb-text-2); }
+    html.qb-dark .stock-chart-legend span { border: 1px solid var(--qb-line); background: var(--qb-surface-2); }
+    html.qb-dark .stock-chart-scroll { border: 1px solid var(--qb-line); background: var(--qb-surface); }
+    html.qb-dark .stock-chart-message { background: var(--qb-surface-2); color: var(--qb-text-2); }
+    html.qb-dark .stock-chart-details { color: var(--qb-text-2); }
+    html.qb-dark .stock-chart-details summary { border: 1px solid var(--qb-line); background: var(--qb-surface-2); color: rgb(115, 204, 252); }
+    html.qb-dark .stock-chart-details summary:hover { background: rgba(51, 173, 255, .14); }
+    html.qb-dark .stock-chart-table th, html.qb-dark .stock-chart-table td { border-bottom: 1px solid var(--qb-line); }
+    html.qb-dark .stock-chart-table th { color: var(--qb-text-2); }
+    html.qb-dark .stock-history-header { border-bottom: 1px solid var(--qb-line); }
+    html.qb-dark .stock-history-title-icon, html.qb-dark .stock-history-section-icon { background: rgba(57, 172, 249, .14); color: rgb(114, 206, 254); }
+    html.qb-dark .stock-history-button-muted { border-color: var(--qb-line); background: var(--qb-surface); color: var(--qb-text-2); }
+    html.qb-dark .stock-history-button-muted:hover:not(:disabled) { border-color: var(--qb-line-strong); background: var(--qb-surface-2); }
+    html.qb-dark .stock-history-filter-panel { border: 1px solid rgba(57, 139, 249, .38); background: linear-gradient(135deg, var(--qb-surface-2), rgba(51, 140, 255, .14)); }
+    html.qb-dark .stock-history-filter-heading h4 { color: var(--qb-text); }
+    html.qb-dark .stock-history-filter-heading h4 i { color: rgb(114, 206, 254); }
+    html.qb-dark .stock-history-filter-heading p { color: var(--qb-muted); }
+    html.qb-dark .stock-history-reset { color: rgb(115, 204, 252); }
+    html.qb-dark .stock-history-reset:hover { color: rgb(126, 199, 241); }
+    html.qb-dark .stock-history-filter-grid > label { color: var(--qb-text-2); }
+    html.qb-dark .stock-history-filter-grid input, html.qb-dark .stock-history-filter-grid select { border: 1px solid var(--qb-line-strong); background: var(--qb-surface); color: var(--qb-text); }
+    html.qb-dark #stock-history-status { background: var(--qb-surface-2); color: var(--qb-text-2); }
+    html.qb-dark .stock-history-section-heading h4 { color: var(--qb-text); }
+    html.qb-dark .stock-history-section-heading p { color: var(--qb-muted); }
+    html.qb-dark .stock-history-section-icon { background: var(--qb-surface-2); color: var(--qb-muted); }
+    html.qb-dark .stock-history-table-wrap { border: 1px solid var(--qb-line); background: var(--qb-surface); }
+    html.qb-dark .stock-history-table th, html.qb-dark .stock-history-table td { border-bottom: 1px solid var(--qb-line) !important; }
+    html.qb-dark .stock-history-table th { background: var(--qb-surface-2); color: var(--qb-muted); }
+    html.qb-dark .stock-history-table tbody tr:nth-child(even) { background: var(--qb-surface); }
+    html.qb-dark .stock-history-table tbody tr:hover { background: rgba(51, 173, 255, .14) !important; }
+    html.qb-dark .stock-history-summary-table td:first-child, html.qb-dark .stock-history-movements-table td:nth-child(2) { color: var(--qb-text); }
+    html.qb-dark .stock-history-chart-card { border: 1px solid var(--qb-line); background: linear-gradient(180deg, var(--qb-surface), var(--qb-surface-2)); }
+    html.qb-dark .stock-history-chart-heading h4 { color: var(--qb-text); }
+    html.qb-dark .stock-history-chart-heading p { color: var(--qb-muted); }
+    html.qb-dark .stock-history-chart-icon { background: rgba(57, 172, 249, .14); color: rgb(114, 206, 254); }
+    html.qb-dark .stock-history-chart-icon-line { background: rgba(67, 239, 126, .14); color: rgb(132, 235, 171); }
+    html.qb-dark .stock-history-chart-legend { color: var(--qb-muted); }
+    html.qb-dark .stock-history-inventories > details { border: 1px solid var(--qb-line) !important; background: var(--qb-surface); }
+    html.qb-dark .stock-history-inventories > details > summary { background: var(--qb-surface-2); color: var(--qb-text-2); }
+    html.qb-dark .transfer-history { border-top: 1px solid var(--qb-line); }
+    html.qb-dark .transfer-history-icon { background: rgba(57, 172, 249, .14); color: rgb(114, 206, 254); }
+    html.qb-dark .transfer-history-heading h4 { color: var(--qb-text); }
+    html.qb-dark .transfer-history-heading p { color: var(--qb-muted); }
+    html.qb-dark .transfer-history-card { border: 1px solid var(--qb-line); background: var(--qb-surface); }
+    html.qb-dark .transfer-history-card-header { background: var(--qb-surface-2); border-bottom: 1px solid var(--qb-line); }
+    html.qb-dark .transfer-history-reference { color: var(--qb-text); }
+    html.qb-dark .transfer-history-date { color: var(--qb-muted); }
+    html.qb-dark .transfer-history-badge-incoming { background: rgba(67, 239, 126, .14); color: rgb(134, 234, 172); }
+    html.qb-dark .transfer-history-badge-outgoing { background: rgba(57, 172, 249, .14); color: rgb(119, 203, 248); }
+    html.qb-dark .transfer-history-route dt { color: var(--qb-muted); }
+    html.qb-dark .transfer-history-route dd { color: var(--qb-text); }
+    html.qb-dark .transfer-history-items { background: var(--qb-surface-2); }
+    html.qb-dark .transfer-history-items h6 { color: var(--qb-text-2); }
+    html.qb-dark .transfer-history-item-list li { color: var(--qb-text-2); }
+    html.qb-dark .transfer-history-product { color: var(--qb-text); }
+    html.qb-dark .transfer-history-quantity { color: var(--qb-text); }
+    html.qb-dark .transfer-history-empty, html.qb-dark .transfer-history-no-items { color: var(--qb-muted); }
+    html.qb-dark .transfer-history-empty { border: 1px dashed var(--qb-line-strong); background: var(--qb-surface-2); }
+    html.qb-dark .logistics-month { border: 1px solid var(--qb-line); }
+    html.qb-dark .logistics-month h4 { color: var(--qb-text); }
+    html.qb-dark .logistics-outgoing strong { color: var(--qb-text); }
+    html.qb-dark .logistics-outgoing small { color: var(--qb-text-2); }
+    html.qb-dark .logistics-inventory-date { color: var(--qb-muted); }
+    html.qb-dark .postgres-notice { background: rgba(57, 172, 249, .14); border: 1px solid rgba(56, 188, 250, .38); color: rgb(126, 199, 241); }
+    html.qb-dark .postgres-item { border: 1px solid var(--qb-line-strong); }
+    html.qb-dark .postgres-read-table { background: var(--qb-surface); }
+    html.qb-dark .postgres-read-table th, html.qb-dark .postgres-read-table td { border: 1px solid var(--qb-line-strong); }
+    html.qb-dark #postgres-frame-container iframe { background: var(--qb-surface); }
+
+    html.qb-dark .tab-content table thead tr { background: var(--qb-surface-2); }
+    html.qb-dark .tab-content tbody tr:hover { background-color: var(--qb-surface-2); }
+    html.qb-dark .tab-content details > summary:hover { color: rgb(115, 204, 252); }
+    html.qb-dark .stock-chart-scroll { background: var(--qb-surface); }
+    html.qb-dark .stock-chart-details summary { color: rgb(115, 204, 252); }
+    html.qb-dark .stock-chart-details summary:hover { background: rgba(51, 173, 255, .14); border-color: rgba(57, 183, 249, .38); }
+    html.qb-dark .stock-chart-table th { color: var(--qb-text-2); }
+    html.qb-dark .stock-history-title-icon, html.qb-dark .stock-history-section-icon { background: rgba(57, 172, 249, .14); color: rgb(114, 206, 254); }
+    html.qb-dark .stock-history-button-muted { background: var(--qb-surface); color: var(--qb-text-2); }
+    html.qb-dark .stock-history-button-muted:hover:not(:disabled) { border-color: var(--qb-line-strong); }
+    html.qb-dark .stock-history-filter-panel { border: 1px solid rgba(57, 139, 249, .38); background: linear-gradient(135deg, var(--qb-surface-2) 0%, rgba(51, 140, 255, .14) 100%); }
+    html.qb-dark .stock-history-reset { color: rgb(115, 204, 252); }
+    html.qb-dark .stock-history-reset:hover { color: rgb(126, 199, 241); }
+    html.qb-dark .stock-history-filter-grid input, html.qb-dark .stock-history-filter-grid select { background: var(--qb-surface); }
+    html.qb-dark .stock-history-section-icon { background: var(--qb-surface-2); }
+    html.qb-dark .stock-history-table-wrap { background: var(--qb-surface); }
+    html.qb-dark .stock-history-table th, html.qb-dark .stock-history-table td { border-bottom: 1px solid var(--qb-line) !important; }
+    html.qb-dark .stock-history-table tbody tr:nth-child(even) { background: var(--qb-surface); }
+    html.qb-dark .stock-history-table tbody tr:hover { background: rgba(51, 173, 255, .14) !important; }
+    html.qb-dark .stock-history-chart-card { background: linear-gradient(180deg, var(--qb-surface), var(--qb-surface-2)); }
+    html.qb-dark .stock-history-chart-icon { background: rgba(57, 172, 249, .14); color: rgb(114, 206, 254); }
+    html.qb-dark .stock-history-chart-icon-line { background: rgba(67, 239, 126, .14); color: rgb(132, 235, 171); }
+    html.qb-dark .stock-history-inventories > details { background: var(--qb-surface); }
+    html.qb-dark .stock-history-inventories > details > summary { color: var(--qb-text-2); }
+    html.qb-dark .transfer-history-icon { background: rgba(57, 172, 249, .14); color: rgb(114, 206, 254); }
+    html.qb-dark .transfer-history-card { background: var(--qb-surface); }
+    html.qb-dark .transfer-history-badge-incoming { background: rgba(67, 239, 126, .14); color: rgb(134, 234, 172); }
+    html.qb-dark .transfer-history-badge-outgoing { background: rgba(57, 172, 249, .14); color: rgb(119, 203, 248); }
+    html.qb-dark .transfer-history-route dd { color: var(--qb-text); }
+    html.qb-dark .transfer-history-items { border: 1px solid var(--qb-line); }
+    html.qb-dark .logistics-month { background: var(--qb-surface); }
+    html.qb-dark .postgres-notice { background: linear-gradient(135deg, rgba(51, 173, 255, .14) 0%, rgba(57, 172, 249, .14) 100%); border: 1px solid rgba(57, 183, 249, .38); color: rgb(126, 199, 241); }
+    html.qb-dark .postgres-item { background: var(--qb-surface); }
+    html.qb-dark .postgres-read-table { background: var(--qb-surface); }
+    html.qb-dark #postgres-frame-container iframe { background: var(--qb-surface); }
+}

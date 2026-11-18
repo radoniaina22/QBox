@@ -1,0 +1,140 @@
+/* ==========================================================================
+   Q.box — Mode sombre de l'interface d'opérations intégrée (admin-local.html)
+   --------------------------------------------------------------------------
+   Ce fichier n'est pas chargé par admin-local.html lui-même : theme-toggle.js
+   l'ajoute dans le cadre intégré (même site) quand le mode sombre est actif.
+   Purement visuel, uniquement à l'écran.
+   ========================================================================== */
+
+@media screen {
+    html.qb-dark {
+        color-scheme: dark;
+        --qb-canvas: #0a0f1d;
+        --qb-surface: #111a2c;
+        --qb-surface-2: #152036;
+        --qb-surface-3: #1b2740;
+        --qb-surface-4: #24314d;
+        --qb-header-bg: rgba(10, 15, 29, .72);
+        --qb-line: rgba(148, 163, 184, .14);
+        --qb-line-soft: rgba(148, 163, 184, .09);
+        --qb-line-strong: rgba(148, 163, 184, .24);
+        --qb-line-hover: rgba(148, 163, 184, .38);
+        --qb-row-hover: rgba(148, 163, 184, .06);
+        --qb-text: #e8edf6;
+        --qb-text-2: #c3cede;
+        --qb-muted: #94a3b8;
+        --qb-faint: #6f7f96;
+        --qb-placeholder: #6f7f96;
+        --qb-ring: 0 0 0 4px rgba(251, 191, 36, .2);
+        --qb-shadow-xs: 0 1px 2px rgba(0, 0, 0, .3);
+        --qb-shadow-sm: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 18px -8px rgba(0, 0, 0, .5);
+        --qb-shadow-md: 0 1px 3px rgba(0, 0, 0, .35), 0 16px 36px -14px rgba(0, 0, 0, .6);
+        --qb-shadow-lg: 0 30px 70px -20px rgba(0, 0, 0, .75), 0 10px 24px -10px rgba(0, 0, 0, .5);
+        /* Variables utilisées par styles.css */
+        --qb-bg-app: #0a0f1d;
+        --qb-bg-surface: #111a2c;
+        --qb-bg-subtle: #152036;
+        --qb-border: rgba(148, 163, 184, .14);
+        --qb-border-strong: rgba(148, 163, 184, .24);
+        --qb-text-primary: #e8edf6;
+        --qb-text-secondary: #c3cede;
+        --qb-text-muted: #94a3b8;
+        --qb-info-soft: rgba(56, 189, 248, .12);
+        --qb-accent-soft: rgba(251, 191, 36, .14);
+    }
+
+    html.qb-dark body { background: var(--qb-surface-2); color: var(--qb-text); }
+    html.qb-dark section, html.qb-dark .user { background: var(--qb-surface); border: 1px solid var(--qb-line); }
+    html.qb-dark .notice { background: var(--qb-surface-2); border: 1px solid rgba(252, 212, 54, .38); color: rgb(239, 168, 128); }
+    html.qb-dark label { color: var(--qb-text-2); }
+    html.qb-dark input, html.qb-dark select, html.qb-dark textarea, html.qb-dark button { border: 1px solid var(--qb-line-strong); }
+    html.qb-dark .user { border: 1px solid var(--qb-line); }
+    html.qb-dark #flight-test { color: var(--qb-text); }
+    html.qb-dark .flight-panel-header { border: 1px solid var(--qb-line); background: linear-gradient(135deg, var(--qb-surface) 0%, var(--qb-surface-2) 100%); }
+    html.qb-dark .flight-panel-icon { background: rgba(251, 212, 55, .14); color: rgb(248, 175, 119); }
+    html.qb-dark .flight-panel-heading p { color: var(--qb-muted); }
+    html.qb-dark #flight-test button.flight-secondary { background: var(--qb-surface); border-color: var(--qb-line-strong); color: var(--qb-text-2); }
+    html.qb-dark #flight-test button.flight-danger { background: var(--qb-surface-2); border-color: rgba(251, 55, 79, .38); color: rgb(243, 125, 153); }
+    html.qb-dark #flight-test button.flight-success { background: var(--qb-surface-3); border-color: rgba(75, 231, 159, .38); color: rgb(117, 250, 212); }
+    html.qb-dark #flight-test button.flight-secondary:hover { background: var(--qb-surface-2); }
+    html.qb-dark #flight-test button.flight-danger:hover { background: rgba(255, 51, 66, .14); }
+    html.qb-dark #flight-test button.flight-success:hover { background: rgba(71, 235, 151, .14); }
+    html.qb-dark #flight-form, html.qb-dark #flight-edit-form { border: 1px solid var(--qb-line); background: var(--qb-surface-2); }
+    html.qb-dark #flight-form label, html.qb-dark #flight-edit-form label { color: var(--qb-text-2); }
+    html.qb-dark #flight-form input, html.qb-dark #flight-form select, html.qb-dark #flight-edit-form input, html.qb-dark #flight-edit-form select { background: var(--qb-surface); border-color: var(--qb-line-strong); color: var(--qb-text); }
+    html.qb-dark #flight-test .flight-parcel, html.qb-dark #flight-test .flight-item { border-color: var(--qb-line); }
+    html.qb-dark #flight-list { color: var(--qb-muted); }
+    html.qb-dark #flight-test .flight-operation-card { border: 1px solid var(--qb-line); }
+    html.qb-dark #flight-test .flight-operation-card:hover { border-color: var(--qb-line-strong); }
+    html.qb-dark .flight-operation-reference { color: var(--qb-text); }
+    html.qb-dark .flight-operation-meta { color: var(--qb-muted); }
+    html.qb-dark .flight-operation-status { background: var(--qb-surface-2); color: var(--qb-text-2); }
+    html.qb-dark .flight-status-active { background: rgba(57, 172, 249, .14); color: rgb(115, 204, 252); }
+    html.qb-dark .flight-status-cancelled { background: var(--qb-surface-2); color: rgb(243, 125, 153); }
+    html.qb-dark .flight-status-closed { background: rgba(67, 239, 126, .14); color: rgb(134, 234, 172); }
+    html.qb-dark .flight-operation-items { background: var(--qb-surface-2); border: 1px solid var(--qb-line); color: var(--qb-text-2); }
+    html.qb-dark .flight-close-date { color: var(--qb-text-2); }
+    html.qb-dark .flight-close-date input { color: var(--qb-text); }
+    html.qb-dark .flight-operation-history:not(:empty) { border-top: 1px solid var(--qb-line); }
+    html.qb-dark #administration { color: var(--qb-text); }
+    html.qb-dark .accounts-header { background: linear-gradient(135deg, var(--qb-surface) 0%, var(--qb-surface-2) 100%); border: 1px solid var(--qb-line); }
+    html.qb-dark .accounts-icon { background: rgba(251, 212, 55, .14); color: rgb(248, 175, 119); }
+    html.qb-dark .accounts-heading p { color: var(--qb-muted); }
+    html.qb-dark .accounts-pending { background: rgba(251, 212, 55, .14); color: rgb(243, 169, 125); }
+    html.qb-dark #administration .accounts-refresh { background: var(--qb-surface); border: 1px solid var(--qb-line-strong); color: var(--qb-text-2); }
+    html.qb-dark #administration .accounts-refresh:hover { background: var(--qb-surface-2); }
+    html.qb-dark #administration .account-card { border: 1px solid var(--qb-line); }
+    html.qb-dark #administration .account-card:hover { border-color: var(--qb-line-strong); }
+    html.qb-dark .account-status { background: var(--qb-surface-2); color: var(--qb-text-2); }
+    html.qb-dark .account-status-pending { background: rgba(251, 212, 55, .14); color: rgb(243, 169, 125); }
+    html.qb-dark .account-status-approved { background: rgba(67, 239, 126, .14); color: rgb(134, 234, 172); }
+    html.qb-dark .account-status-suspended { background: rgba(255, 168, 51, .14); color: rgb(240, 155, 127); }
+    html.qb-dark .account-status-rejected { background: rgba(255, 51, 66, .14); color: rgb(243, 125, 153); }
+    html.qb-dark .account-details { color: var(--qb-muted); }
+    html.qb-dark #administration .account-actions { border-top: 1px solid var(--qb-line); }
+    html.qb-dark #administration .account-role { color: var(--qb-text-2); }
+    html.qb-dark #administration .account-role select { border: 1px solid var(--qb-line-strong); background: var(--qb-surface); color: var(--qb-text); }
+    html.qb-dark #administration #admin-name-dialog { border: 1px solid var(--qb-line-strong); }
+    html.qb-dark #admin-name-form label { color: var(--qb-text-2); }
+    html.qb-dark #admin-name-status { color: rgb(236, 131, 131); }
+    html.qb-dark #administration .account-action-suspended { background: var(--qb-surface-2); color: rgb(240, 155, 127); border-color: rgba(253, 160, 53, .38); }
+    html.qb-dark #administration .account-action-rejected, html.qb-dark #administration .account-action-delete { background: var(--qb-surface-2); color: rgb(243, 125, 153); border-color: rgba(251, 55, 79, .38); }
+    html.qb-dark #administration .account-action-suspended:hover { background: rgba(255, 168, 51, .14); }
+    html.qb-dark #administration .account-action-rejected:hover, html.qb-dark #administration .account-action-delete:hover { background: rgba(255, 51, 66, .14); }
+    html.qb-dark .accounts-empty { border: 1px dashed var(--qb-line-strong); color: var(--qb-muted); }
+    html.qb-dark .history-visual { border: 1px solid var(--qb-line); background: linear-gradient(180deg, var(--qb-surface), var(--qb-surface-2)); }
+    html.qb-dark .history-visual h3 { color: var(--qb-text); }
+    html.qb-dark .history-visual-note { color: var(--qb-muted); }
+    html.qb-dark .history-bar { color: var(--qb-text-2); }
+    html.qb-dark .history-bar > span:last-child { color: var(--qb-text); }
+    html.qb-dark .history-bar-track { background: var(--qb-surface-3); }
+    html.qb-dark .history-chart { border: 1px solid var(--qb-line); background: var(--qb-surface); }
+    html.qb-dark #stock-history-evolution > p { color: var(--qb-muted); }
+    html.qb-dark .district-completion > p { color: var(--qb-text-2); }
+    html.qb-dark .district-completion-card { border: 1px solid var(--qb-line); background: var(--qb-surface-2); }
+    html.qb-dark .district-completion-card p { color: var(--qb-text-2); }
+    html.qb-dark.embedded body { background: var(--qb-surface); }
+
+    html.qb-dark :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+        background-color: var(--qb-surface);
+        color: var(--qb-text);
+    }
+    html.qb-dark :is(input, textarea)::placeholder { color: var(--qb-placeholder); }
+    html.qb-dark select option { background: var(--qb-surface); color: var(--qb-text); }
+    html.qb-dark :is(h1, h2, h3, h4, h5, strong) { color: var(--qb-text); }
+    html.qb-dark a { color: #7dd3fc; }
+    html.qb-dark table :is(th, td) { border-color: var(--qb-line); }
+    html.qb-dark table th { background: var(--qb-surface-2); color: var(--qb-muted); }
+    html.qb-dark dialog { background: var(--qb-surface); color: var(--qb-text); }
+    html.qb-dark.embedded button:not([class]),
+    html.qb-dark #administration .account-action:not(.account-action-suspended):not(.account-action-rejected):not(.account-action-delete) {
+        background: #2b3b5a;
+        border-color: rgba(148, 163, 184, .3);
+        color: #fff;
+    }
+    html.qb-dark.embedded button:not([class]):hover,
+    html.qb-dark #administration .account-action:not(.account-action-suspended):not(.account-action-rejected):not(.account-action-delete):hover {
+        background: #34476b;
+    }
+    html.qb-dark canvas { filter: invert(1) hue-rotate(180deg) saturate(1.15); }
+}
