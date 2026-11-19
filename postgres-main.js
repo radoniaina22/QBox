@@ -5783,8 +5783,8 @@
         $('transfer-add').addEventListener('click', addTransferItem);
         $('transfer-destination').addEventListener('change', transferDestinationChanged);
         $('dashboard-storage-link').addEventListener('click', () => selectView('transfers'));
-        setText('auth-network-status', 'Test local PostgreSQL');
-        setText('auth-version', 'TEST LOCAL');
+        setText('auth-network-status', 'version 3.4');
+        setText('auth-version', 'copyright RDN @2026');
         setText('dashboard-live-label', 'Instantané');
         setText('dashboard-fefo-label', 'Lots datés par péremption');
         $('login-username').value = '';
