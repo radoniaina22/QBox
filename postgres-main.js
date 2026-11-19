@@ -93,7 +93,7 @@
         if (remaining > 0) lockedForms.set(id, remaining);
         else lockedForms.delete(id);
     }
-    const nativeViewIds = ['stocks', 'salama', 'products', 'csb', 'ports', 'planning', 'archives', 'drones', 'history', 'sorties', 'inventory', 'quarantine', 'stock-history', 'logistics-report', 'transfers'];
+    const nativeViewIds = ['stocks', 'salama', 'products', 'csb', 'ports', 'planning', 'archives', 'stock-analysis', 'drones', 'history', 'sorties', 'inventory', 'quarantine', 'stock-history', 'logistics-report', 'transfers'];
     const portSelect = $('drone-port-select');
     const login = $('main-login');
     const notice = $('postgres-dashboard-notice');
@@ -146,6 +146,7 @@
                 `${i.product_name} · lot ${i.lot} : attendu ${number(BigInt(i.system_quantity) - BigInt(i.in_delivery))}, compté ${number(i.counted)}, écart ${number(i.difference)}`).join(' ; ') || 'Aucun détail'] },
         'stock-history': { title: 'Historique global des stocks' },
         'logistics-report': { title: 'Rapport logistique' },
+        'stock-analysis': { title: 'Analyse des stocks et de la CMM des CSB' },
         transfers: { title: 'Transferts et expéditions terrestres' }
     };
 
@@ -182,6 +183,7 @@
         $('logistics-report-months').replaceChildren();
         $('logistics-report-status').textContent = '';
         $('logistics-report-print-context').textContent = '';
+        $('logistics-report-print-header').replaceChildren();
         $('logistics-report-print').disabled = true;
         document.body.classList.remove('logistics-report-print-mode');
         passwordGeneration++;
@@ -252,6 +254,8 @@
         $('port-form').classList.add('hidden');
         $('port-form').reset();
         $('planning-cards-container').replaceChildren();
+        clearPlanningDistrictSummary();
+        clearStockAnalysis();
         $('archives-container').replaceChildren();
         $('drones-groups').replaceChildren();
         $('history-table-body').replaceChildren();
@@ -262,10 +266,10 @@
         planningProducts = [];
         $('modal-planning').classList.add('hidden');
         $('modal-archive').classList.add('hidden');
-        $('plan-csb-blocks').replaceChildren();
+        resetPlanningForm();
         flightDraft = null;
         $('modal-drone').classList.add('hidden');
-        $('drone-flights-container').replaceChildren();
+        resetFlightParcels();
         $('drone-active-planning').replaceChildren();
         shipmentDraft = null;
         $('modal-sortie').classList.add('hidden');
@@ -322,7 +326,7 @@
         receiptPort = null;
         $('modal-salama').classList.add('hidden');
         $('modal-backdrop').classList.add('hidden');
-        $('salama-items').replaceChildren();
+        resetReceiptRows();
         $('salama-id').value = '';
         activeView = 'dashboard';
         setText('user-display-name', '');
@@ -1199,6 +1203,7 @@
             const container = $(view === 'planning' ? 'planning-cards-container' : 'archives-container');
             const notice = $(`postgres-${view}-status`);
             container.replaceChildren();
+            if (view === 'planning') clearPlanningDistrictSummary();
             notice.textContent = port ? 'Chargement…' : 'Aucun port disponible.';
             if (!port) return;
             try {
@@ -1317,27 +1322,512 @@
                     container.append(card);
                 }
                 notice.textContent = `${plans.length} planning(s) · Actualisé le ${localDateTime(new Date())} (heure de Madagascar).`;
+                const active = view === 'planning' && plans.find(plan => plan.items.length);
+                // Chargée en arrière-plan : les cartes du planning ne dépendent pas de la lecture des stocks.
+                if (active) loadPlanningDistrictSummary(active, view, port, seq, requestGeneration, notice);
             } catch (error) {
                 if (seq === requestSequence && activeView === view && port === portSelect.value && sessionGeneration === requestGeneration)
                     notice.textContent = `Lecture indisponible : ${error.message}`;
             }
     }
 
+    // --- Répartition des intrants planifiés par district ---
+    const NO_DISTRICT = 'District non renseigné';
+
+    function planningDistricts(plan, csbs) {
+        const districtOf = new Map(csbs.map(csb => [csb.id, csb.district || NO_DISTRICT]));
+        const districts = new Map(), products = new Map();
+        let total = 0n;
+        for (const item of plan.items) {
+            const name = districtOf.get(item.csb_id) || NO_DISTRICT;
+            const key = item.product_id || item.product_name;
+            const planned = BigInt(item.planned);
+            if (!districts.has(name)) districts.set(name, {name, csbs: new Set(), total: 0n, products: new Map()});
+            const district = districts.get(name);
+            district.csbs.add(item.csb_id);
+            district.total += planned;
+            district.products.set(key, (district.products.get(key) || 0n) + planned);
+            if (!products.has(key)) products.set(key, {key, name: item.product_name, total: 0n});
+            products.get(key).total += planned;
+            total += planned;
+        }
+        const byName = (a, b) => a.name === NO_DISTRICT ? 1 : b.name === NO_DISTRICT ? -1 : a.name.localeCompare(b.name, 'fr');
+        return {total, districts: [...districts.values()].sort(byName),
+            products: [...products.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr'))};
+    }
+
+    const planningShare = (value, total) => total ? `${(Number(value * 1000n / total) / 10).toLocaleString('fr-FR')} %` : '0 %';
+
+    function planningCell(tag, text, className = '') {
+        const cell = document.createElement(tag);
+        if (className) cell.className = className;
+        cell.textContent = text;
+        if (tag === 'th' && !cell.scope) cell.scope = 'col';
+        return cell;
+    }
+
+    // Tableau croisé intrant × district, utilisé à l'écran et à l'impression.
+    function planningDistrictMatrix(data, screen) {
+        const cls = screen ? {
+            table: 'w-full text-left border-collapse text-xs', th: 'py-2 px-2 text-[10px] uppercase font-semibold text-slate-500 whitespace-nowrap',
+            num: 'py-2 px-2 text-right font-mono text-slate-700 whitespace-nowrap', name: 'py-2 px-2 font-semibold text-slate-800',
+            total: 'py-2 px-2 text-right font-mono font-bold text-slate-900 whitespace-nowrap bg-slate-50', foot: 'border-t-2 border-slate-200 bg-slate-50'
+        } : {};
+        const table = document.createElement('table');
+        if (cls.table) table.className = cls.table;
+        const head = document.createElement('thead');
+        const header = document.createElement('tr');
+        if (screen) header.className = 'border-b border-slate-200';
+        header.append(planningCell('th', 'Intrant', cls.th));
+        for (const district of data.districts) header.append(planningCell('th', district.name, cls.th ? `${cls.th} text-right` : ''));
+        header.append(planningCell('th', 'Total', cls.th ? `${cls.th} text-right` : ''));
+        head.append(header);
+        const body = document.createElement('tbody');
+        if (screen) body.className = 'divide-y divide-slate-100';
+        for (const product of data.products) {
+            const row = document.createElement('tr');
+            if (screen) row.className = 'hover:bg-slate-50';
+            const name = planningCell('th', product.name, cls.name);
+            name.scope = 'row';
+            row.append(name);
+            for (const district of data.districts) {
+                const value = district.products.get(product.key);
+                row.append(planningCell('td', value ? number(value) : '—', value || !screen ? cls.num : `${cls.num} text-slate-300`));
+            }
+            row.append(planningCell('td', number(product.total), cls.total));
+            body.append(row);
+        }
+        const foot = document.createElement('tfoot');
+        const totals = document.createElement('tr');
+        if (cls.foot) totals.className = cls.foot;
+        const label = planningCell('th', 'Total planifié', cls.name);
+        label.scope = 'row';
+        totals.append(label);
+        for (const district of data.districts) totals.append(planningCell('td', number(district.total), cls.total));
+        totals.append(planningCell('td', number(data.total), cls.total));
+        foot.append(totals);
+        table.append(head, body, foot);
+        return table;
+    }
+
+    function renderPlanningDistrictSummary(plan, data, view) {
+        const section = $('planning-district-summary');
+        const header = document.createElement('div');
+        header.className = 'p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+        const heading = document.createElement('div');
+        const title = planningCell('h3', 'Répartition des intrants planifiés par district', 'font-bold text-slate-900 text-sm');
+        title.id = 'planning-district-title';
+        heading.append(title, planningCell('p', `${plan.code} · Campagne du ${plan.start_date} au ${plan.end_date} · ${data.districts.length} district(s) · ${number(data.total)} unité(s) planifiée(s)`, 'text-xs text-slate-500'));
+        const print = document.createElement('button');
+        print.type = 'button';
+        print.className = 'px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shrink-0';
+        print.textContent = 'Imprimer la répartition';
+        print.addEventListener('click', () => openPlanningPrint(view, plan.id, null));
+        header.append(heading, print);
+        const cards = document.createElement('div');
+        cards.className = 'p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3';
+        for (const district of data.districts) {
+            const card = document.createElement('div');
+            card.className = 'planning-district-card p-3 rounded-xl border border-slate-200 bg-white';
+            const top = document.createElement('div');
+            top.className = 'flex items-start justify-between gap-2';
+            top.append(planningCell('span', district.name, 'text-xs font-bold text-slate-800'),
+                planningCell('span', `${district.csbs.size} CSB`, 'shrink-0 px-1.5 py-0.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600'));
+            const value = planningCell('div', `${number(district.total)} un.`, 'mt-2 text-lg font-bold font-mono text-slate-900');
+            const track = document.createElement('div');
+            track.className = 'mt-2 w-full bg-slate-100 rounded-full h-1.5 overflow-hidden';
+            const fill = document.createElement('div');
+            fill.className = 'bg-sky-500 h-1.5';
+            fill.style.width = data.total ? `${Number(district.total * 100n / data.total)}%` : '0%';
+            track.append(fill);
+            card.append(top, value, track, planningCell('div', `${planningShare(district.total, data.total)} du total`, 'mt-1 text-[10px] text-slate-500'));
+            cards.append(card);
+        }
+        const scroll = document.createElement('div');
+        scroll.className = 'px-5 pb-5 overflow-x-auto';
+        scroll.append(planningDistrictMatrix(data, true));
+        section.replaceChildren(header, cards, scroll);
+        if (data.stock) {
+            // Badge global à côté du titre pour lire l'orientation sans descendre jusqu'au tableau.
+            heading.append(planningStatusBadge(planningGlobalVerdict(data.stock).status, 'mt-1.5'));
+            section.append(planningStockSection(data.stock, true));
+        }
+        section.hidden = false;
+    }
+
+    // --- Comparaison planifié / stock disponible du port ---
+    // Le besoin à couvrir est le restant à livrer (planifié - livré - en vol - transit terrestre).
+    // Le stock utilisable exclut les lots périmés ; les lots qui expirent avant la fin de campagne sont signalés.
+    const PLANNING_STOCK_STATUS = {
+        covered:  {label: 'Besoin couvert',   icon: 'ph-check-square',  tone: 'bg-sky-50 text-sky-700 border-sky-200',             advice: 'Tout est livré ou en cours de livraison.'},
+        ok:       {label: 'Stock suffisant',  icon: 'ph-check-circle',  tone: 'bg-emerald-50 text-emerald-700 border-emerald-200', advice: 'Le stock couvre le restant à livrer.'},
+        tight:    {label: 'Couverture juste', icon: 'ph-warning',       tone: 'bg-amber-50 text-amber-800 border-amber-200',       advice: 'Marge inférieure à 10 % : anticiper un réapprovisionnement.'},
+        short:    {label: 'En manque',        icon: 'ph-warning-circle', tone: 'bg-orange-50 text-orange-800 border-orange-200',   advice: 'Stock insuffisant : commander ou transférer la quantité manquante.'},
+        out:      {label: 'Rupture',          icon: 'ph-x-circle',      tone: 'bg-red-50 text-red-700 border-red-200',             advice: 'Aucun stock utilisable : réapprovisionnement urgent.'}
+    };
+
+    function planningTodayIso() {
+        return new Date().toLocaleDateString('sv-SE', {timeZone: 'Indian/Antananarivo'});
+    }
+
+    function planningStockComparison(plan, stocks, today = planningTodayIso()) {
+        const rows = new Map();
+        const rowFor = (key, name) => {
+            if (!rows.has(key)) rows.set(key, {key, name, unit: '', planned: 0n, remaining: 0n, usable: 0n, expiring: 0n, expired: 0n});
+            return rows.get(key);
+        };
+        for (const item of plan.items) {
+            const row = rowFor(item.product_id || item.product_name, item.product_name);
+            row.planned += BigInt(item.planned);
+            row.remaining += BigInt(item.remaining ?? 0);
+        }
+        for (const lot of stocks) {
+            const row = rows.get(lot.product_id) || rows.get(lot.name);
+            if (!row) continue;
+            const available = BigInt(lot.available ?? 0);
+            row.unit ||= lot.unit || '';
+            if (available <= 0n) continue;
+            if (lot.expiry_date && lot.expiry_date < today) { row.expired += available; continue; }
+            row.usable += available;
+            if (lot.expiry_date && plan.end_date && lot.expiry_date <= plan.end_date) row.expiring += available;
+        }
+        const totals = {planned: 0n, remaining: 0n, usable: 0n, missing: 0n};
+        const list = [...rows.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr')).map(row => {
+            const gap = row.usable - row.remaining;
+            const status = row.remaining <= 0n ? 'covered' : row.usable === 0n ? 'out' : gap < 0n ? 'short'
+                : gap * 10n < row.remaining ? 'tight' : 'ok';
+            totals.planned += row.planned;
+            totals.remaining += row.remaining > 0n ? row.remaining : 0n;
+            totals.usable += row.usable;
+            if (gap < 0n && row.remaining > 0n) totals.missing -= gap;
+            return {...row, gap, status};
+        });
+        const counts = Object.fromEntries(Object.keys(PLANNING_STOCK_STATUS).map(key => [key, list.filter(row => row.status === key).length]));
+        return {rows: list, totals, counts, today, endDate: plan.end_date};
+    }
+
+    const planningCoverage = (usable, remaining) => remaining > 0n
+        ? `${(Number(usable * 1000n / remaining) / 10).toLocaleString('fr-FR')} %` : '—';
+    const signedNumber = value => value > 0n ? `+${number(value)}` : number(value);
+
+    function planningStatusBadge(status, extraClass = '') {
+        const info = PLANNING_STOCK_STATUS[status];
+        const badge = document.createElement('span');
+        badge.className = `planning-stock-badge inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold whitespace-nowrap ${info.tone} ${extraClass}`;
+        badge.title = info.advice;
+        const icon = document.createElement('i');
+        icon.className = `ph ${info.icon}`;
+        icon.setAttribute('aria-hidden', 'true');
+        badge.append(icon, planningCell('span', info.label));
+        return badge;
+    }
+
+    function planningInfoBadge(text, title) {
+        const badge = planningCell('span', text, 'planning-stock-badge inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-bold whitespace-nowrap bg-violet-50 text-violet-700 border-violet-200');
+        badge.title = title;
+        return badge;
+    }
+
+    function planningGlobalVerdict(stock) {
+        const {counts, rows, totals} = stock;
+        const problems = counts.out + counts.short;
+        if (!rows.length) return {status: 'covered', text: 'Aucun intrant planifié.'};
+        if (problems) return {status: counts.out ? 'out' : 'short',
+            text: `${problems} intrant(s) sur ${rows.length} en manque ou en rupture · ${number(totals.missing)} unité(s) manquante(s) au total.`};
+        if (counts.tight) return {status: 'tight', text: `Stock suffisant mais ${counts.tight} intrant(s) avec une marge inférieure à 10 %.`};
+        if (counts.ok) return {status: 'ok', text: `Le stock disponible couvre le restant à livrer de tous les intrants.`};
+        return {status: 'covered', text: 'Tous les besoins sont livrés ou en cours de livraison.'};
+    }
+
+    function planningStockSection(stock, screen) {
+        const wrapper = document.createElement(screen ? 'div' : 'section');
+        if (screen) wrapper.className = 'planning-stock-comparison px-5 pb-5 space-y-3';
+        const heading = document.createElement('div');
+        if (screen) heading.className = 'pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2';
+        const titleBox = document.createElement('div');
+        titleBox.append(planningCell(screen ? 'h4' : 'h2', 'Comparaison avec le stock disponible', screen ? 'text-xs font-bold text-slate-800' : ''),
+            planningCell('p', `Restant à livrer (planifié − livré − en vol − transit terrestre) comparé au stock disponible du port, lots périmés exclus (au ${stock.today}).`,
+                screen ? 'text-[11px] text-slate-500' : ''));
+        const verdict = planningGlobalVerdict(stock);
+        const verdictBox = document.createElement('div');
+        if (screen) verdictBox.className = 'flex items-center gap-2';
+        verdictBox.append(planningStatusBadge(verdict.status), planningCell('span', verdict.text, screen ? 'text-[11px] font-semibold text-slate-700' : ''));
+        heading.append(titleBox, verdictBox);
+        const cls = screen ? {
+            table: 'w-full text-left border-collapse text-xs', th: 'py-2 px-2 text-[10px] uppercase font-semibold text-slate-500 whitespace-nowrap',
+            name: 'py-2 px-2 font-semibold text-slate-800', num: 'py-2 px-2 text-right font-mono text-slate-700 whitespace-nowrap',
+            bold: 'py-2 px-2 text-right font-mono font-bold whitespace-nowrap', cell: 'py-2 px-2'
+        } : {};
+        const table = document.createElement('table');
+        if (cls.table) table.className = cls.table;
+        const head = document.createElement('thead');
+        const header = document.createElement('tr');
+        if (screen) header.className = 'border-b border-slate-200';
+        [['Intrant', ''], ['Planifié', 'r'], ['Restant à livrer', 'r'], ['Stock disponible', 'r'], ['Écart', 'r'], ['Couverture', 'r'], ['Orientation', '']]
+            .forEach(([text, align]) => header.append(planningCell('th', text, cls.th ? `${cls.th}${align ? ' text-right' : ''}` : '')));
+        head.append(header);
+        const body = document.createElement('tbody');
+        if (screen) body.className = 'divide-y divide-slate-100';
+        for (const row of stock.rows) {
+            const tr = document.createElement('tr');
+            if (screen) tr.className = 'hover:bg-slate-50';
+            const name = planningCell('th', row.unit ? `${row.name} (${row.unit})` : row.name, cls.name);
+            name.scope = 'row';
+            const gapTone = screen ? (row.gap < 0n && row.remaining > 0n ? ' text-red-600' : ' text-emerald-700') : '';
+            const badges = document.createElement('td');
+            if (cls.cell) badges.className = `${cls.cell} space-x-1 whitespace-nowrap`;
+            badges.append(planningStatusBadge(row.status));
+            if (row.gap < 0n && row.remaining > 0n) badges.append(planningInfoBadge(`Manque ${number(-row.gap)}`, 'Quantité à commander ou transférer pour couvrir le restant à livrer.'));
+            if (row.expiring > 0n) badges.append(planningInfoBadge(`${number(row.expiring)} expirent avant la fin`, `Lots disponibles qui expirent d’ici le ${stock.endDate} : à livrer en priorité.`));
+            if (row.expired > 0n) badges.append(planningInfoBadge(`${number(row.expired)} périmé(s)`, 'Lots périmés exclus du stock utilisable : à mettre en quarantaine.'));
+            tr.append(name, planningCell('td', number(row.planned), cls.num), planningCell('td', number(row.remaining > 0n ? row.remaining : 0n), cls.num),
+                planningCell('td', number(row.usable), cls.num), planningCell('td', row.remaining > 0n ? signedNumber(row.gap) : '—', cls.bold ? cls.bold + gapTone : ''),
+                planningCell('td', planningCoverage(row.usable, row.remaining), cls.num), badges);
+            body.append(tr);
+        }
+        const foot = document.createElement('tfoot');
+        const total = document.createElement('tr');
+        if (screen) total.className = 'border-t-2 border-slate-200 bg-slate-50';
+        const label = planningCell('th', 'Grand total', cls.name);
+        label.scope = 'row';
+        const totalGap = stock.totals.usable - stock.totals.remaining;
+        const status = document.createElement('td');
+        if (cls.cell) status.className = cls.cell;
+        status.append(planningStatusBadge(verdict.status));
+        total.append(label, planningCell('td', number(stock.totals.planned), cls.bold), planningCell('td', number(stock.totals.remaining), cls.bold),
+            planningCell('td', number(stock.totals.usable), cls.bold), planningCell('td', stock.totals.remaining > 0n ? signedNumber(totalGap) : '—', cls.bold),
+            planningCell('td', planningCoverage(stock.totals.usable, stock.totals.remaining), cls.bold), status);
+        foot.append(total);
+        table.append(head, body, foot);
+        const scroll = document.createElement('div');
+        if (screen) scroll.className = 'overflow-x-auto';
+        scroll.append(table);
+        const note = planningCell('p', 'Le grand total additionne des intrants d’unités différentes : il donne un ordre de grandeur, l’orientation se lit intrant par intrant.',
+            screen ? 'text-[10px] text-slate-400 italic' : '');
+        wrapper.append(heading, scroll, note);
+        return wrapper;
+    }
+
+    async function loadPlanningDistrictSummary(plan, view, port, seq, requestGeneration, notice) {
+        const current = () => seq === requestSequence && activeView === view && port === portSelect.value && sessionGeneration === requestGeneration;
+        try {
+            const [csbs, stocks] = await Promise.all([
+                api('/rest/v1/rpc/qbox_list_csbs', {selected_port: port}, true),
+                api('/rest/v1/rpc/qbox_list_stocks', {selected_port: port}, true)
+            ]);
+            if (!current()) return;
+            const districts = planningDistricts(plan, csbs);
+            districts.stock = planningStockComparison(plan, stocks);
+            renderPlanningDistrictSummary(plan, districts, view);
+        } catch (error) {
+            if (current()) notice.textContent += ` Répartition par district indisponible : ${error.message}`;
+        }
+    }
+
+    function clearPlanningDistrictSummary() {
+        $('planning-district-summary').replaceChildren();
+        $('planning-district-summary').hidden = true;
+    }
+
     async function readPlanningPrint(port, planId, csbId) {
-        const [plans, ports] = await Promise.all([
+        const [plans, ports, csbs, stocks] = await Promise.all([
             api('/rest/v1/rpc/qbox_list_plannings', {selected_port:port}, true),
-            api('/rest/v1/rpc/qbox_list_ports', {}, true)
+            api('/rest/v1/rpc/qbox_list_ports', {}, true),
+            csbId ? null : api('/rest/v1/rpc/qbox_list_csbs', {selected_port:port}, true),
+            csbId ? null : api('/rest/v1/rpc/qbox_list_stocks', {selected_port:port}, true)
         ]);
         const plan = plans.find(item => item.id === planId);
         const selectedPort = ports.find(item => item.id === port);
-        const items = plan ? plan.items.filter(item => item.csb_id === csbId) : [];
+        const items = plan ? plan.items.filter(item => !csbId || item.csb_id === csbId) : [];
         if (!plan || !selectedPort || !items.length) throw new Error('Besoins ou port introuvables : actualisez la liste.');
-        return {plan, port:selectedPort, items};
+        if (csbId) return {plan, port:selectedPort, items};
+        const districts = planningDistricts(plan, csbs);
+        districts.stock = planningStockComparison(plan, stocks);
+        return {plan, port:selectedPort, districts};
     }
 
-    function renderPlanningPrint({plan, port, items}) {
+    // En-tête commun des impressions de planning : logo UNFPA, identité Q.box, type de document, port et date d'édition.
+    // plan peut être null (documents hors campagne, ex. état des stocks) : detail remplace alors la ligne de campagne.
+    function planningPrintHeader(kind, plan, port, detail = '') {
+        const header = planningCell('div', '', 'stock-report-header planning-print-header');
+        const identity = planningCell('div', '', 'stock-report-identity');
+        const logo = document.createElement('img');
+        logo.src = 'logo-unfpa.svg';
+        logo.alt = 'Logo UNFPA';
+        logo.className = 'stock-report-logo planning-print-logo';
+        const organization = planningCell('div', '', 'stock-report-organization');
+        organization.append(planningCell('strong', 'UNFPA Madagascar'), planningCell('span', 'Q.box · Logistique santé par drone'));
+        identity.append(logo, organization);
+        const meta = planningCell('div', '', 'stock-report-header-meta');
+        meta.append(planningCell('strong', kind), planningCell('span', `${port.name}${port.region ? ` · ${port.region}` : ''}`),
+            planningCell('span', plan ? `Campagne ${plan.code} · ${plan.start_date} au ${plan.end_date}` : detail),
+            planningCell('span', `Édité le ${localDateTime(new Date())} (Madagascar)`));
+        header.append(identity, meta);
+        return header;
+    }
+
+    function renderPlanningDistrictPrint({plan, port, districts: data}) {
         const report = $('planning-print-content');
-        report.replaceChildren();
+        report.replaceChildren(planningPrintHeader('RÉPARTITION DES BESOINS PAR DISTRICT', plan, port));
+        for (const [tag, value] of [
+            ['h1', `Répartition des intrants planifiés par district · ${plan.code}`],
+            ['p', `Port : ${port.name} · ${port.region}`],
+            ['p', `Période : ${plan.start_date} au ${plan.end_date} · Statut : ${plan.status}`],
+            ['h2', 'Synthèse par district']
+        ]) report.append(planningCell(tag, value));
+        const summary = document.createElement('table');
+        const head = document.createElement('thead');
+        const header = document.createElement('tr');
+        for (const value of ['District', 'CSB', 'Total planifié', 'Part du total']) header.append(planningCell('th', value));
+        head.append(header);
+        const body = document.createElement('tbody');
+        for (const district of data.districts) {
+            const row = document.createElement('tr');
+            row.append(planningCell('td', district.name), planningCell('td', String(district.csbs.size)),
+                planningCell('td', number(district.total)), planningCell('td', planningShare(district.total, data.total)));
+            body.append(row);
+        }
+        const foot = document.createElement('tfoot');
+        const total = document.createElement('tr');
+        total.append(planningCell('th', 'Total'), planningCell('td', String(data.districts.reduce((sum, d) => sum + d.csbs.size, 0))),
+            planningCell('td', number(data.total)), planningCell('td', '100 %'));
+        foot.append(total);
+        summary.append(head, body, foot);
+        report.append(summary, planningCell('h2', 'Détail par intrant et par district'), planningDistrictMatrix(data, false));
+        if (data.stock) report.append(planningStockSection(data.stock, false));
+    }
+
+    // --- Impression « Stocks et lots » (même fenêtre d'aperçu que les impressions de planning) ---
+    const STOCK_PRINT_SOON_DAYS = 90;
+
+    function stockMatches(row, query) {
+        return !query || [row.name, row.lot, row.category, row.code]
+            .some(value => String(value || '').toLocaleLowerCase('fr-FR').includes(query));
+    }
+
+    // Relit les stocks au moment de l'aperçu et de l'impression ; le filtre de recherche de la page est appliqué.
+    async function readStockPrint(port, query) {
+        const [stocks, products, ports] = await Promise.all([
+            api('/rest/v1/rpc/qbox_list_stocks', {selected_port: port}, true),
+            api('/rest/v1/rpc/qbox_list_products', {}, true),
+            api('/rest/v1/rpc/qbox_list_ports', {}, true)
+        ]);
+        const selectedPort = ports.find(item => item.id === port);
+        if (!selectedPort) throw new Error('Magasin introuvable : actualisez la page.');
+        const catalog = new Map(products.map(product => [product.id, product]));
+        const rows = stocks.map(row => ({...row, code: catalog.get(row.product_id)?.code, threshold: catalog.get(row.product_id)?.min_threshold}))
+            .filter(row => stockMatches(row, query));
+        return {stocks: rows, port: selectedPort, query, total: stocks.length};
+    }
+
+    function stockExpiryStatus(expiry, today) {
+        if (!expiry) return ['Non datée', 'none'];
+        if (expiry < today) return ['Périmé', 'expired'];
+        const soon = new Date(`${today}T00:00:00Z`);
+        soon.setUTCDate(soon.getUTCDate() + STOCK_PRINT_SOON_DAYS);
+        return expiry <= soon.toISOString().slice(0, 10) ? [`Moins de ${STOCK_PRINT_SOON_DAYS} jours`, 'soon'] : ['Valide', 'ok'];
+    }
+
+    function renderStockPrint({stocks, port, query, total}) {
+        const report = $('planning-print-content');
+        const today = planningTodayIso();
+        report.replaceChildren(planningPrintHeader('ÉTAT DES STOCKS ET DES LOTS', null, port, `Situation au ${today}`));
+        report.append(planningCell('h1', 'État des stocks et traçabilité par lot'),
+            planningCell('p', `Magasin : ${port.name}${port.region ? ` · ${port.region}` : ''} · ${stocks.length} lot(s)${query ? ` correspondant au filtre « ${query} » sur ${total}` : ''}.`),
+            planningCell('p', 'Disponible = stock du lot − quantités réservées aux vols en cours. Lots classés par intrant puis par date de péremption (règle FEFO).'));
+        // Synthèse par intrant
+        const products = new Map();
+        for (const row of stocks) {
+            if (!products.has(row.product_id)) products.set(row.product_id, {name: row.name, code: row.code, unit: row.unit, threshold: row.threshold,
+                lots: 0, quantity: 0n, reserved: 0n, available: 0n, next: null, expired: 0n});
+            const product = products.get(row.product_id);
+            product.lots++;
+            product.quantity += BigInt(row.quantity);
+            product.reserved += BigInt(row.reserved);
+            product.available += BigInt(row.available);
+            if (row.expiry_date && row.expiry_date < today) product.expired += BigInt(row.available);
+            else if (row.expiry_date && BigInt(row.available) > 0n && (!product.next || row.expiry_date < product.next)) product.next = row.expiry_date;
+        }
+        const summary = document.createElement('table');
+        const summaryHead = document.createElement('thead');
+        const summaryHeader = document.createElement('tr');
+        for (const value of ['Réf.', 'Intrant', 'Unité', 'Lots', 'Stock', 'Réservé', 'Disponible', 'Seuil', 'Niveau', 'Prochaine péremption'])
+            summaryHeader.append(planningCell('th', value));
+        summaryHead.append(summaryHeader);
+        const summaryBody = document.createElement('tbody');
+        for (const product of [...products.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr'))) {
+            const threshold = product.threshold === null || product.threshold === undefined ? null : BigInt(product.threshold);
+            const level = threshold === null || threshold <= 0n ? 'Seuil non défini'
+                : product.available < threshold ? 'Sous le seuil' : product.available * 2n <= threshold * 3n ? 'À surveiller' : 'Suffisant';
+            const row = document.createElement('tr');
+            row.append(planningCell('td', product.code || '—'), planningCell('td', product.name), planningCell('td', product.unit || ''),
+                planningCell('td', String(product.lots)), planningCell('td', number(product.quantity)), planningCell('td', number(product.reserved)),
+                planningCell('td', number(product.available)), planningCell('td', threshold === null ? '—' : number(threshold)),
+                planningCell('td', product.expired > 0n ? `${level} · ${number(product.expired)} périmé(s)` : level), planningCell('td', product.next || '—'));
+            summaryBody.append(row);
+        }
+        summary.append(summaryHead, summaryBody);
+        // Détail par lot
+        const detail = document.createElement('table');
+        const head = document.createElement('thead');
+        const header = document.createElement('tr');
+        for (const value of ['Réf.', 'Désignation', 'Catégorie', 'N° lot', 'Péremption', 'Stock', 'Réservé', 'Disponible', 'Unité', 'État'])
+            header.append(planningCell('th', value));
+        head.append(header);
+        const body = document.createElement('tbody');
+        const sorted = [...stocks].sort((a, b) => a.name.localeCompare(b.name, 'fr') || String(a.expiry_date || '9999').localeCompare(String(b.expiry_date || '9999')) || String(a.lot).localeCompare(String(b.lot)));
+        for (const row of sorted) {
+            const [state, tone] = stockExpiryStatus(row.expiry_date, today);
+            const tr = document.createElement('tr');
+            if (tone === 'expired' || tone === 'soon') tr.className = `stock-print-${tone}`;
+            tr.append(planningCell('td', row.code || '—'), planningCell('td', row.name), planningCell('td', row.category || ''),
+                planningCell('td', row.lot), planningCell('td', row.expiry_date || 'Non renseignée'), planningCell('td', number(row.quantity)),
+                planningCell('td', number(row.reserved)), planningCell('td', number(row.available)), planningCell('td', row.unit || ''), planningCell('td', state));
+            body.append(tr);
+        }
+        if (!sorted.length) {
+            const empty = document.createElement('tr');
+            const cell = planningCell('td', 'Aucun lot correspondant.');
+            cell.colSpan = 10;
+            empty.append(cell);
+            body.append(empty);
+        }
+        detail.append(head, body);
+        // Visas
+        const signatures = planningCell('div', '', 'stock-print-signatures');
+        for (const role of ['Établi par (magasinier)', 'Vérifié par', 'Visa du responsable'])
+            signatures.append(planningCell('div', role, 'stock-print-signature'));
+        report.append(planningCell('h2', 'Synthèse par intrant'), summary, planningCell('h2', 'Détail par lot'), detail, signatures);
+    }
+
+    async function openStockPrint() {
+        if (planningPrintDraft || activeView !== 'stocks' || !portSelect.value) return;
+        const port = portSelect.value, sequence = ++planningPrintSequence, request = requestSequence, requestGeneration = sessionGeneration;
+        const query = $('stock-search').value.trim().toLocaleLowerCase('fr-FR');
+        $('postgres-stocks-status').textContent = 'Préparation de l’impression…';
+        try {
+            const data = await readStockPrint(port, query);
+            if (sequence !== planningPrintSequence || request !== requestSequence || activeView !== 'stocks' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
+            renderPlanningPrint(data);
+            planningPrintDraft = {view: 'stocks', kind: 'stocks', port, query};
+            portSelect.disabled = true;
+            $('modal-backdrop').classList.remove('hidden');
+            $('planning-print-modal').classList.remove('hidden');
+            $('postgres-stocks-status').textContent = 'Aperçu chargé.';
+        } catch (error) {
+            if (sequence === planningPrintSequence && request === requestSequence && activeView === 'stocks' && port === portSelect.value && sessionGeneration === requestGeneration)
+                $('postgres-stocks-status').textContent = `Impossible de préparer l’impression : ${error.message}`;
+        }
+    }
+
+    function renderPlanningPrint(data) {
+        $('planning-print-title').textContent = data.stocks ? 'Aperçu de l’état des stocks et des lots'
+            : data.districts ? 'Aperçu de la répartition par district' : 'Aperçu des besoins par CSB';
+        if (data.stocks) return renderStockPrint(data);
+        if (data.districts) return renderPlanningDistrictPrint(data);
+        const {plan, port, items} = data;
+        const report = $('planning-print-content');
+        report.replaceChildren(planningPrintHeader('EXPRESSION DES BESOINS PRÉVISIONNELS', plan, port));
         for (const [tag, value] of [
             ['h1', `Besoins prévisionnels · ${plan.code}`],
             ['p', `Port : ${port.name} · ${port.region} · CSB : ${items[0].csb_name}`],
@@ -1406,15 +1896,19 @@
         const sequence = ++planningPrintSequence, requestGeneration = sessionGeneration;
         $('planning-print-button').disabled = true;
         try {
-            const data = await readPlanningPrint(draft.port, draft.planId, draft.csbId);
+            const data = draft.kind === 'stocks' ? await readStockPrint(draft.port, draft.query)
+                : await readPlanningPrint(draft.port, draft.planId, draft.csbId);
             if (sequence !== planningPrintSequence || planningPrintDraft !== draft || sessionGeneration !== requestGeneration || draft.port !== portSelect.value) return;
             renderPlanningPrint(data);
+            // Attendre le chargement du logo pour qu'il figure sur la page imprimée (impression maintenue en cas d'échec).
+            try { await $('planning-print-content').querySelector('.planning-print-logo')?.decode?.(); } catch { /* logo indisponible */ }
+            if (sequence !== planningPrintSequence || planningPrintDraft !== draft || sessionGeneration !== requestGeneration) return;
             document.body.classList.add('postgres-planning-print');
             window.print();
         } catch (error) {
             if (sequence === planningPrintSequence && sessionGeneration === requestGeneration) {
                 closePlanningPrint();
-                $(`postgres-${draft.view}-status`).textContent = `Impossible d’imprimer les besoins : ${error.message}`;
+                $(`postgres-${draft.view}-status`).textContent = `Impossible d’imprimer ${draft.kind === 'stocks' ? 'l’état des stocks' : 'les besoins'} : ${error.message}`;
             }
         } finally { if (sessionGeneration === requestGeneration) $('planning-print-button').disabled = false; }
     }
@@ -2071,26 +2565,6 @@
         }
     }
 
-    function updateFlightNeeds() {
-        if (!flightDraft) return;
-        const plan = flightDraft.plans.find(item => item.id === $('drone-plan').value);
-        const target = $('drone-target').value;
-        const totals = new Map();
-        for (const row of $('drone-flights-container').querySelectorAll('.postgres-flight-item')) {
-            const lot = flightDraft.stocks.find(item => item.id === row.querySelector('[name=stock]').value);
-            const value = Number(row.querySelector('[name=quantity]').value);
-            if (lot && Number.isSafeInteger(value) && value > 0)
-                totals.set(lot.product_id, (totals.get(lot.product_id) || 0n) + BigInt(value));
-        }
-        const box = $('drone-active-planning');
-        if (plan) renderDeliveryNeeds(box, plan, target, totals);
-        else {
-            box.replaceChildren();
-            addLine(box, 'Sélectionnez un planning actif pour commencer.');
-        }
-        $('drone-flights-count').textContent = String($('drone-flights-container').querySelectorAll('.postgres-flight-parcel').length);
-    }
-
     function addDeliveryItem(container, draft, planId, csbId, rowClass, onChange) {
         const row = document.createElement('div');
         row.className = `${rowClass} grid grid-cols-1 sm:grid-cols-2 gap-2 items-end p-2 bg-white border border-slate-200 rounded-xl`;
@@ -2130,35 +2604,183 @@
         container.append(row);
     }
 
-    function addFlightItem(parcel) {
-        addDeliveryItem(parcel.querySelector('.postgres-flight-items'), flightDraft,
-            $('drone-plan').value, $('drone-target').value, 'postgres-flight-item', updateFlightNeeds);
+    // --- Saisie des vols : cartes numérotées, lignes compactes, disponibilité des lots en direct ---
+    // Les colis sont suivis en mémoire ; la soumission relit les champs nommés stock / quantity du formulaire.
+    const FLIGHT_ITEM_GRID = 'grid grid-cols-[minmax(0,1fr)_7rem_2rem] gap-2';
+    let flightParcels = [];
+
+    function flightElement(tag, className = '', text = '') {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text) element.textContent = text;
+        return element;
     }
 
-    function addFlightParcel() {
+    function flightIconButton(icon, label, tone) {
+        const button = flightElement('button', `w-8 h-8 flex items-center justify-center text-slate-400 ${tone} rounded-lg transition-colors`);
+        button.type = 'button';
+        button.title = label;
+        button.setAttribute('aria-label', label);
+        const glyph = flightElement('i', `ph ${icon}`);
+        glyph.setAttribute('aria-hidden', 'true');
+        button.append(glyph);
+        return button;
+    }
+
+    function flightAllowedLots() {
+        const plan = flightDraft.plans.find(item => item.id === $('drone-plan').value);
+        const csbId = $('drone-target').value;
+        const allowed = new Set((plan?.items || []).filter(item => item.csb_id === csbId).map(item => item.product_id));
+        return flightDraft.stocks.filter(item => allowed.has(item.product_id) && BigInt(item.available) > 0n);
+    }
+
+    const flightQuantity = item => {
+        const value = Number(item.quantity.value);
+        return Number.isSafeInteger(value) && value > 0 ? BigInt(value) : 0n;
+    };
+
+    // Quantités saisies par lot sur l'ensemble des vols en cours de saisie.
+    function flightLotUsage() {
+        const usage = new Map();
+        for (const parcel of flightParcels) for (const item of parcel.items)
+            if (item.select.value) usage.set(item.select.value, (usage.get(item.select.value) || 0n) + flightQuantity(item));
+        return usage;
+    }
+
+    function updateFlightNeeds() {
         if (!flightDraft) return;
-        const parcel = document.createElement('div');
-        parcel.className = 'postgres-flight-parcel p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3';
-        parcel.dataset.id = crypto.randomUUID();
-        const title = document.createElement('h4');
-        title.className = 'text-xs font-extrabold text-slate-900';
-        title.textContent = 'Vol · un colis · BL généré à l’enregistrement';
-        const items = document.createElement('div');
-        items.className = 'postgres-flight-items space-y-2';
-        const add = document.createElement('button');
-        add.type = 'button';
-        add.className = 'px-2 py-1 bg-white border border-cyan-300 text-cyan-700 hover:bg-cyan-50 rounded-lg text-[10px] font-bold mr-3';
-        add.textContent = 'Ajouter un intrant';
-        add.addEventListener('click', () => addFlightItem(parcel));
-        const remove = document.createElement('button');
-        remove.type = 'button';
-        remove.className = 'text-xs font-bold text-red-600';
-        remove.textContent = 'Retirer ce vol';
-        remove.addEventListener('click', () => { parcel.remove(); updateFlightNeeds(); });
-        parcel.append(title, items, add, remove);
-        $('drone-flights-container').append(parcel);
-        addFlightItem(parcel);
+        const usage = flightLotUsage();
+        const totals = new Map();
+        let lines = 0, total = 0n, overLots = 0;
+        flightParcels.forEach((parcel, index) => {
+            parcel.badge.textContent = `Vol ${index + 1}`;
+            let parcelTotal = 0n;
+            for (const item of parcel.items) {
+                const lot = flightDraft.stocks.find(stock => stock.id === item.select.value);
+                const quantity = flightQuantity(item);
+                parcelTotal += quantity;
+                if (lot && quantity > 0n) {
+                    lines++;
+                    totals.set(lot.product_id, (totals.get(lot.product_id) || 0n) + quantity);
+                }
+                if (!lot) { item.hint.textContent = ''; continue; }
+                const left = BigInt(lot.available) - (usage.get(lot.id) || 0n);
+                item.hint.textContent = left < 0n
+                    ? `Lot dépassé de ${number(-left)} (disponible : ${number(lot.available)})`
+                    : `Disponible : ${number(lot.available)} · reste après ces vols : ${number(left)}`;
+                item.hint.className = `col-span-3 -mt-1 text-[10px] font-mono ${left < 0n ? 'text-red-600 font-bold' : 'text-slate-400'}`;
+            }
+            parcel.summary.textContent = `${parcel.items.length} intrant(s) · ${number(parcelTotal)} un.`;
+            parcel.empty.hidden = parcel.items.length > 0;
+            total += parcelTotal;
+        });
+        for (const [lotId, used] of usage) {
+            const lot = flightDraft.stocks.find(stock => stock.id === lotId);
+            if (lot && used > BigInt(lot.available)) overLots++;
+        }
+        const plan = flightDraft.plans.find(item => item.id === $('drone-plan').value);
+        const box = $('drone-active-planning');
+        if (plan) renderDeliveryNeeds(box, plan, $('drone-target').value, totals);
+        else {
+            box.replaceChildren();
+            addLine(box, 'Sélectionnez un planning actif pour commencer.');
+        }
+        $('drone-flights-count').textContent = String(flightParcels.length);
+        $('drone-summary').textContent = `${flightParcels.length} vol(s) · ${lines} ligne(s) renseignée(s) · Total : ${number(total)} unité(s)`
+            + (overLots ? ` · ⚠ ${overLots} lot(s) au-delà du disponible` : '');
+        $('drone-summary').className = `text-[11px] font-semibold ${overLots ? 'text-red-600' : 'text-slate-600'}`;
+    }
+
+    function addFlightItem(parcel, {stock = '', quantity = '', focus = true} = {}) {
+        const row = flightElement('div', `postgres-flight-item ${FLIGHT_ITEM_GRID} items-center`);
+        const select = flightElement('select', 'w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-amber-400');
+        select.name = 'stock';
+        select.required = true;
+        select.setAttribute('aria-label', 'Intrant et lot');
+        const lots = flightAllowedLots();
+        select.add(new Option(lots.length ? 'Sélectionner un intrant et un lot…' : 'Aucun lot disponible pour ce CSB', ''));
+        for (const lot of lots) select.add(new Option(`${lot.name} · Lot ${lot.lot}${lot.expiry_date ? ` · exp. ${lot.expiry_date}` : ''} · Dispo : ${number(lot.available)}`, lot.id));
+        // Par défaut, le premier lot pas encore utilisé dans ce colis (évite les doublons).
+        const used = new Set(parcel.items.map(item => item.select.value));
+        select.value = stock || lots.find(lot => !used.has(lot.id))?.id || '';
+        const input = flightElement('input', 'w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 bg-white font-mono text-right focus:outline-none focus:border-amber-400');
+        Object.assign(input, {name: 'quantity', type: 'number', min: '1', max: '9007199254740991', step: '1', required: true, placeholder: 'Qté'});
+        input.setAttribute('aria-label', 'Quantité');
+        if (quantity) input.value = String(quantity);
+        const remove = flightIconButton('ph-x', 'Retirer cet intrant', 'hover:text-red-600 hover:bg-red-50');
+        const hint = flightElement('p', 'col-span-3 -mt-1 text-[10px] font-mono text-slate-400');
+        row.append(select, input, remove, hint);
+        const item = {row, select, quantity: input, hint};
+        select.addEventListener('change', updateFlightNeeds);
+        input.addEventListener('input', updateFlightNeeds);
+        // Entrée : intrant suivant du colis, ou nouvelle ligne si la ligne courante est remplie.
+        input.addEventListener('keydown', event => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            const next = parcel.items[parcel.items.indexOf(item) + 1];
+            if (next) next.select.focus?.();
+            else if (select.value && flightQuantity(item) > 0n) addFlightItem(parcel);
+        });
+        remove.addEventListener('click', () => {
+            parcel.items = parcel.items.filter(entry => entry !== item);
+            parcel.list.replaceChildren(...parcel.items.map(entry => entry.row));
+            updateFlightNeeds();
+        });
+        parcel.items.push(item);
+        parcel.list.append(row);
         updateFlightNeeds();
+        if (focus) (select.value ? input : select).focus?.();
+        return item;
+    }
+
+    function addFlightParcel({items = null, after = null} = {}) {
+        if (!flightDraft) return null;
+        const card = flightElement('div', 'postgres-flight-parcel bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm');
+        card.dataset.id = crypto.randomUUID();
+        const header = flightElement('div', 'flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-200');
+        const title = flightElement('div', 'flex items-center gap-2 min-w-0');
+        const badge = flightElement('span', 'px-2 py-0.5 rounded-full bg-cyan-600 text-white text-[10px] font-extrabold');
+        const summary = flightElement('span', 'text-[11px] font-semibold text-slate-600');
+        title.append(badge, summary, flightElement('span', 'hidden sm:inline text-[10px] text-slate-400', 'BL généré à l’enregistrement'));
+        const actions = flightElement('div', 'flex items-center gap-1');
+        const duplicate = flightIconButton('ph-copy', 'Dupliquer ce vol (mêmes lots et quantités)', 'hover:text-sky-700 hover:bg-sky-50');
+        const remove = flightIconButton('ph-trash', 'Retirer ce vol', 'hover:text-red-600 hover:bg-red-50');
+        actions.append(duplicate, remove);
+        header.append(title, actions);
+        const body = flightElement('div', 'p-3 space-y-2');
+        const head = flightElement('div', `${FLIGHT_ITEM_GRID} px-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400`);
+        head.append(flightElement('span', '', 'Intrant et lot'), flightElement('span', 'text-right', 'Quantité'), flightElement('span'));
+        const list = flightElement('div', 'postgres-flight-items space-y-2');
+        const empty = flightElement('p', 'text-[11px] text-slate-500 italic', 'Colis vide : ajoutez un intrant ou retirez ce vol.');
+        const add = flightElement('button', 'text-[11px] font-bold text-cyan-700 hover:underline', '+ Ajouter un intrant');
+        add.type = 'button';
+        body.append(head, list, empty, add);
+        card.append(header, body);
+        const parcel = {id: card.dataset.id, card, badge, summary, list, empty, items: []};
+        add.addEventListener('click', () => addFlightItem(parcel));
+        duplicate.addEventListener('click', () => addFlightParcel({after: parcel,
+            items: parcel.items.map(item => ({stock: item.select.value, quantity: item.quantity.value}))}));
+        remove.addEventListener('click', () => {
+            const filled = parcel.items.some(item => flightQuantity(item) > 0n);
+            if (filled && !confirm('Retirer ce vol et son colis ?')) return;
+            flightParcels = flightParcels.filter(entry => entry !== parcel);
+            $('drone-flights-container').replaceChildren(...flightParcels.map(entry => entry.card));
+            updateFlightNeeds();
+        });
+        const index = after ? flightParcels.indexOf(after) + 1 : flightParcels.length;
+        flightParcels.splice(index, 0, parcel);
+        if (after) $('drone-flights-container').replaceChildren(...flightParcels.map(entry => entry.card));
+        else $('drone-flights-container').append(card);
+        if (items?.length) items.forEach(item => addFlightItem(parcel, {...item, focus: false}));
+        else addFlightItem(parcel, {focus: false});
+        updateFlightNeeds();
+        card.scrollIntoView?.({block: 'nearest', behavior: 'smooth'});
+        return parcel;
+    }
+
+    function resetFlightParcels() {
+        flightParcels = [];
+        $('drone-flights-container').replaceChildren();
     }
 
     function setFlightTarget() {
@@ -2169,7 +2791,7 @@
         $('drone-target').disabled = !targets.size;
         flightDraft.plan = $('drone-plan').value;
         flightDraft.target = $('drone-target').value;
-        $('drone-flights-container').replaceChildren();
+        resetFlightParcels();
         if (flightDraft.target) addFlightParcel();
         updateFlightNeeds();
     }
@@ -2210,7 +2832,7 @@
     function closeFlights() {
         if (flightSaving) return;
         flightDraft = null;
-        $('drone-flights-container').replaceChildren();
+        resetFlightParcels();
         $('drone-active-planning').replaceChildren();
         $('modal-drone').classList.add('hidden');
         $('modal-backdrop').classList.add('hidden');
@@ -2231,6 +2853,16 @@
                 flight.items.some(item => !item.stock_id || !Number.isSafeInteger(item.quantity) || item.quantity <= 0) ||
                 new Set(flight.items.map(item => item.stock_id)).size !== flight.items.length)) {
             $('postgres-drone-form-status').textContent = 'Vérifiez le port, le CSB et les colis : 1 à 100 vols, 1 à 200 lignes par colis, sans doublon de lot.';
+            return;
+        }
+        // Contrôle préalable : un même lot ne peut pas être réservé au-delà de son disponible sur l'ensemble des vols.
+        const reserved = new Map();
+        for (const flight of flights) for (const item of flight.items)
+            reserved.set(item.stock_id, (reserved.get(item.stock_id) || 0n) + BigInt(item.quantity));
+        const overLot = [...reserved].map(([id, quantity]) => [draft.stocks.find(stock => stock.id === id), quantity])
+            .find(([lot, quantity]) => lot && quantity > BigInt(lot.available));
+        if (overLot) {
+            $('postgres-drone-form-status').textContent = `Lot ${overLot[0].lot} (${overLot[0].name}) : ${number(overLot[1])} demandé(s) pour ${number(overLot[0].available)} disponible(s). Réduisez les quantités ou choisissez un autre lot.`;
             return;
         }
         if (!confirm(`Enregistrer ${flights.length} vol(s) et réserver les quantités ?`)) return;
@@ -2469,6 +3101,7 @@
             logisticsReportState = null;
             $('logistics-report-print').disabled = true;
             $('logistics-report-print-context').textContent = '';
+            $('logistics-report-print-header').replaceChildren();
             container.replaceChildren();
             if (!port) {
                 reportStatus.textContent = 'Sélectionnez un magasin pour afficher le rapport.';
@@ -2565,7 +3198,9 @@
                 const warehouse = warehouseRows.find(row => row.id === port);
                 if (!warehouse) throw new Error('Magasin sélectionné introuvable.');
                 $('logistics-report-print-context').textContent = `Magasin : ${warehouse.name} · ${warehouse.region} | Année : ${year}`;
-                logisticsReportState = { port, year };
+                // En-tête commun aux impressions ; créé dès le chargement pour que le logo soit prêt à l'impression.
+                $('logistics-report-print-header').replaceChildren(planningPrintHeader('RAPPORT LOGISTIQUE', null, warehouse, `Année ${year} · mouvements mensuels par intrant`));
+                logisticsReportState = { port, year, warehouse };
                 $('logistics-report-print').disabled = false;
             } catch (error) {
                 if (sequence !== logisticsReportSequence || activeView !== 'logistics-report' ||
@@ -2582,6 +3217,9 @@
             $('logistics-report-status').textContent = 'Chargez le rapport du magasin et de l’année sélectionnés avant impression.';
             return;
         }
+        // Date d'édition mise à jour au moment d'imprimer (le logo déjà chargé est réutilisé par le navigateur).
+        const {warehouse, year} = logisticsReportState;
+        $('logistics-report-print-header').replaceChildren(planningPrintHeader('RAPPORT LOGISTIQUE', null, warehouse, `Année ${year} · mouvements mensuels par intrant`));
         document.body.classList.add('logistics-report-print-mode');
         try {
             window.print();
@@ -2929,7 +3567,7 @@
             const inventory = inventories.find(item => item.id === id);
             const selectedPort = ports.find(item => item.id === port);
             if (!inventory || !selectedPort) throw new Error('Inventaire ou port introuvable : actualisez la liste.');
-            renderInventoryReport(inventory, selectedPort.name, $('inventory-print-report'));
+            renderInventoryReport(inventory, selectedPort.name, $('inventory-print-report'), selectedPort.region);
             inventoryPrintDraft = {id, port};
             portSelect.disabled = true;
             $('modal-backdrop').classList.remove('hidden');
@@ -3222,82 +3860,754 @@
         }
     }
 
-    function addPlanningRow(container, item = null) {
-        const row = document.createElement('div');
-        row.className = 'planning-item flex flex-wrap sm:flex-nowrap items-end gap-2';
-        const productLabel = document.createElement('label');
-        productLabel.className = 'flex-1 min-w-[150px] text-[10px] font-semibold text-slate-700';
-        productLabel.textContent = 'Intrant';
-        const select = document.createElement('select');
-        select.name = 'product';
-        select.required = true;
-        select.className = 'mt-1 w-full text-xs px-2 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-amber-400';
-        for (const option of planningProducts) select.add(new Option(`${option.code} · ${option.name}`, option.id));
-        if (item) select.value = item.product_id;
-        productLabel.append(select);
-        const label = document.createElement('label');
-        label.className = 'w-28 text-[10px] font-semibold text-slate-700';
-        label.textContent = 'Quantité prévue';
-        const quantity = document.createElement('input');
-        quantity.name = 'quantity';
-        quantity.type = 'number';
-        quantity.required = true;
-        quantity.min = '1';
-        quantity.max = '9007199254740991';
-        quantity.step = '1';
-        quantity.className = 'mt-1 w-full text-xs px-3 py-2 rounded-xl border border-slate-200 font-mono focus:outline-none focus:border-amber-400';
-        if (item) quantity.value = item.planned;
-        label.append(quantity);
-        const remove = document.createElement('button');
-        remove.type = 'button';
-        remove.className = 'px-2 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-red-600 hover:text-red-700';
-        remove.textContent = 'Retirer cette ligne';
-        remove.addEventListener('click', () => row.remove());
-        row.append(productLabel, label, remove);
-        container.append(row);
+    // --- Formulaire planning : sélection multiple de CSB, lignes d'intrants issues du référentiel ---
+    // Les éléments sont suivis en mémoire (CSB -> bloc, intrant -> ligne) ; la soumission relit les
+    // champs nommés csb / product / quantity du formulaire.
+    const planningEntries = new Map();
+    const planningOptions = new Map();
+
+    function planningElement(tag, className = '', text = '') {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text) element.textContent = text;
+        return element;
     }
 
-    function addPlanningCsb(csbId = '', items = []) {
-        const block = document.createElement('div');
-        block.className = 'planning-csb p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3';
-        const heading = document.createElement('div');
-        heading.className = 'flex flex-wrap items-end gap-2';
-        const label = document.createElement('label');
-        label.className = 'flex-1 min-w-[150px] text-[11px] font-semibold text-slate-700';
-        label.textContent = 'Sélectionner un CSB';
-        const select = document.createElement('select');
-        select.name = 'csb';
-        select.required = true;
-        select.className = 'mt-1 w-full text-xs px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-slate-800 focus:outline-none focus:border-amber-400';
-        for (const csb of planningCsbs) select.add(new Option(`${csb.code} · ${csb.name}`, csb.id));
-        if (csbId) select.value = csbId;
-        label.append(select);
-        const remove = document.createElement('button');
+    function planningIcon(name) {
+        const icon = planningElement('i', `ph ${name}`);
+        icon.setAttribute('aria-hidden', 'true');
+        return icon;
+    }
+
+    function planningHidden(name, value) {
+        const input = planningElement('input');
+        Object.assign(input, {type: 'hidden', name, value});
+        return input;
+    }
+
+    // Une ligne est renseignée si elle a un besoin, ou si le calcul conclut à un besoin nul (stock suffisant).
+    const planningFilled = entry => [...entry.rows.values()]
+        .filter(row => String(row.input.value ?? '').trim() !== '' || row.computed === 0).length;
+
+    function resetPlanningForm() {
+        planningEntries.clear();
+        planningOptions.clear();
+        $('plan-csb-blocks').replaceChildren();
+        $('plan-csb-options').replaceChildren();
+    }
+
+    function updatePlanningBlock(entry) {
+        const total = entry.rows.size, filled = planningFilled(entry);
+        entry.badge.textContent = `${filled} / ${total} intrant(s) renseigné(s)`;
+        entry.badge.className = `px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            total && filled === total ? 'bg-emerald-100 text-emerald-800' : filled ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600'}`;
+        // Badge d'état à côté du nom du CSB : lignes encore vides ou CSB entièrement rempli.
+        const empty = total - filled;
+        const [icon, label, tone] = !total ? ['ph-minus-circle', 'Aucun intrant', 'bg-slate-100 text-slate-600 border-slate-200']
+            : empty ? ['ph-warning', `${empty} ligne(s) vide(s)`, 'bg-amber-50 text-amber-800 border-amber-200']
+            : ['ph-check-circle', 'Rempli', 'bg-emerald-50 text-emerald-700 border-emerald-200'];
+        entry.status.className = `planning-csb-status inline-flex items-center gap-1 shrink-0 px-1.5 py-0.5 rounded-full border text-[10px] font-bold ${tone}`;
+        entry.status.replaceChildren(planningIcon(icon), planningElement('span', '', label));
+        entry.status.title = empty ? 'Des lignes d’intrant n’ont pas de quantité : elles ne seront pas enregistrées.' : '';
+        entry.empty.hidden = total > 0;
+        entry.head.hidden = total === 0;
+        const missing = planningProducts.filter(product => !entry.rows.has(product.id));
+        entry.select.replaceChildren();
+        entry.select.add(new Option(missing.length ? `Ajouter un intrant du référentiel (${missing.length} disponible(s))…` : 'Tous les intrants du référentiel sont présents', ''));
+        for (const product of missing) entry.select.add(new Option(`${product.code} · ${product.name}`, product.id));
+        entry.select.value = '';
+        entry.select.disabled = !missing.length;
+        entry.add.disabled = !missing.length;
+    }
+
+    // Besoin proposé = CMM × 4 − état de stock (jamais négatif), ajustable par l'utilisateur.
+    const PLANNING_CMM_MONTHS = 4;
+    const PLANNING_GRID = 'grid grid-cols-[minmax(0,1fr)_6.5rem_6.5rem_8rem_2rem] gap-2';
+
+    const planningWhole = input => {
+        const raw = String(input.value ?? '').trim();
+        if (raw === '') return null;
+        const value = Number(raw);
+        return Number.isSafeInteger(value) && value >= 0 ? value : NaN;
+    };
+
+    // null : CMM non saisie ; NaN : saisie invalide ; sinon le besoin calculé.
+    function planningComputedNeed(state) {
+        const cmm = planningWhole(state.cmm), stock = planningWhole(state.stock);
+        if (cmm === null) return null;
+        if (Number.isNaN(cmm) || Number.isNaN(stock)) return NaN;
+        return Math.max(0, cmm * PLANNING_CMM_MONTHS - (stock ?? 0));
+    }
+
+    function updatePlanningNeed(state) {
+        const computed = planningComputedNeed(state);
+        const cmm = planningWhole(state.cmm), stock = planningWhole(state.stock) ?? 0;
+        state.computed = computed;
+        if (computed === null) state.hint.textContent = '';
+        else if (Number.isNaN(computed)) state.hint.textContent = 'Saisie invalide';
+        else state.hint.textContent = `${PLANNING_CMM_MONTHS} × ${number(cmm)} − ${number(stock)} = ${number(computed)}${computed === 0 ? ' · aucun besoin' : ''}`;
+        const current = planningWhole(state.input);
+        state.adjusted = typeof computed === 'number' && !Number.isNaN(computed) && current !== null && current !== computed;
+        state.adjustedBadge.hidden = !state.adjusted;
+        state.reset.hidden = !state.adjusted;
+    }
+
+    function applyPlanningNeed(state) {
+        const computed = planningComputedNeed(state);
+        if (typeof computed === 'number' && !Number.isNaN(computed)) state.input.value = computed > 0 ? String(computed) : '';
+        state.manual = false;
+        updatePlanningNeed(state);
+    }
+
+    function planningNumberInput(name, label, placeholder, min = '0') {
+        const input = planningElement('input', 'w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white font-mono text-right focus:outline-none focus:border-amber-400');
+        Object.assign(input, {name, type: 'number', min, max: '9007199254740991', step: '1', placeholder});
+        input.setAttribute('aria-label', label);
+        return input;
+    }
+
+    function addPlanningRow(entry, productId, quantity = '', evaluation = {}) {
+        const product = planningProducts.find(item => item.id === productId);
+        if (!product || entry.rows.has(product.id)) return null;
+        const row = planningElement('div', `planning-item ${PLANNING_GRID} items-start px-3 py-2 hover:bg-slate-50`);
+        row.dataset.product = product.id;
+        const info = planningElement('div', 'min-w-0 pt-1');
+        const name = planningElement('div', 'text-xs font-semibold text-slate-800 truncate', product.name);
+        name.title = product.name;
+        info.append(name, planningElement('div', 'text-[10px] text-slate-500 truncate',
+            [product.code, product.category, product.unit].filter(Boolean).join(' · ')));
+        const stock = planningNumberInput('stock_level', `État de stock — ${product.name}`, 'Stock');
+        const cmm = planningNumberInput('cmm', `CMM — ${product.name}`, 'CMM');
+        // Valeurs enregistrées (modification d'une campagne) : le besoin enregistré est conservé tel quel.
+        if (evaluation.stock_level !== null && evaluation.stock_level !== undefined) stock.value = String(evaluation.stock_level);
+        if (evaluation.cmm !== null && evaluation.cmm !== undefined) cmm.value = String(evaluation.cmm);
+        const input = planningNumberInput('quantity', `Besoin prévu — ${product.name}`, 'Besoin', '1');
+        if (quantity !== '' && quantity !== null && quantity !== undefined) input.value = String(quantity);
+        const need = planningElement('div', 'space-y-1');
+        const hint = planningElement('div', 'text-[10px] text-slate-500 font-mono text-right leading-tight');
+        const tools = planningElement('div', 'flex items-center justify-end gap-1');
+        const adjustedBadge = planningElement('span', 'px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[9px] font-bold', 'Ajusté');
+        adjustedBadge.title = 'Le besoin a été modifié à la main par rapport au calcul.';
+        const reset = planningElement('button', 'text-[10px] font-bold text-sky-700 hover:underline', 'Recalculer');
+        reset.type = 'button';
+        reset.title = `Revenir au calcul ${PLANNING_CMM_MONTHS} × CMM − état de stock`;
+        tools.append(adjustedBadge, reset);
+        need.append(input, hint, tools);
+        const remove = planningElement('button', 'w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors');
         remove.type = 'button';
-        remove.className = 'text-xs font-bold text-red-600 hover:text-red-700';
+        remove.title = 'Retirer cet intrant';
+        remove.setAttribute('aria-label', `Retirer ${product.name}`);
+        remove.append(planningIcon('ph-x'));
+        const state = {row, input, stock, cmm, hint, adjustedBadge, reset, manual: false, adjusted: false, computed: null};
+        // Stock ou CMM modifiés : le besoin suit le calcul tant que l'utilisateur ne l'a pas ajusté.
+        const recompute = () => {
+            if (!state.manual) applyPlanningNeed(state);
+            else updatePlanningNeed(state);
+            updatePlanningBlock(entry);
+        };
+        stock.addEventListener('input', recompute);
+        cmm.addEventListener('input', recompute);
+        input.addEventListener('input', () => {
+            state.manual = String(input.value ?? '').trim() !== '';
+            updatePlanningNeed(state);
+            updatePlanningBlock(entry);
+        });
+        reset.addEventListener('click', () => { applyPlanningNeed(state); updatePlanningBlock(entry); });
+        remove.addEventListener('click', () => {
+            entry.rows.delete(product.id);
+            entry.rowsBox.replaceChildren(...[...entry.rows.values()].map(item => item.row));
+            updatePlanningBlock(entry);
+        });
+        row.append(planningHidden('product', product.id), info, stock, cmm, need, remove);
+        entry.rows.set(product.id, state);
+        entry.rowsBox.append(row);
+        updatePlanningNeed(state);
+        // Un besoin enregistré différent du calcul était un ajustement : il n'est pas écrasé par la suite.
+        state.manual = state.adjusted;
+        return row;
+    }
+
+    // Réaffiche les blocs dans l'ordre du référentiel CSB, ou une invite si aucun CSB n'est coché.
+    function renderPlanningBlocks() {
+        const blocks = planningCsbs.filter(csb => planningEntries.has(csb.id)).map(csb => planningEntries.get(csb.id).block);
+        $('plan-csb-blocks').replaceChildren(...(blocks.length ? blocks : [planningElement('div',
+            'p-6 text-center text-xs text-slate-500 italic border border-dashed border-slate-300 rounded-xl',
+            'Cochez un ou plusieurs CSB ci-dessus : leurs lignes d’intrants seront créées à partir du référentiel.')]));
+        syncPlanningPicker();
+    }
+
+    // items === null : nouveau CSB, une ligne vide par intrant du référentiel.
+    function addPlanningCsb(csbId, items = null, render = true) {
+        const csb = planningCsbs.find(item => item.id === csbId);
+        if (!csb || planningEntries.has(csbId)) return null;
+        const block = planningElement('details', 'planning-csb group border border-slate-200 rounded-xl bg-white overflow-hidden');
+        block.dataset.csb = csb.id;
+        block.open = true;
+        const summary = planningElement('summary', 'flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-slate-50 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden');
+        const title = planningElement('div', 'flex items-center gap-2 min-w-0');
+        const status = planningElement('span');
+        title.append(planningIcon('ph-caret-right text-slate-400 transition-transform group-open:rotate-90'),
+            planningIcon('ph-map-pin text-rose-500'),
+            planningElement('span', 'text-xs font-bold text-slate-900 truncate', csb.name),
+            status,
+            planningElement('span', 'font-mono text-[10px] text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded', csb.code),
+            planningElement('span', 'hidden sm:inline text-[10px] text-slate-500 truncate', [csb.district, csb.region].filter(Boolean).join(' · ')));
+        const actions = planningElement('div', 'flex items-center gap-2');
+        const badge = planningElement('span');
+        const remove = planningElement('button', 'inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50 rounded-lg transition-colors');
+        remove.type = 'button';
+        remove.setAttribute('aria-label', `Retirer le CSB ${csb.name}`);
         remove.textContent = 'Retirer ce CSB';
-        remove.addEventListener('click', () => block.remove());
-        heading.append(label, remove);
-        const section = document.createElement('div');
-        section.className = 'border-t border-slate-200 pt-3 space-y-2';
-        const toolbar = document.createElement('div');
-        toolbar.className = 'flex flex-wrap items-center justify-between gap-2';
-        const title = document.createElement('span');
-        title.className = 'text-[10px] font-bold text-slate-600 uppercase tracking-wider';
-        title.textContent = 'Intrants requis pour ce CSB';
-        const add = document.createElement('button');
+        remove.addEventListener('click', event => { event?.preventDefault?.(); event?.stopPropagation?.(); removePlanningCsb(csb.id); });
+        actions.append(badge, remove);
+        summary.append(title, actions);
+        const body = planningElement('div', 'border-t border-slate-200');
+        const head = planningElement('div', `${PLANNING_GRID} px-3 py-1.5 bg-white text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100`);
+        const needHead = planningElement('span', 'text-right', 'Besoin');
+        needHead.title = `${PLANNING_CMM_MONTHS} × CMM − état de stock, ajustable`;
+        head.append(planningElement('span', '', 'Intrant'), planningElement('span', 'text-right', 'État de stock'),
+            planningElement('span', 'text-right', 'CMM'), needHead, planningElement('span'));
+        const rowsBox = planningElement('div', 'divide-y divide-slate-100');
+        const empty = planningElement('p', 'px-4 py-3 text-[11px] text-slate-500 italic', 'Aucun intrant pour ce CSB : ajoutez-en un depuis le référentiel ou retirez le CSB.');
+        const footer = planningElement('div', 'flex flex-wrap items-center gap-2 px-3 py-2.5 bg-slate-50/60 border-t border-slate-100');
+        const select = planningElement('select', 'flex-1 min-w-[180px] text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-amber-400');
+        select.setAttribute('aria-label', `Intrant à ajouter pour ${csb.name}`);
+        const add = planningElement('button', 'inline-flex items-center gap-1 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-[11px] font-bold rounded-lg transition-colors');
         add.type = 'button';
-        add.className = 'text-[11px] text-sky-600 font-bold hover:underline';
         add.textContent = 'Ajouter un intrant';
-        const rows = document.createElement('div');
-        rows.className = 'space-y-2';
-        add.addEventListener('click', () => addPlanningRow(rows));
-        toolbar.append(title, add);
-        section.append(toolbar, rows);
-        block.append(heading, section);
-        $('plan-csb-blocks').append(block);
-        if (items.length) items.forEach(item => addPlanningRow(rows, item));
-        else addPlanningRow(rows);
+        const entry = {csb, block, rowsBox, rows: new Map(), badge, status, select, add, empty, head};
+        add.addEventListener('click', () => {
+            const row = select.value && addPlanningRow(entry, select.value);
+            if (!row) return;
+            updatePlanningBlock(entry);
+            entry.rows.get(row.dataset.product).stock.focus?.();
+        });
+        footer.append(select, add);
+        // Défilement horizontal sur petit écran plutôt que des colonnes écrasées.
+        const scroller = planningElement('div', 'overflow-x-auto');
+        const grid = planningElement('div', 'min-w-[600px]');
+        grid.append(head, rowsBox);
+        scroller.append(grid);
+        body.append(scroller, empty, footer);
+        block.append(planningHidden('csb', csb.id), summary, body);
+        planningEntries.set(csb.id, entry);
+        if (items) items.forEach(item => addPlanningRow(entry, item.product_id, item.planned, item));
+        else planningProducts.forEach(product => addPlanningRow(entry, product.id));
+        updatePlanningBlock(entry);
+        if (render) renderPlanningBlocks();
+        return block;
+    }
+
+    function removePlanningCsb(csbId, ask = true) {
+        const entry = planningEntries.get(csbId);
+        if (!entry) return true;
+        const filled = planningFilled(entry);
+        if (ask && filled && !confirm(`Retirer ${entry.csb.name} de la campagne ? Les ${filled} quantité(s) saisie(s) pour ce CSB seront perdues.`)) {
+            syncPlanningPicker();
+            return false;
+        }
+        planningEntries.delete(csbId);
+        renderPlanningBlocks();
+        return true;
+    }
+
+    function renderPlanningPicker() {
+        planningOptions.clear();
+        $('plan-csb-search').value = '';
+        const labels = planningCsbs.map(csb => {
+            const label = planningElement('label', 'flex items-start gap-2 px-2.5 py-2 rounded-lg border cursor-pointer transition-colors');
+            const input = planningElement('input', 'mt-0.5 accent-sky-600');
+            input.type = 'checkbox';
+            input.value = csb.id;
+            input.addEventListener('change', () => {
+                if (input.checked) addPlanningCsb(csb.id)?.scrollIntoView?.({block: 'nearest', behavior: 'smooth'});
+                else removePlanningCsb(csb.id);
+            });
+            const text = planningElement('span', 'min-w-0');
+            text.append(planningElement('span', 'block text-xs font-semibold text-slate-800 truncate', csb.name),
+                planningElement('span', 'block text-[10px] text-slate-500 truncate', [csb.code, csb.district].filter(Boolean).join(' · ')));
+            label.append(input, text);
+            planningOptions.set(csb.id, {label, input,
+                search: [csb.name, csb.code, csb.district, csb.region].filter(Boolean).join(' ').toLocaleLowerCase('fr-FR')});
+            return label;
+        });
+        $('plan-csb-options').replaceChildren(...labels);
+    }
+
+    const visiblePlanningOptions = () => [...planningOptions.entries()].filter(([, option]) => !option.label.hidden);
+
+    function syncPlanningPicker() {
+        for (const [id, option] of planningOptions) {
+            const checked = planningEntries.has(id);
+            option.input.checked = checked;
+            option.label.className = `flex items-start gap-2 px-2.5 py-2 rounded-lg border cursor-pointer transition-colors ${
+                checked ? 'border-sky-300 bg-sky-50' : 'border-slate-200 hover:bg-slate-50'}`;
+        }
+        const visible = visiblePlanningOptions();
+        const checkedVisible = visible.filter(([id]) => planningEntries.has(id)).length;
+        const all = $('plan-csb-all');
+        all.checked = visible.length > 0 && checkedVisible === visible.length;
+        all.indeterminate = checkedVisible > 0 && checkedVisible < visible.length;
+        all.disabled = visible.length === 0;
+        $('plan-csb-picker-count').textContent = `${planningEntries.size} / ${planningCsbs.length} CSB sélectionné(s)`;
+        $('plan-csb-blocks-title').textContent = `2. Besoins par CSB (${planningEntries.size}) — besoin = ${PLANNING_CMM_MONTHS} × CMM − état de stock, ajustable · les lignes sans besoin ne sont pas enregistrées`;
+        const toggle = $('planning-add');
+        toggle.disabled = planningEntries.size === 0;
+        toggle.textContent = [...planningEntries.values()].some(entry => entry.block.open) ? 'Tout replier' : 'Tout déplier';
+    }
+
+    function filterPlanningPicker() {
+        const query = $('plan-csb-search').value.trim().toLocaleLowerCase('fr-FR');
+        for (const option of planningOptions.values()) option.label.hidden = Boolean(query) && !option.search.includes(query);
+        syncPlanningPicker();
+    }
+
+    // « Tous les CSB » agit sur les CSB visibles (tous, sauf si une recherche filtre la liste).
+    function toggleAllPlanningCsbs() {
+        const ids = visiblePlanningOptions().map(([id]) => id);
+        if ($('plan-csb-all').checked) {
+            ids.forEach(id => addPlanningCsb(id, null, false));
+            renderPlanningBlocks();
+            return;
+        }
+        const selected = ids.filter(id => planningEntries.has(id));
+        const filled = selected.reduce((sum, id) => sum + planningFilled(planningEntries.get(id)), 0);
+        if (filled && !confirm(`Retirer ces ${selected.length} CSB de la campagne ? ${filled} quantité(s) saisie(s) seront perdues.`)) {
+            syncPlanningPicker();
+            return;
+        }
+        selected.forEach(id => planningEntries.delete(id));
+        renderPlanningBlocks();
+    }
+
+    function togglePlanningBlocks() {
+        const entries = [...planningEntries.values()];
+        const open = !entries.some(entry => entry.block.open);
+        entries.forEach(entry => { entry.block.open = open; });
+        syncPlanningPicker();
+    }
+
+    // --- Onglet « Analyse stocks & CMM » (Planification) : historique des états de stock et CMM des CSB ---
+    // Chaque enregistrement d'une campagne crée un instantané complet de ses évaluations ; l'évolution se lit
+    // d'un instantané à l'autre, toutes campagnes confondues (actives et archivées).
+    // Mois de stock (MSD) = état de stock ÷ CMM. Le besoin vise PLANNING_CMM_MONTHS mois ; sous ANALYSIS_MIN_MONTHS : sous-stock.
+    // Les quantités ne sont additionnées que pour un même intrant ; la matrice compare les intrants par leur MSD (sans unité).
+    const ANALYSIS_MIN_MONTHS = 2;
+    const ANALYSIS_MAX_LINES = 8;
+    const ANALYSIS_STATUS = {
+        rupture: {label: 'Rupture', color: '#b91c1c', badge: 'bg-red-50 text-red-700 border-red-200', cell: 'bg-red-100 text-red-800'},
+        under:   {label: `Sous-stock (< ${ANALYSIS_MIN_MONTHS} mois)`, color: '#d97706', badge: 'bg-amber-50 text-amber-800 border-amber-200', cell: 'bg-amber-100 text-amber-900'},
+        ok:      {label: `Normal (${ANALYSIS_MIN_MONTHS} à ${PLANNING_CMM_MONTHS} mois)`, color: '#15803d', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', cell: 'bg-emerald-100 text-emerald-800'},
+        over:    {label: `Surstock (> ${PLANNING_CMM_MONTHS} mois)`, color: '#7c3aed', badge: 'bg-violet-50 text-violet-700 border-violet-200', cell: 'bg-violet-100 text-violet-800'},
+        nocmm:   {label: 'CMM nulle ou non saisie', color: '#64748b', badge: 'bg-slate-100 text-slate-600 border-slate-200', cell: 'bg-slate-100 text-slate-500'}
+    };
+    const ANALYSIS_LEVELS = {csb: 'CSB', district: 'District', region: 'Région'};
+    const ANALYSIS_SERIES = ['#0284c7', '#d97706', '#059669', '#be185d', '#7c3aed', '#b91c1c', '#0f766e', '#475569'];
+    const analysisPrefs = {level: 'csb', product: ''};
+    let analysisState = null;
+    let analysisCharts = [];
+
+    function analysisStatus(stock, cmm) {
+        if (cmm <= 0n) return 'nocmm';
+        if (stock <= 0n) return 'rupture';
+        if (stock < cmm * BigInt(ANALYSIS_MIN_MONTHS)) return 'under';
+        if (stock > cmm * BigInt(PLANNING_CMM_MONTHS)) return 'over';
+        return 'ok';
+    }
+
+    const analysisMonths = (stock, cmm) => cmm > 0n ? Number(stock * 100n / cmm) / 100 : null;
+    const formatMonths = value => value === null ? '—' : value.toLocaleString('fr-FR', {maximumFractionDigits: 1});
+    const analysisDate = value => new Date(value).toLocaleDateString('fr-FR', {timeZone: 'Indian/Antananarivo'});
+
+    function analysisGroupKey(row, level) {
+        if (level === 'csb') return {key: row.csb_id, label: row.csb_name};
+        const value = level === 'district' ? row.district : row.region;
+        const label = value || (level === 'district' ? 'District non renseigné' : 'Région non renseignée');
+        return {key: label, label};
+    }
+
+    // Agrège les évaluations d'un intrant par niveau géographique (lignes d'un même instantané).
+    function analysisGroups(rows, level, productId) {
+        const groups = new Map();
+        for (const row of rows) {
+            if (productId && row.product_id !== productId) continue;
+            const {key, label} = analysisGroupKey(row, level);
+            if (!groups.has(key)) groups.set(key, {key, label, csbs: new Set(), ruptures: new Set(), stock: 0n, cmm: 0n, need: 0n, district: row.district});
+            const group = groups.get(key);
+            const stock = BigInt(row.stock_level ?? 0), cmm = BigInt(row.cmm ?? 0);
+            group.csbs.add(row.csb_id);
+            if (analysisStatus(stock, cmm) === 'rupture') group.ruptures.add(row.csb_id);
+            group.stock += stock;
+            group.cmm += cmm;
+            const target = cmm * BigInt(PLANNING_CMM_MONTHS) - stock;
+            if (target > 0n) group.need += target;
+        }
+        return [...groups.values()].map(group => ({...group, months: analysisMonths(group.stock, group.cmm), status: analysisStatus(group.stock, group.cmm)}))
+            .sort((a, b) => (a.months ?? Infinity) - (b.months ?? Infinity) || a.label.localeCompare(b.label, 'fr'));
+    }
+
+    // Instantanés ordonnés dans le temps ; plusieurs enregistrements le même jour pour une même campagne
+    // sont réduits au dernier, pour garder des courbes lisibles.
+    function analysisSnapshots(rows) {
+        const snapshots = new Map();
+        for (const row of rows) {
+            if (!snapshots.has(row.snapshot_id)) snapshots.set(row.snapshot_id, {id: row.snapshot_id, recordedAt: row.recorded_at,
+                planningId: row.planning_id, code: row.planning_code, status: row.planning_status, rows: []});
+            snapshots.get(row.snapshot_id).rows.push(row);
+        }
+        const daily = new Map();
+        for (const snapshot of [...snapshots.values()].sort((a, b) => String(a.recordedAt).localeCompare(String(b.recordedAt)))) {
+            daily.set(`${snapshot.planningId}:${analysisDate(snapshot.recordedAt)}`, snapshot);
+        }
+        return [...daily.values()].sort((a, b) => String(a.recordedAt).localeCompare(String(b.recordedAt)))
+            .map(snapshot => ({...snapshot, label: `${analysisDate(snapshot.recordedAt)} · ${snapshot.code}`}));
+    }
+
+    function analysisBadge(status, text = ANALYSIS_STATUS[status].label) {
+        return planningCell('span', text, `inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-bold whitespace-nowrap ${ANALYSIS_STATUS[status].badge}`);
+    }
+
+    function destroyAnalysisCharts() {
+        analysisCharts.forEach(chart => { try { chart.destroy(); } catch { /* déjà détruit */ } });
+        analysisCharts = [];
+    }
+
+    function clearStockAnalysis() {
+        destroyAnalysisCharts();
+        analysisState = null;
+        $('stock-analysis-content').replaceChildren();
+    }
+
+    async function refreshStockAnalysis() {
+        const port = portSelect.value, seq = ++requestSequence, requestGeneration = sessionGeneration;
+        const status = $('postgres-stock-analysis-status');
+        clearStockAnalysis();
+        status.textContent = port ? 'Chargement de l’historique…' : 'Aucun magasin disponible.';
+        if (!port) return;
+        try {
+            const rows = await api('/rest/v1/rpc/qbox_planning_assessment_history', {selected_port: port}, true);
+            if (seq !== requestSequence || activeView !== 'stock-analysis' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
+            const snapshots = analysisSnapshots(rows);
+            analysisState = {snapshots, level: analysisPrefs.level, product: analysisPrefs.product};
+            const latest = snapshots.at(-1);
+            if (latest && !latest.rows.some(row => row.product_id === analysisState.product)) analysisState.product = latest.rows[0]?.product_id || '';
+            renderStockAnalysis();
+            status.textContent = `${snapshots.length} relevé(s) sur ${new Set(snapshots.map(snapshot => snapshot.planningId)).size} campagne(s) · Actualisé le ${localDateTime(new Date())} (heure de Madagascar).`;
+        } catch (error) {
+            if (seq === requestSequence && activeView === 'stock-analysis' && port === portSelect.value && sessionGeneration === requestGeneration)
+                status.textContent = `Lecture indisponible : ${error.message}`;
+        }
+    }
+
+    function analysisSelect(label, options, value, onChange) {
+        const wrapper = planningCell('label', '', 'flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500');
+        wrapper.append(planningCell('span', label));
+        const select = document.createElement('select');
+        select.className = 'text-xs normal-case tracking-normal font-semibold text-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-amber-400';
+        for (const [optionValue, text] of options) select.add(new Option(text, optionValue));
+        select.value = value;
+        select.addEventListener('change', () => onChange(select.value));
+        wrapper.append(select);
+        return wrapper;
+    }
+
+    function analysisKpi(label, value, hint = '', tone = '') {
+        const tile = planningCell('div', '', `planning-analysis-kpi p-3 rounded-xl border ${tone || 'border-slate-200 bg-white'}`);
+        tile.append(planningCell('div', label, 'text-[10px] font-bold uppercase tracking-wider text-slate-500'),
+            planningCell('div', value, 'mt-1 text-lg font-bold font-mono text-slate-900'));
+        if (hint) tile.append(planningCell('div', hint, 'text-[10px] text-slate-500'));
+        return tile;
+    }
+
+    function analysisChartBox(title, height, description) {
+        const box = planningCell('div', '', 'p-4 rounded-xl border border-slate-200 bg-white min-w-0');
+        box.append(planningCell('h5', title, 'text-xs font-bold text-slate-800'));
+        if (description) box.append(planningCell('p', description, 'text-[10px] text-slate-500 mt-0.5'));
+        const holder = planningCell('div', '', 'relative mt-3');
+        holder.style.height = `${height}px`;
+        const canvas = document.createElement('canvas');
+        canvas.setAttribute('role', 'img');
+        canvas.setAttribute('aria-label', `${title}. Le détail figure dans les tableaux de l’onglet.`);
+        holder.append(canvas);
+        box.append(holder);
+        return {box, canvas};
+    }
+
+    // Lignes horizontales des seuils de mois de stock sur les courbes.
+    const analysisThresholdPlugin = {
+        id: 'qbAnalysisThresholds',
+        afterDatasetsDraw(chart) {
+            const scale = chart.scales?.y, area = chart.chartArea, ctx = chart.ctx;
+            if (!scale || !area || !ctx) return;
+            for (const [value, color, text] of [[ANALYSIS_MIN_MONTHS, '#d97706', `min ${ANALYSIS_MIN_MONTHS} mois`],
+                [PLANNING_CMM_MONTHS, '#7c3aed', `cible ${PLANNING_CMM_MONTHS} mois`]]) {
+                const y = scale.getPixelForValue(value);
+                if (y < area.top || y > area.bottom) continue;
+                ctx.save();
+                ctx.strokeStyle = color;
+                ctx.setLineDash([5, 4]);
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(area.left, y);
+                ctx.lineTo(area.right, y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = color;
+                ctx.font = '600 10px Inter, sans-serif';
+                ctx.fillText(text, area.right - 70, y - 4);
+                ctx.restore();
+            }
+        }
+    };
+
+    function renderAnalysisCharts({snapshots, series, totals, statusSeries, maxMonths}, boxes) {
+        destroyAnalysisCharts();
+        if (typeof window.Chart !== 'function') return false;
+        const axis = {ticks: {color: '#475569', font: {size: 10}}, grid: {color: '#e2e8f0'}};
+        const labels = snapshots.map(snapshot => snapshot.label);
+        const legend = {position: 'bottom', labels: {color: '#475569', boxWidth: 12, font: {size: 10}}};
+        try {
+            analysisCharts.push(new window.Chart(boxes.months.canvas, {
+                type: 'line',
+                data: {labels, datasets: series.map((line, index) => ({
+                    label: line.label, data: line.values.map(value => value === null ? null : Math.min(value, maxMonths)),
+                    borderColor: ANALYSIS_SERIES[index % ANALYSIS_SERIES.length], backgroundColor: ANALYSIS_SERIES[index % ANALYSIS_SERIES.length],
+                    spanGaps: true, tension: 0.2, borderWidth: 2.5,
+                    // Points rouges et agrandis sur les relevés en rupture.
+                    pointRadius: line.statuses.map(status => status === 'rupture' ? 6 : 3),
+                    pointBackgroundColor: line.statuses.map(status => status === 'rupture' ? '#b91c1c' : ANALYSIS_SERIES[index % ANALYSIS_SERIES.length])
+                }))},
+                options: {responsive: true, maintainAspectRatio: false, animation: false, plugins: {legend,
+                    tooltip: {callbacks: {label: item => {
+                        const line = series[item.datasetIndex], value = line.values[item.dataIndex];
+                        return `${line.label} : ${formatMonths(value)} mois · ${ANALYSIS_STATUS[line.statuses[item.dataIndex]]?.label || ''}`;
+                    }}}},
+                    scales: {x: {...axis, ticks: {...axis.ticks, maxRotation: 45}}, y: {...axis, min: 0, max: maxMonths,
+                        title: {display: true, text: 'Mois de stock', color: '#475569'}}}},
+                plugins: [analysisThresholdPlugin]
+            }));
+            analysisCharts.push(new window.Chart(boxes.quantities.canvas, {
+                type: 'bar',
+                data: {labels, datasets: [
+                    {type: 'bar', label: 'État de stock', data: totals.map(total => Number(total.stock)), backgroundColor: '#0284c7', borderRadius: 4, maxBarThickness: 28, order: 2},
+                    {type: 'line', label: 'CMM', data: totals.map(total => Number(total.cmm)), borderColor: '#0f766e', backgroundColor: '#0f766e', tension: 0.2, borderWidth: 2.5, order: 1},
+                    {type: 'line', label: `Cible ${PLANNING_CMM_MONTHS} mois (${PLANNING_CMM_MONTHS} × CMM)`, data: totals.map(total => Number(total.cmm) * PLANNING_CMM_MONTHS),
+                        borderColor: '#7c3aed', backgroundColor: '#7c3aed', borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5, order: 0}
+                ]},
+                options: {responsive: true, maintainAspectRatio: false, animation: false, plugins: {legend},
+                    scales: {x: {...axis, ticks: {...axis.ticks, maxRotation: 45}}, y: {...axis, beginAtZero: true}}}
+            }));
+            const statuses = Object.keys(ANALYSIS_STATUS).filter(key => statusSeries.some(point => point[key]));
+            analysisCharts.push(new window.Chart(boxes.statuses.canvas, {
+                type: 'bar',
+                data: {labels, datasets: statuses.map(key => ({label: ANALYSIS_STATUS[key].label, data: statusSeries.map(point => point[key] || 0),
+                    backgroundColor: ANALYSIS_STATUS[key].color, borderRadius: 3, maxBarThickness: 32}))},
+                options: {responsive: true, maintainAspectRatio: false, animation: false, plugins: {legend},
+                    scales: {x: {...axis, stacked: true, ticks: {...axis.ticks, maxRotation: 45}}, y: {...axis, stacked: true, beginAtZero: true,
+                        ticks: {...axis.ticks, precision: 0}, title: {display: true, text: 'Nombre de CSB', color: '#475569'}}}}
+            }));
+            return true;
+        } catch (error) {
+            destroyAnalysisCharts();
+            return false;
+        }
+    }
+
+    function analysisTrend(current, previous) {
+        if (current === null || previous === null || previous === undefined) return planningCell('span', '—', 'text-slate-400');
+        const delta = Math.round((current - previous) * 10) / 10;
+        if (delta === 0) return planningCell('span', '= stable', 'text-slate-500 font-semibold');
+        return planningCell('span', `${delta > 0 ? '▲ +' : '▼ −'}${formatMonths(Math.abs(delta))} mois`, `font-semibold ${delta > 0 ? 'text-emerald-700' : 'text-red-600'}`);
+    }
+
+    function analysisDetailTable(groups, level, previous, ruptureCounts) {
+        const table = planningCell('table', '', 'w-full text-left border-collapse text-xs');
+        const head = document.createElement('thead');
+        const header = planningCell('tr', '', 'border-b border-slate-200');
+        const columns = [ANALYSIS_LEVELS[level], level === 'csb' ? 'District' : 'CSB', 'État de stock', 'CMM', 'Mois de stock', 'Évolution',
+            `Besoin (${PLANNING_CMM_MONTHS} × CMM − stock)`, 'Statut actuel'];
+        columns.forEach((text, index) => header.append(planningCell('th', text,
+            `py-2 px-2 text-[10px] uppercase font-semibold text-slate-500 whitespace-nowrap${[2, 3, 4, 6].includes(index) ? ' text-right' : ''}`)));
+        head.append(header);
+        const body = planningCell('tbody', '', 'divide-y divide-slate-100');
+        const num = 'py-2 px-2 text-right font-mono text-slate-700 whitespace-nowrap';
+        for (const group of groups) {
+            const row = planningCell('tr', '', group.status === 'rupture' ? 'bg-red-50/60' : 'hover:bg-slate-50');
+            const name = planningCell('th', group.label, 'py-2 px-2 font-semibold text-slate-800');
+            name.scope = 'row';
+            const trend = planningCell('td', '', 'py-2 px-2 whitespace-nowrap');
+            trend.append(analysisTrend(group.months, previous.get(group.key)?.months));
+            const status = planningCell('td', '', 'py-2 px-2 space-x-1 whitespace-nowrap');
+            status.append(analysisBadge(group.status));
+            if (level !== 'csb' && group.ruptures.size) status.append(analysisBadge('rupture', `${group.ruptures.size} CSB en rupture`));
+            const past = ruptureCounts.get(group.key) || 0;
+            if (past > (group.status === 'rupture' ? 1 : 0)) status.append(analysisBadge('rupture', `${past} relevé(s) en rupture`));
+            row.append(name, planningCell('td', level === 'csb' ? (group.district || '—') : String(group.csbs.size), level === 'csb' ? 'py-2 px-2 text-slate-600' : num),
+                planningCell('td', number(group.stock), num), planningCell('td', number(group.cmm), num),
+                planningCell('td', formatMonths(group.months), `${num} font-bold`), trend, planningCell('td', number(group.need), num), status);
+            body.append(row);
+        }
+        table.append(head, body);
+        const scroll = planningCell('div', '', 'overflow-x-auto');
+        scroll.append(table);
+        return scroll;
+    }
+
+    // Matrice groupe × intrant (dernier relevé) : mois de stock colorés selon le statut.
+    function analysisMatrix(rows, level) {
+        const products = [...new Map(rows.map(row => [row.product_id, row.product_name])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'fr'));
+        const byProduct = new Map(products.map(([id]) => [id, new Map(analysisGroups(rows, level, id).map(group => [group.key, group]))]));
+        const groups = [...new Map(rows.map(row => { const key = analysisGroupKey(row, level); return [key.key, key.label]; })).entries()]
+            .sort((a, b) => a[1].localeCompare(b[1], 'fr'));
+        const table = planningCell('table', '', 'planning-analysis-matrix w-full border-collapse text-xs');
+        const head = document.createElement('thead');
+        const header = planningCell('tr', '', 'border-b border-slate-200');
+        header.append(planningCell('th', ANALYSIS_LEVELS[level], 'py-2 px-2 text-left text-[10px] uppercase font-semibold text-slate-500'));
+        for (const [, name] of products) header.append(planningCell('th', name, 'py-2 px-2 text-center text-[10px] uppercase font-semibold text-slate-500 whitespace-nowrap'));
+        head.append(header);
+        const body = planningCell('tbody', '', 'divide-y divide-slate-100');
+        for (const [key, label] of groups) {
+            const row = document.createElement('tr');
+            const name = planningCell('th', label, 'py-1.5 px-2 text-left font-semibold text-slate-800 whitespace-nowrap');
+            name.scope = 'row';
+            row.append(name);
+            for (const [productId] of products) {
+                const group = byProduct.get(productId).get(key);
+                const cell = planningCell('td', '', 'py-1 px-1 text-center');
+                if (group) {
+                    const chip = planningCell('span', group.status === 'rupture' ? 'Rupture' : group.months === null ? 'CMM 0' : `${formatMonths(group.months)} m`,
+                        `inline-block min-w-[3.5rem] px-1.5 py-1 rounded-md font-mono font-bold text-[11px] ${ANALYSIS_STATUS[group.status].cell}`);
+                    chip.title = `${label} · ${ANALYSIS_STATUS[group.status].label} · stock ${number(group.stock)} / CMM ${number(group.cmm)}`;
+                    cell.append(chip);
+                }
+                row.append(cell);
+            }
+            body.append(row);
+        }
+        table.append(head, body);
+        const scroll = planningCell('div', '', 'overflow-x-auto');
+        scroll.append(table);
+        return scroll;
+    }
+
+    // Bandeau des ruptures du dernier relevé, tous intrants confondus.
+    function analysisRuptureAlert(latest) {
+        const ruptures = latest.rows.filter(row => analysisStatus(BigInt(row.stock_level ?? 0), BigInt(row.cmm ?? 0)) === 'rupture');
+        const box = planningCell('div', '', `planning-analysis-ruptures p-4 rounded-xl border ${ruptures.length ? 'border-red-200 bg-red-50/70' : 'border-emerald-200 bg-emerald-50/60'}`);
+        const title = planningCell('div', '', 'flex flex-wrap items-center gap-2');
+        const icon = planningCell('i', '', `ph ${ruptures.length ? 'ph-warning-octagon text-red-600' : 'ph-check-circle text-emerald-600'} text-base`);
+        icon.setAttribute('aria-hidden', 'true');
+        title.append(icon, planningCell('strong', ruptures.length
+            ? `${ruptures.length} rupture(s) au dernier relevé (${latest.label})`
+            : `Aucune rupture au dernier relevé (${latest.label})`, `text-xs ${ruptures.length ? 'text-red-800' : 'text-emerald-800'}`));
+        box.append(title);
+        if (ruptures.length) {
+            const list = planningCell('div', '', 'mt-2 flex flex-wrap gap-1.5');
+            for (const row of ruptures) {
+                const badge = analysisBadge('rupture', `${row.csb_name} · ${row.product_name}`);
+                badge.title = `${row.district || 'District non renseigné'} · ${row.region || 'Région non renseignée'} · CMM ${number(row.cmm ?? 0)} ${row.unit || ''}`;
+                list.append(badge);
+            }
+            box.append(list);
+        }
+        return box;
+    }
+
+    function renderStockAnalysis() {
+        const state = analysisState, container = $('stock-analysis-content');
+        if (!state) return;
+        destroyAnalysisCharts();
+        const latest = state.snapshots.at(-1);
+        if (!latest) {
+            container.replaceChildren(planningCell('p', 'Aucun état de stock ni CMM enregistré pour ce magasin. Renseignez-les dans le formulaire d’une campagne (Besoins prévisionnels) : chaque enregistrement ajoute un relevé à cet historique.',
+                'p-8 text-center text-xs text-slate-500 italic bg-white rounded-2xl border border-slate-200'));
+            return;
+        }
+        const allRows = state.snapshots.flatMap(snapshot => snapshot.rows);
+        const products = [...new Map(allRows.map(row => [row.product_id, row.product_name])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'fr'));
+        if (!products.some(([id]) => id === state.product)) state.product = products[0][0];
+        const currentRuptures = new Map();
+        for (const row of latest.rows) if (analysisStatus(BigInt(row.stock_level ?? 0), BigInt(row.cmm ?? 0)) === 'rupture')
+            currentRuptures.set(row.product_id, (currentRuptures.get(row.product_id) || 0) + 1);
+        // Réglages
+        const controls = planningCell('div', '', 'flex flex-wrap items-end gap-3 p-4 bg-white rounded-2xl border border-slate-200 shadow-sm');
+        controls.append(analysisSelect('Intrant', products.map(([id, name]) => [id, currentRuptures.get(id) ? `${name} · ⚠ ${currentRuptures.get(id)} rupture(s)` : name]), state.product,
+            value => { state.product = analysisPrefs.product = value; renderStockAnalysis(); }));
+        const levels = planningCell('div', '', 'flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500');
+        levels.append(planningCell('span', 'Niveau'));
+        const toggle = planningCell('div', '', 'inline-flex rounded-lg border border-slate-200 overflow-hidden');
+        toggle.setAttribute('role', 'group');
+        for (const [key, label] of Object.entries(ANALYSIS_LEVELS)) {
+            const button = planningCell('button', label, `px-3 py-1.5 text-xs font-bold normal-case tracking-normal ${state.level === key ? 'bg-sky-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'}`);
+            button.type = 'button';
+            button.setAttribute('aria-pressed', String(state.level === key));
+            button.addEventListener('click', () => { state.level = analysisPrefs.level = key; renderStockAnalysis(); });
+            toggle.append(button);
+        }
+        levels.append(toggle);
+        controls.append(levels, planningCell('p', `Mois de stock = état de stock ÷ CMM · sous-stock < ${ANALYSIS_MIN_MONTHS} mois, cible ${PLANNING_CMM_MONTHS} mois, surstock au-delà · ${state.snapshots.length} relevé(s) du ${analysisDate(state.snapshots[0].recordedAt)} au ${analysisDate(latest.recordedAt)}`,
+            'text-[10px] text-slate-500 ml-auto max-w-md'));
+        // Situation au dernier relevé pour l'intrant choisi
+        const productName = products.find(([id]) => id === state.product)[1];
+        const unit = allRows.find(row => row.product_id === state.product)?.unit || 'unités';
+        const latestCsbs = analysisGroups(latest.rows, 'csb', state.product);
+        const totals = latestCsbs.reduce((sum, group) => ({stock: sum.stock + group.stock, cmm: sum.cmm + group.cmm, need: sum.need + group.need}), {stock: 0n, cmm: 0n, need: 0n});
+        const months = analysisMonths(totals.stock, totals.cmm);
+        const ruptureCount = latestCsbs.filter(group => group.status === 'rupture').length;
+        const kpis = planningCell('div', '', 'grid grid-cols-2 lg:grid-cols-5 gap-3');
+        kpis.append(analysisKpi('CSB évalués', String(latestCsbs.length), `${productName} · ${latest.label}`),
+            analysisKpi('CSB en rupture', String(ruptureCount), ruptureCount ? 'Stock nul avec une consommation' : 'Aucune rupture',
+                ruptureCount ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'),
+            analysisKpi('État de stock total', number(totals.stock), unit),
+            analysisKpi('Mois de stock', formatMonths(months), months === null ? 'CMM nulle' : ANALYSIS_STATUS[analysisStatus(totals.stock, totals.cmm)].label),
+            analysisKpi(`Besoin ${PLANNING_CMM_MONTHS} mois`, number(totals.need), `${unit} à couvrir`));
+        // Séries dans le temps
+        const perSnapshot = state.snapshots.map(snapshot => new Map(analysisGroups(snapshot.rows, state.level, state.product).map(group => [group.key, group])));
+        const latestGroups = analysisGroups(latest.rows, state.level, state.product);
+        const labelsByKey = new Map(perSnapshot.flatMap(groups => [...groups.values()].map(group => [group.key, group.label])));
+        const ordered = [...latestGroups.map(group => group.key), ...[...labelsByKey.keys()].filter(key => !latestGroups.some(group => group.key === key))];
+        const shown = ordered.slice(0, ANALYSIS_MAX_LINES);
+        const series = shown.map(key => ({key, label: labelsByKey.get(key),
+            values: perSnapshot.map(groups => groups.get(key)?.months ?? null),
+            statuses: perSnapshot.map(groups => groups.get(key)?.status || null)}));
+        const maxMonths = Math.max(PLANNING_CMM_MONTHS + 2, Math.min(12, Math.ceil(Math.max(0, ...series.flatMap(line => line.values.filter(value => value !== null))))));
+        const totalsSeries = state.snapshots.map(snapshot => analysisGroups(snapshot.rows, 'csb', state.product)
+            .reduce((sum, group) => ({stock: sum.stock + group.stock, cmm: sum.cmm + group.cmm}), {stock: 0n, cmm: 0n}));
+        const statusSeries = state.snapshots.map(snapshot => {
+            const counts = {};
+            for (const group of analysisGroups(snapshot.rows, 'csb', state.product)) counts[group.status] = (counts[group.status] || 0) + 1;
+            return counts;
+        });
+        const levelLabel = ANALYSIS_LEVELS[state.level].toLowerCase();
+        const boxes = {
+            months: analysisChartBox(`Évolution des mois de stock par ${levelLabel} · ${productName}`, 300,
+                `Un point par relevé (enregistrement d’une campagne). Points rouges : rupture. Lignes pointillées : minimum ${ANALYSIS_MIN_MONTHS} mois et cible ${PLANNING_CMM_MONTHS} mois.`
+                + (ordered.length > ANALYSIS_MAX_LINES ? ` Les ${ANALYSIS_MAX_LINES} ${levelLabel}s les plus critiques sur ${ordered.length} sont tracés ; le tableau les liste tous.` : '')),
+            quantities: analysisChartBox(`État de stock et CMM dans le temps · ${productName}`, 260, `Totaux du magasin en ${unit}.`),
+            statuses: analysisChartBox(`CSB par statut dans le temps · ${productName}`, 260, 'Les ruptures apparaissent en rouge.')
+        };
+        const chartsMessage = planningCell('p', 'Graphiques indisponibles (Chart.js non chargé) : les tableaux ci-dessous restent complets.', 'planning-analysis-charts-message text-[11px] text-amber-700');
+        chartsMessage.hidden = true;
+        const lower = planningCell('div', '', 'grid grid-cols-1 lg:grid-cols-2 gap-3');
+        lower.append(boxes.quantities.box, boxes.statuses.box);
+        // Tableaux : situation actuelle avec évolution depuis le relevé précédent, puis matrice.
+        const previous = perSnapshot.length > 1 ? perSnapshot.at(-2) : new Map();
+        const ruptureCounts = new Map();
+        for (const groups of perSnapshot) for (const group of groups.values()) if (group.status === 'rupture') ruptureCounts.set(group.key, (ruptureCounts.get(group.key) || 0) + 1);
+        const detail = planningCell('div', '', 'p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-2');
+        detail.append(planningCell('h4', `Situation au dernier relevé par ${levelLabel} · ${productName}`, 'text-xs font-bold text-slate-800'),
+            planningCell('p', 'Évolution : écart de mois de stock avec le relevé précédent.', 'text-[10px] text-slate-500'),
+            analysisDetailTable(latestGroups, state.level, previous, ruptureCounts));
+        const matrix = planningCell('div', '', 'p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-2');
+        matrix.append(planningCell('h4', `Mois de stock par ${levelLabel} et par intrant · ${latest.label}`, 'text-xs font-bold text-slate-800'),
+            planningCell('p', 'Chaque intrant est comparé à sa propre CMM : la matrice compare les intrants entre eux.', 'text-[10px] text-slate-500'),
+            analysisMatrix(latest.rows, state.level));
+        container.replaceChildren(analysisRuptureAlert(latest), controls, kpis, chartsMessage, boxes.months.box, lower, detail, matrix);
+        // Graphiques créés une fois les canevas dans la page, pour que Chart.js puisse les dimensionner.
+        if (!renderAnalysisCharts({snapshots: state.snapshots, series, totals: totalsSeries, statusSeries, maxMonths}, boxes)) {
+            for (const box of [boxes.months.box, lower]) box.hidden = true;
+            chartsMessage.hidden = false;
+        }
     }
 
     async function openPlanning(id = null) {
@@ -3331,15 +4641,27 @@
             $('planning-observations-wrapper').hidden = !plan;
             $('plan-start').value = plan?.start_date || '';
             $('plan-end').value = plan?.end_date || '';
-            $('plan-csb-blocks').replaceChildren();
+            resetPlanningForm();
+            renderPlanningPicker();
             if (plan) {
+                // Lignes du planning + évaluations enregistrées (y compris les lignes à besoin nul).
+                const assessments = await api('/rest/v1/rpc/qbox_planning_assessments', {selected_port: port, selected_planning: plan.id}, true);
+                if (sessionGeneration !== requestGeneration || sequence !== requestSequence || activeView !== 'planning' || port !== portSelect.value) return;
                 const grouped = new Map();
-                for (const item of plan.items) {
-                    if (!grouped.has(item.csb_id)) grouped.set(item.csb_id, []);
-                    grouped.get(item.csb_id).push(item);
+                const lineFor = (csbId, productId) => {
+                    if (!grouped.has(csbId)) grouped.set(csbId, new Map());
+                    const lines = grouped.get(csbId);
+                    if (!lines.has(productId)) lines.set(productId, {product_id: productId, planned: '', stock_level: null, cmm: null});
+                    return lines.get(productId);
+                };
+                for (const item of plan.items) lineFor(item.csb_id, item.product_id).planned = item.planned;
+                for (const row of assessments) {
+                    if (!csbs.some(csb => csb.id === row.csb_id) || !products.some(product => product.id === row.product_id)) continue;
+                    Object.assign(lineFor(row.csb_id, row.product_id), {stock_level: row.stock_level, cmm: row.cmm});
                 }
-                for (const [csbId, items] of grouped) addPlanningCsb(csbId, items);
-            } else addPlanningCsb();
+                for (const [csbId, lines] of grouped) addPlanningCsb(csbId, [...lines.values()], false);
+            }
+            renderPlanningBlocks();
             setFormTitle('planning-modal-title', plan ? 'ph-pencil' : 'ph-calendar-plus', 'text-sky-600',
                 plan ? 'Modifier la campagne' : 'Nouvelle campagne de planning');
             $('plan-submit-btn').textContent = plan ? 'Mettre à jour la campagne' : 'Enregistrer la campagne';
@@ -3358,7 +4680,7 @@
         planningDraft = null;
         planningCsbs = [];
         planningProducts = [];
-        $('plan-csb-blocks').replaceChildren();
+        resetPlanningForm();
         $('modal-planning').classList.add('hidden');
         $('modal-backdrop').classList.add('hidden');
         portSelect.disabled = activeView === 'operations';
@@ -3369,15 +4691,58 @@
         if (!planningDraft || planningSaving || !hasRole(['admin', 'logistics'])) return;
         const draft = planningDraft;
         const blocks = [...$('plan-csb-blocks').querySelectorAll('.planning-csb')];
-        const rows = blocks.flatMap(block => [...block.querySelectorAll('.planning-item')].map(row => ({
-            csb_id: block.querySelector('[name=csb]').value, product_id: row.querySelector('[name=product]').value,
-            quantity: Number(row.querySelector('[name=quantity]').value)
-        })));
+        const status = $('postgres-plan-form-status');
         const start = $('plan-start').value, end = $('plan-end').value;
-        if (draft.port !== portSelect.value || !start || !end || start > end || !rows.length || rows.length > 500 ||
-            blocks.some(block => !block.querySelector('[name=csb]').value || !block.querySelectorAll('.planning-item').length) ||
-            rows.some(row => !row.csb_id || !row.product_id || !Number.isSafeInteger(row.quantity) || row.quantity <= 0)) {
-            $('postgres-plan-form-status').textContent = 'Vérifiez le port, les dates et les 1 à 500 lignes du planning.';
+        if (draft.port !== portSelect.value || !start || !end || start > end) {
+            status.textContent = 'Vérifiez le port et les dates de la campagne.';
+            return;
+        }
+        if (!blocks.length) {
+            status.textContent = 'Sélectionnez au moins un CSB.';
+            return;
+        }
+        // Une ligne est enregistrée si elle a un besoin, ou une évaluation (état de stock / CMM) :
+        // dans ce dernier cas elle part avec une quantité 0 et sert à l'analyse sans créer de besoin à livrer.
+        const rows = [], emptyCsbs = [];
+        let invalid = false;
+        const whole = input => {
+            if (!input) return null;
+            if (input.validity?.badInput) invalid = true;
+            const raw = String(input.value ?? '').trim();
+            if (raw === '') return null;
+            const value = Number(raw);
+            if (!Number.isSafeInteger(value) || value < 0) invalid = true;
+            return value;
+        };
+        for (const block of blocks) {
+            const csbId = block.querySelector('[name=csb]').value;
+            let kept = 0;
+            for (const row of block.querySelectorAll('.planning-item')) {
+                const quantity = whole(row.querySelector('[name=quantity]'));
+                const stockLevel = whole(row.querySelector('[name=stock_level]'));
+                const cmm = whole(row.querySelector('[name=cmm]'));
+                if (!quantity && stockLevel === null && cmm === null) continue;
+                kept++;
+                rows.push({csb_id: csbId, product_id: row.querySelector('[name=product]').value,
+                    quantity: quantity ?? 0, stock_level: stockLevel, cmm});
+            }
+            if (!kept) emptyCsbs.push(planningCsbs.find(csb => csb.id === csbId)?.name || 'CSB sans nom');
+        }
+        if (invalid || rows.some(row => !row.csb_id || !row.product_id || !Number.isSafeInteger(row.quantity) || row.quantity < 0)) {
+            status.textContent = 'Les besoins, états de stock et CMM doivent être des nombres entiers positifs ou nuls.';
+            return;
+        }
+        if (emptyCsbs.length) {
+            status.textContent = `Renseignez au moins une quantité ou retirez ces CSB : ${emptyCsbs.join(', ')}.`;
+            return;
+        }
+        const plannedLines = rows.filter(row => row.quantity > 0).length;
+        if (!plannedLines) {
+            status.textContent = 'Aucun besoin à livrer : au moins une ligne doit avoir un besoin supérieur à 0.';
+            return;
+        }
+        if (plannedLines > 500 || rows.length > 2000) {
+            status.textContent = `Un planning est limité à 500 lignes avec besoin et 2000 lignes au total (actuellement ${plannedLines} et ${rows.length}).`;
             return;
         }
         if (new Set(rows.map(row => `${row.csb_id}:${row.product_id}`)).size !== rows.length) {
@@ -3409,6 +4774,7 @@
                 planningSaving = false;
                 for (const control of $('planning-form-main').querySelectorAll('input, select, textarea, button')) control.disabled = false;
                 $('planning-close').disabled = false;
+                if (planningDraft) { planningEntries.forEach(updatePlanningBlock); syncPlanningPicker(); }
             }
         }
     }
@@ -3542,38 +4908,130 @@
         }
     }
 
-    function addReceiptRow(products) {
+    // --- Réception SALAMA : lignes compactes sur une seule ligne, saisie rapide au clavier ---
+    // Les lignes sont suivies en mémoire (ordre d'affichage) ; la soumission relit les champs nommés du formulaire.
+    const RECEIPT_GRID = 'grid grid-cols-[2rem_minmax(0,2.2fr)_minmax(0,1fr)_9rem_7rem_4.5rem] gap-2 items-center';
+    const RECEIPT_FIELD = 'w-full text-xs px-2.5 py-2 rounded-lg border bg-white focus:outline-none focus:border-amber-400';
+    let receiptRows = [];
+
+    function receiptRowComplete(entry) {
+        const quantity = Number(entry.quantity.value);
+        return Boolean(entry.product.value && entry.lot.value.trim() && entry.expiry.value && Number.isSafeInteger(quantity) && quantity > 0);
+    }
+
+    function receiptRowBlank(entry) {
+        return !entry.product.value && !entry.lot.value.trim() && !entry.expiry.value && !String(entry.quantity.value ?? '').trim();
+    }
+
+    function markReceiptRow(entry, invalid) {
+        entry.invalid = invalid;
+        entry.row.className = `salama-row ${RECEIPT_GRID} px-2 py-1.5 rounded-xl border ${invalid ? 'border-red-300 bg-red-50/60' : 'border-slate-200 bg-white hover:border-slate-300'}`;
+        for (const field of [entry.product, entry.lot, entry.expiry, entry.quantity])
+            field.className = `${RECEIPT_FIELD} ${invalid && !field.value ? 'border-red-300' : 'border-slate-200'}${field === entry.quantity ? ' font-mono text-right' : field === entry.lot ? ' font-mono' : ''}`;
+    }
+
+    function updateReceiptSummary() {
+        receiptRows.forEach((entry, index) => { entry.number.textContent = String(index + 1); });
+        const complete = receiptRows.filter(receiptRowComplete);
+        const total = complete.reduce((sum, entry) => sum + BigInt(entry.quantity.value), 0n);
+        const products = new Set(complete.map(entry => entry.product.value)).size;
+        $('salama-summary').textContent = receiptRows.length
+            ? `${receiptRows.length} ligne(s) · ${complete.length} complète(s) · ${products} intrant(s) distinct(s) · Total reçu : ${number(total)} unité(s)`
+            : 'Aucune ligne : ajoutez un intrant.';
+        $('salama-head').hidden = receiptRows.length === 0;
+    }
+
+    function receiptInput(name, type, label) {
+        const input = document.createElement(type === 'select' ? 'select' : 'input');
+        input.name = name;
+        input.required = true;
+        input.setAttribute('aria-label', label);
+        if (type !== 'select') input.type = type;
+        return input;
+    }
+
+    function addReceiptRow(products, {after = null, productId = '', expiry = '', focus = true} = {}) {
         const row = document.createElement('div');
-        row.className = 'salama-row p-3 border border-slate-200 rounded-xl space-y-3';
-        for (const [labelText, name, type] of [
-            ['Intrant', 'product', 'select'], ['N° de lot', 'lot', 'text'],
-            ['Date de péremption', 'expiry', 'date'], ['Quantité', 'quantity', 'number']
-        ]) {
-            const label = document.createElement('label');
-            label.className = 'block text-xs font-semibold text-slate-700';
-            label.textContent = labelText;
-            const input = document.createElement(type === 'select' ? 'select' : 'input');
-            input.name = name;
-            input.className = 'mt-1 w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-white';
-            input.required = true;
-            if (type === 'select') {
-                input.add(new Option('Sélectionner un intrant', ''));
-                for (const product of products) input.add(new Option(`${product.code} · ${product.name} · ${product.unit}`, product.id));
-            } else {
-                input.type = type;
-                if (name === 'lot') input.maxLength = 120;
-                if (name === 'quantity') { input.min = '1'; input.max = '9007199254740991'; input.step = '1'; }
-            }
-            label.append(input);
-            row.append(label);
-        }
+        const lineNumber = document.createElement('span');
+        lineNumber.className = 'text-center text-[10px] font-bold font-mono text-slate-400';
+        const product = receiptInput('product', 'select', 'Intrant');
+        product.add(new Option('Sélectionner un intrant…', ''));
+        for (const item of products) product.add(new Option(`${item.code} · ${item.name} · ${item.unit}`, item.id));
+        product.value = productId;
+        const lot = receiptInput('lot', 'text', 'N° de lot');
+        lot.maxLength = 120;
+        lot.placeholder = 'N° de lot';
+        const expiryInput = receiptInput('expiry', 'date', 'Date de péremption');
+        expiryInput.value = expiry;
+        const quantity = receiptInput('quantity', 'number', 'Quantité');
+        Object.assign(quantity, {min: '1', max: '9007199254740991', step: '1', placeholder: 'Qté'});
+        const actions = document.createElement('div');
+        actions.className = 'flex items-center justify-end gap-1';
+        const duplicate = document.createElement('button');
+        duplicate.type = 'button';
+        duplicate.className = 'w-8 h-8 flex items-center justify-center text-slate-400 hover:text-sky-700 hover:bg-sky-50 rounded-lg';
+        duplicate.title = 'Dupliquer : même intrant et même péremption, nouveau lot';
+        duplicate.setAttribute('aria-label', 'Dupliquer cette ligne');
+        const copyIcon = document.createElement('i');
+        copyIcon.className = 'ph ph-copy';
+        copyIcon.setAttribute('aria-hidden', 'true');
+        duplicate.append(copyIcon);
         const remove = document.createElement('button');
         remove.type = 'button';
-        remove.className = 'text-xs font-bold text-red-600';
-        remove.textContent = 'Retirer cet intrant';
-        remove.addEventListener('click', () => row.remove());
-        row.append(remove);
-        $('salama-items').append(row);
+        remove.className = 'w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg';
+        remove.title = 'Retirer cet intrant';
+        remove.setAttribute('aria-label', 'Retirer cette ligne');
+        const removeIcon = document.createElement('i');
+        removeIcon.className = 'ph ph-x';
+        removeIcon.setAttribute('aria-hidden', 'true');
+        remove.append(removeIcon);
+        actions.append(duplicate, remove);
+        row.append(lineNumber, product, lot, expiryInput, quantity, actions);
+        const entry = {row, number: lineNumber, product, lot, expiry: expiryInput, quantity, invalid: false};
+        markReceiptRow(entry, false);
+        const changed = () => { if (entry.invalid && receiptRowComplete(entry)) markReceiptRow(entry, false); updateReceiptSummary(); };
+        for (const field of [product, lot, expiryInput, quantity]) {
+            field.addEventListener(field === product ? 'change' : 'input', changed);
+            // Entrée : ligne suivante (créée si c'est la dernière) au lieu de soumettre le formulaire.
+            field.addEventListener('keydown', event => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                const next = receiptRows[receiptRows.indexOf(entry) + 1];
+                if (next) next.product.focus?.();
+                else if (!receiptRowBlank(entry)) addReceiptRow(receiptProducts);
+            });
+        }
+        duplicate.addEventListener('click', () => addReceiptRow(receiptProducts, {after: entry, productId: product.value, expiry: expiryInput.value}));
+        remove.addEventListener('click', () => {
+            receiptRows = receiptRows.filter(item => item !== entry);
+            $('salama-items').replaceChildren(...receiptRows.map(item => item.row));
+            updateReceiptSummary();
+        });
+        const index = after ? receiptRows.indexOf(after) + 1 : receiptRows.length;
+        receiptRows.splice(index, 0, entry);
+        if (after) $('salama-items').replaceChildren(...receiptRows.map(item => item.row));
+        else $('salama-items').append(row);
+        updateReceiptSummary();
+        if (focus) {
+            row.scrollIntoView?.({block: 'nearest', behavior: 'smooth'});
+            (after ? lot : product).focus?.();
+        }
+        return entry;
+    }
+
+    function addReceiptRows(count) {
+        let first = null;
+        for (let index = 0; index < count; index++) {
+            const entry = addReceiptRow(receiptProducts, {focus: false});
+            first ||= entry;
+        }
+        first?.row.scrollIntoView?.({block: 'nearest', behavior: 'smooth'});
+        first?.product.focus?.();
+    }
+
+    function resetReceiptRows() {
+        receiptRows = [];
+        $('salama-items').replaceChildren();
     }
 
     let receiptProducts = [];
@@ -3595,11 +5053,12 @@
             receiptPort = port;
             portSelect.disabled = true;
             $('salama-form').reset();
-            $('salama-items').replaceChildren();
+            resetReceiptRows();
             $('postgres-salama-form-status').textContent = `Identifiant de réception : ${receiptId}`;
-            addReceiptRow(products);
+            addReceiptRow(products, {focus: false});
             $('modal-backdrop').classList.remove('hidden');
             $('modal-salama').classList.remove('hidden');
+            $('salama-id').focus?.();
         } catch (error) {
             if (sessionGeneration === requestGeneration) $(activeView === 'stocks' ? 'postgres-stocks-status' : 'postgres-salama-status').textContent = error.message;
         } finally { if (sessionGeneration === requestGeneration) receiptOpening = false; }
@@ -3610,7 +5069,7 @@
         receiptId = null;
         receiptPort = null;
         receiptProducts = [];
-        $('salama-items').replaceChildren();
+        resetReceiptRows();
         $('modal-salama').classList.add('hidden');
         $('modal-backdrop').classList.add('hidden');
         portSelect.disabled = activeView === 'operations';
@@ -3631,9 +5090,15 @@
             quantity: Number(row.querySelector('[name=quantity]').value)
         }));
         const reference = $('salama-id').value.trim();
-        if (!reference || !items.length || items.some(item => !item.product_id || !item.lot ||
-            !item.expiry_date || !Number.isSafeInteger(item.quantity) || item.quantity <= 0)) {
-            formStatus.textContent = 'Indiquez un bon et au moins un intrant, un lot, une date et une quantité valides.';
+        const invalidLines = items.map((item, index) => (!item.product_id || !item.lot || !item.expiry_date ||
+            !Number.isSafeInteger(item.quantity) || item.quantity <= 0) ? index + 1 : 0).filter(Boolean);
+        receiptRows.forEach((entry, index) => markReceiptRow(entry, invalidLines.includes(index + 1)));
+        if (!reference || !items.length || invalidLines.length) {
+            formStatus.textContent = !reference ? 'Indiquez le numéro du bon SALAMA.'
+                : !items.length ? 'Ajoutez au moins un intrant.'
+                : `Complétez ou retirez ${invalidLines.length > 1 ? 'les lignes' : 'la ligne'} ${invalidLines.join(', ')} : intrant, lot, date de péremption et quantité valides sont requis.`;
+            const firstInvalid = receiptRows[invalidLines[0] - 1];
+            firstInvalid?.row.scrollIntoView?.({block: 'nearest', behavior: 'smooth'});
             return;
         }
         if (!confirm(`Enregistrer cette réception de ${items.length} ligne(s) pour le port sélectionné ?`)) return;
@@ -3726,44 +5191,56 @@
         const container = $('dash-missions-list');
         container.replaceChildren();
         const flights = data.flight_list || [];
+        const count = $('dash-missions-count'), more = $('dash-missions-more');
+        count.hidden = !flights.length;
+        count.textContent = String(data.flights ?? flights.length);
+        more.hidden = !(data.flights > flights.length);
+        more.textContent = `${flights.length} colis les plus récents affichés sur ${data.flights}.`;
         if (!flights.length) {
             addLine(container, 'Aucun colis en cours de livraison pour ce port.');
             return;
         }
-        if (data.flights > flights.length) addLine(container, `${flights.length} colis récents sur ${data.flights}.`);
         for (const flight of flights) {
+            // Carte en colonne : elle reste lisible même quand la carte du tableau de bord est étroite.
             const card = document.createElement('div');
-            card.className = 'p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3';
-            const details = document.createElement('div');
-            details.className = 'min-w-0 pr-2';
+            card.className = 'p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 min-w-0';
             const heading = document.createElement('div');
-            heading.className = 'flex flex-wrap items-center gap-2';
+            heading.className = 'flex items-center gap-2 min-w-0';
             const bl = document.createElement('span');
-            bl.className = 'font-mono font-bold text-xs text-slate-900';
+            bl.className = 'font-mono font-bold text-xs text-slate-900 truncate min-w-0';
             bl.textContent = flight.bl;
+            bl.title = flight.bl;
             const status = document.createElement('span');
-            status.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-100 text-cyan-800';
-            status.textContent = 'En cours de livraison';
+            status.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-100 text-cyan-800 shrink-0 whitespace-nowrap';
+            status.textContent = 'En vol';
+            status.title = 'En cours de livraison';
             heading.append(bl, status);
             const destination = document.createElement('div');
-            destination.className = 'text-xs font-semibold text-slate-800 mt-1 truncate';
+            destination.className = 'text-xs font-semibold text-slate-800 flex items-start gap-1 min-w-0';
             const mapPin = document.createElement('i');
-            mapPin.className = 'ph ph-map-pin text-slate-400 mr-1';
+            mapPin.className = 'ph ph-map-pin text-slate-400 mt-0.5 shrink-0';
+            mapPin.setAttribute('aria-hidden', 'true');
             const destinationName = document.createElement('span');
+            destinationName.className = 'min-w-0 break-words';
             destinationName.textContent = `${flight.csb} · planning ${flight.planning}`;
             destination.append(mapPin, destinationName);
-            const cargo = document.createElement('div');
-            cargo.className = 'text-[11px] text-slate-500 font-mono mt-0.5 break-words';
-            cargo.textContent = items(flight.items || []).join(', ');
-            details.append(heading, destination, cargo);
-            card.append(details);
+            const cargo = document.createElement('ul');
+            cargo.className = 'text-[11px] text-slate-500 font-mono space-y-0.5';
+            for (const line of items(flight.items || [])) {
+                const entry = document.createElement('li');
+                entry.className = 'break-words';
+                entry.textContent = line;
+                cargo.append(entry);
+            }
+            card.append(heading, destination, cargo);
             if (flight.id && hasRole(['admin', 'pilot'])) {
                 const close = document.createElement('button');
                 close.type = 'button';
-                close.className = 'px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shrink-0';
+                close.className = 'ml-auto px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold shrink-0';
                 close.textContent = 'Clôturer';
+                close.setAttribute('aria-label', `Clôturer le vol ${flight.bl}`);
                 close.addEventListener('click', () => openDeliveryClose('drones', flight.id, 'close', 'dashboard'));
-                card.append(close);
+                heading.append(close);
             }
             container.append(card);
         }
@@ -4102,7 +5579,7 @@
             $('transfer-status').textContent = 'Patientez pendant l’enregistrement de l’expédition.';
             return;
         }
-        if (isStorage() && ['planning', 'archives', 'drones', 'history', 'sorties', 'csb'].includes(view)) view = 'dashboard';
+        if (isStorage() && ['planning', 'archives', 'stock-analysis', 'drones', 'history', 'sorties', 'csb'].includes(view)) view = 'dashboard';
         if (deliveryPrintDraft) { closeDeliveryPrint(); }
         if (planningPrintDraft) { closePlanningPrint(); }
         if (stockHistoryPrintOpen) { closeStockHistoryPrint(); }
@@ -4130,7 +5607,7 @@
                 if (group) group.open = true;
             }
         }
-        if (dashboard) refreshDashboard(); else if (view === 'transfers') refreshTransfers(); else if (view === 'products') refreshCatalog(); else if (view === 'csb') refreshCsbs(); else if (view === 'ports') refreshPorts(); else if (['planning', 'archives'].includes(view)) refreshPlanCards(view); else if (['drones', 'history', 'sorties'].includes(view)) refreshDeliveries(view); else if (view === 'inventory') refreshInventories(); else if (view === 'quarantine') refreshQuarantines(); else if (view === 'stock-history') refreshStockHistory(); else if (view === 'logistics-report') refreshLogisticsReport(); else if (native) refreshNativeView(view); else refreshReadView();
+        if (dashboard) refreshDashboard(); else if (view === 'transfers') refreshTransfers(); else if (view === 'products') refreshCatalog(); else if (view === 'csb') refreshCsbs(); else if (view === 'ports') refreshPorts(); else if (['planning', 'archives'].includes(view)) refreshPlanCards(view); else if (view === 'stock-analysis') refreshStockAnalysis(); else if (['drones', 'history', 'sorties'].includes(view)) refreshDeliveries(view); else if (view === 'inventory') refreshInventories(); else if (view === 'quarantine') refreshQuarantines(); else if (view === 'stock-history') refreshStockHistory(); else if (view === 'logistics-report') refreshLogisticsReport(); else if (native) refreshNativeView(view); else refreshReadView();
     }
 
     const operationSections = {
@@ -4240,7 +5717,7 @@
             }
             portSelect.value = data.port;
             updateSiteNavigation();
-            if (isStorage() && ['planning', 'archives', 'drones', 'history', 'sorties', 'csb'].includes(activeView)) {
+            if (isStorage() && ['planning', 'archives', 'stock-analysis', 'drones', 'history', 'sorties', 'csb'].includes(activeView)) {
                 selectView('dashboard');
                 return;
             }
@@ -4250,6 +5727,7 @@
             else if (activeView === 'csb') refreshCsbs();
             else if (activeView === 'ports') refreshPorts();
             else if (['planning', 'archives'].includes(activeView)) refreshPlanCards(activeView);
+            else if (activeView === 'stock-analysis') refreshStockAnalysis();
             else if (['drones', 'history', 'sorties'].includes(activeView)) refreshDeliveries(activeView);
             else if (activeView === 'inventory') refreshInventories();
             else if (activeView === 'quarantine') refreshQuarantines();
@@ -4292,6 +5770,8 @@
         }
         $('nav-transfers').classList.remove('postgres-hidden');
         $('nav-logistics-report').classList.remove('postgres-hidden');
+        $('nav-stock-analysis').classList.remove('postgres-hidden');
+        $('stock-analysis-refresh').addEventListener('click', refreshStockAnalysis);
         const currentYear = Number(new Intl.DateTimeFormat('en', { year: 'numeric', timeZone: 'Indian/Antananarivo' }).format(new Date()));
         for (let year = currentYear; year >= 2000; year--) $('logistics-report-year').add(new Option(String(year), String(year)));
         $('logistics-report-year').value = String(currentYear);
@@ -4303,8 +5783,8 @@
         $('transfer-add').addEventListener('click', addTransferItem);
         $('transfer-destination').addEventListener('change', transferDestinationChanged);
         $('dashboard-storage-link').addEventListener('click', () => selectView('transfers'));
-        setText('auth-network-status', 'Version 2');
-        setText('auth-version', 'copyright RDN-2026');
+        setText('auth-network-status', 'Test local PostgreSQL');
+        setText('auth-version', 'TEST LOCAL');
         setText('dashboard-live-label', 'Instantané');
         setText('dashboard-fefo-label', 'Lots datés par péremption');
         $('login-username').value = '';
@@ -4321,6 +5801,19 @@
         for (const id of ['salama-close', 'salama-cancel']) $(id).addEventListener('click', closeReceipt);
         $('modal-backdrop').addEventListener('click', () => { if (productOpen) closeProduct(); else if (csbOpen) closeCsb(); else if (planningDraft) closePlanning(); else if (archiveDraft) closeArchive(); else if (flightDraft) closeFlights(); else if (shipmentDraft) closeShipment(); else if (deliveryCloseDraft) closeDeliveryModal(); else if (deliveryEditDraft) closeDeliveryEdit(); else if (deliveryPrintDraft) closeDeliveryPrint(); else if (planningPrintDraft) closePlanningPrint(); else if (stockHistoryPrintOpen) closeStockHistoryPrint(); else if (dashboardReportPort) closePostgresDashboardReport(); else if (inventoryPrintDraft) closeInventoryPrint(); else closeReceipt(); });
         $('salama-add-row').addEventListener('click', () => addReceiptRow(receiptProducts));
+        $('salama-add-five').hidden = false;
+        $('salama-add-five').addEventListener('click', () => addReceiptRows(5));
+        $('salama-hint').hidden = false;
+        // En-tête de colonnes unique au-dessus des lignes compactes.
+        const receiptHead = $('salama-head');
+        receiptHead.className = `${RECEIPT_GRID} px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400`;
+        receiptHead.replaceChildren(...['#', 'Intrant', 'N° de lot', 'Péremption', 'Quantité', ''].map((text, index) => {
+            const cell = document.createElement('span');
+            cell.textContent = text;
+            if (index === 0) cell.className = 'text-center';
+            if (index === 4) cell.className = 'text-right';
+            return cell;
+        }));
         $('salama-form').addEventListener('submit', submitReceipt);
         $('stock-search').addEventListener('input', renderStocks);
         for (const id of ['postgres-stocks-status', 'postgres-salama-status', 'postgres-salama-form-status']) $(id).classList.remove('postgres-hidden');
@@ -4328,6 +5821,8 @@
             $(id).classList.remove('postgres-hidden');
             $(id).addEventListener('click', () => refreshNativeView(activeView));
         }
+        $('stocks-print').classList.remove('postgres-hidden');
+        $('stocks-print').addEventListener('click', openStockPrint);
         $('salama-id').maxLength = 150;
         setText('stocks-quantity-heading', 'Stock enregistré');
         setText('stocks-status-heading', 'Réservé / Disponible');
@@ -4374,8 +5869,13 @@
         $('planning-archive').addEventListener('click', openArchive);
         for (const id of ['planning-close', 'planning-cancel']) $(id).addEventListener('click', closePlanning);
         for (const id of ['archive-close', 'archive-cancel']) $(id).addEventListener('click', closeArchive);
-        $('planning-add').addEventListener('click', () => addPlanningCsb());
-        $('planning-add').textContent = 'Ajouter un CSB';
+        $('planning-add').addEventListener('click', togglePlanningBlocks);
+        $('planning-add').className = 'px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-50 text-slate-700 rounded-lg text-xs font-bold transition-colors';
+        $('planning-add').textContent = 'Tout replier';
+        $('plan-csb-picker').hidden = false;
+        $('plan-csb-search').addEventListener('input', filterPlanningPicker);
+        $('plan-csb-all').addEventListener('change', toggleAllPlanningCsbs);
+        $('plan-csb-blocks').addEventListener('toggle', () => syncPlanningPicker(), true);
         $('planning-form-main').addEventListener('submit', submitPlanning);
         $('archive-form-main').addEventListener('submit', submitArchive);
         $('archive-folder-name').maxLength = 150;
@@ -4402,7 +5902,8 @@
         $('drone-target').removeAttribute('onchange');
         $('drone-new').addEventListener('click', openFlights);
         for (const id of ['drone-close', 'drone-cancel']) $(id).addEventListener('click', closeFlights);
-        $('drone-add').addEventListener('click', addFlightParcel);
+        $('drone-add').addEventListener('click', () => addFlightParcel());
+        $('drone-hint').hidden = false;
         $('drone-plan').addEventListener('change', () => {
             if (!flightDraft) return;
             if (!confirm('Changer le planning effacera les colis en cours de saisie. Continuer ?')) {
@@ -4418,7 +5919,7 @@
                 return;
             }
             flightDraft.target = $('drone-target').value;
-            $('drone-flights-container').replaceChildren();
+            resetFlightParcels();
             if (flightDraft.target) addFlightParcel();
             updateFlightNeeds();
         });
@@ -4573,7 +6074,7 @@
         portSelect.addEventListener('change', () => {
             updateSiteNavigation();
             if (frameConnected) sendFrame({ type: 'qbox-set-port', port: portSelect.value });
-            if (isStorage() && ['planning', 'archives', 'drones', 'history', 'sorties', 'csb'].includes(activeView)) {
+            if (isStorage() && ['planning', 'archives', 'stock-analysis', 'drones', 'history', 'sorties', 'csb'].includes(activeView)) {
                 selectView('dashboard');
                 return;
             }
@@ -4583,6 +6084,7 @@
             else if (activeView === 'csb') refreshCsbs();
             else if (activeView === 'ports') refreshPorts();
             else if (['planning', 'archives'].includes(activeView)) refreshPlanCards(activeView);
+            else if (activeView === 'stock-analysis') refreshStockAnalysis();
             else if (['drones', 'history', 'sorties'].includes(activeView)) refreshDeliveries(activeView);
             else if (activeView === 'inventory') refreshInventories();
             else if (activeView === 'quarantine') refreshQuarantines();
@@ -4608,8 +6110,15 @@
         $('dashboard-report-print').removeAttribute('onclick');
         $('dashboard-report-print').addEventListener('click', printPostgresDashboardReport);
         $('inventory-print-close').addEventListener('click', closeInventoryPrint);
-        $('inventory-print-button').addEventListener('click', () => {
-            if (!inventoryPrintDraft || inventoryPrintDraft.port !== portSelect.value) return;
+        $('inventory-print-button').addEventListener('click', async () => {
+            const draft = inventoryPrintDraft;
+            if (!draft || draft.port !== portSelect.value) return;
+            // Attendre le logo s'il n'est pas encore chargé, pour qu'il figure sur la page imprimée (impression maintenue en cas d'échec).
+            const logo = $('inventory-print-report').querySelector('.inventory-report-logo');
+            if (logo?.decode && !logo.complete) {
+                try { await logo.decode(); } catch { /* logo indisponible */ }
+                if (inventoryPrintDraft !== draft) return;
+            }
             document.body.classList.add('postgres-inventory-print');
             window.print();
         });

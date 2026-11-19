@@ -292,6 +292,14 @@ button { cursor: pointer; background: #172033; color: white; }
     .embedded:not(.embed-reference) #references > :not(label) { display: none !important; }
     .embedded.embed-administration #references { display: none !important; }
 }
+/* En-tête du rapport d'inventaire physique (logo UNFPA) */
+.inventory-report-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 12px; margin-bottom: 18px; border-bottom: 2px solid #0f172a; break-inside: avoid; font-size: 10px; }
+.inventory-report-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.inventory-report-logo { width: 110px; height: 48px; object-fit: contain; flex: none; }
+.inventory-report-organization { display: flex; flex-direction: column; color: #334155; font-size: 9px; line-height: 1.4; }
+.inventory-report-organization strong { color: #0f172a; font-size: 11px; }
+.inventory-report-header-meta { display: flex; flex-direction: column; align-items: flex-end; color: #475569; text-align: right; }
+.inventory-report-header-meta strong { color: #0f172a; font-size: 12px; }
 @media print {
     body { background: white; }
     main { max-width: none; padding: 0; }

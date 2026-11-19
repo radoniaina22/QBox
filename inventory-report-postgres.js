@@ -38,8 +38,40 @@ function inventoryReportTable(items) {
     return table;
 }
 
-function renderInventoryReport(inventory, portName, report = $('inventory-print-report')) {
+function inventoryReportText(tag, text, className = '') {
+    const element = document.createElement(tag);
+    if (className) element.className = className;
+    element.textContent = text;
+    return element;
+}
+
+// En-tête d'impression : logo UNFPA, identité Q.box, type de document, magasin, date de l'inventaire et date d'édition.
+function inventoryReportHeader(inventory, portName, portRegion = '') {
+    const header = inventoryReportText('div', '', 'inventory-report-header');
+    const identity = inventoryReportText('div', '', 'inventory-report-identity');
+    const logo = document.createElement('img');
+    logo.src = 'logo-unfpa.svg';
+    logo.alt = 'Logo UNFPA';
+    logo.className = 'inventory-report-logo';
+    // Dimensions explicites : le logo reste à sa taille même si la feuille de style n'est pas chargée.
+    logo.width = 110;
+    logo.height = 48;
+    const organization = inventoryReportText('div', '', 'inventory-report-organization');
+    organization.append(inventoryReportText('strong', 'UNFPA Madagascar'), inventoryReportText('span', 'Q.box · Logistique santé par drone'));
+    identity.append(logo, organization);
+    const meta = inventoryReportText('div', '', 'inventory-report-header-meta');
+    const local = value => new Date(value).toLocaleString('fr-FR', { timeZone: 'Indian/Antananarivo' });
+    meta.append(inventoryReportText('strong', 'INVENTAIRE PHYSIQUE'),
+        inventoryReportText('span', portRegion ? `${portName} · ${portRegion}` : portName),
+        inventoryReportText('span', `Inventaire du ${local(inventory.created_at)}`),
+        inventoryReportText('span', `Édité le ${local(new Date())} (Madagascar)`));
+    header.append(identity, meta);
+    return header;
+}
+
+function renderInventoryReport(inventory, portName, report = $('inventory-print-report'), portRegion = '') {
     report.replaceChildren();
+    report.append(inventoryReportHeader(inventory, portName, portRegion));
     const title = document.createElement('h1');
     title.textContent = 'Rapport d’inventaire physique';
     const details = document.createElement('p');

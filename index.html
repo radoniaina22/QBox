@@ -29,8 +29,8 @@
     <link rel="stylesheet" href="dark-theme.css?v=20261118">
     <link rel="stylesheet" href="motion.css?v=20261118">
     <script src="theme-toggle.js?v=20261118"></script>
-    <script src="hosted-mode.js?v=20261118"></script>
-    <script src="app-bootstrap.js?v=20261118"></script>
+    <script src="hosted-mode.js"></script>
+    <script src="app-bootstrap.js"></script>
 </head>
 <body class="h-full flex flex-col text-slate-800 bg-slate-100 overflow-hidden">
 
@@ -231,6 +231,10 @@
                         <button onclick="switchTab('archives')" id="nav-archives" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-folder text-base mr-3 shrink-0 text-purple-400"></i>
                             <span>Dossiers d'Archives</span>
+                        </button>
+                        <button id="nav-stock-analysis" type="button" class="nav-item postgres-hidden w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                            <i class="ph ph-chart-line-up text-base mr-3 shrink-0 text-emerald-400"></i>
+                            <span>Analyse stocks &amp; CMM</span>
                         </button>
                     </div>
                 </details>
@@ -465,7 +469,8 @@
 
                 <section id="view-logistics-report" class="tab-content hidden">
                     <div class="stock-history-page logistics-report-page bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-5">
-                        <div class="logistics-report-print-logo"><img class="report-logo" src="logo-unfpa.svg" alt="Logo UNFPA"></div>
+                        <!-- En-tête d'impression (logo UNFPA, type de document, magasin, année, date d'édition), rempli en JS au chargement du rapport -->
+                        <div id="logistics-report-print-header" class="logistics-report-print-logo"></div>
                         <div class="stock-history-header">
                             <div class="stock-history-title">
                                 <span class="stock-history-title-icon" aria-hidden="true"><i class="ph ph-chart-bar"></i></span>
@@ -647,19 +652,27 @@
                         </div>
 
                         <!-- Colis en cours de livraison -->
-                        <div id="dashboard-missions-card" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
-                            <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
-                                <div>
-                                    <h3 class="font-bold text-slate-900 text-sm">Colis en cours de livraison</h3>
+                        <div id="dashboard-missions-card" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col min-w-0 min-h-0">
+                            <div class="flex items-start justify-between gap-2 pb-3 border-b border-slate-100 mb-3 shrink-0">
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <h3 class="font-bold text-slate-900 text-sm">Colis en cours de livraison</h3>
+                                        <span id="dash-missions-count" hidden class="px-1.5 py-0.5 rounded-full bg-cyan-100 text-cyan-800 text-[10px] font-bold font-mono"></span>
+                                    </div>
                                     <p class="text-xs text-slate-500">Livraisons sanitaires en transit</p>
                                 </div>
-                                <span id="dashboard-live-label" class="px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 text-[10px] font-bold border border-cyan-200">
+                                <span id="dashboard-live-label" class="shrink-0 px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 text-[10px] font-bold border border-cyan-200">
                                     Direct
                                 </span>
                             </div>
-                            <div id="dash-missions-list" class="flex-1 space-y-3 overflow-y-auto max-h-60 pr-1">
-                                <!-- Rempli en JS -->
+                            <!-- Sur grand écran, la liste occupe toute la hauteur de la carte (alignée sur le graphique) et défile à l'intérieur ;
+                                 sur mobile, elle est plafonnée. Le positionnement absolu évite que la liste n'agrandisse la ligne de la grille. -->
+                            <div class="relative flex-1 min-h-[16rem]">
+                                <div id="dash-missions-list" class="space-y-2 overflow-y-auto max-h-[24rem] lg:max-h-none lg:absolute lg:inset-0 pr-1">
+                                    <!-- Rempli en JS -->
+                                </div>
                             </div>
+                            <p id="dash-missions-more" hidden class="pt-2 mt-2 border-t border-slate-100 text-[10px] text-slate-500 shrink-0"></p>
                         </div>
                             <div id="dashboard-storage-card" class="postgres-hidden bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                                 <h3 class="font-bold text-slate-900 text-sm">Mouvements entre magasins</h3>
@@ -714,6 +727,9 @@
                             </div>
                             <div class="flex items-center space-x-2">
                                 <button id="postgres-stocks-refresh" type="button" class="postgres-hidden px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Actualiser</button>
+                                <button id="stocks-print" type="button" class="postgres-hidden px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center">
+                                    <i class="ph ph-printer mr-1" aria-hidden="true"></i> Imprimer
+                                </button>
                                 <div class="relative">
                                     <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
                                     <input type="text" id="stock-search" oninput="renderStocks()" placeholder="Rechercher produit, lot..." class="text-xs pl-8 pr-3 py-2 bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 w-48 sm:w-64">
@@ -822,7 +838,8 @@
 
                 <!-- ================= VIEW 4: PLANNINGS ACTIFS ================= -->
                 <section id="view-planning" class="tab-content hidden space-y-4">
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <!-- Répartition des intrants planifiés par district (mode PostgreSQL, rempli en JS) -->
+                    <section id="planning-district-summary" hidden aria-labelledby="planning-district-title" class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"></section>                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                         <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div>
                                 <h3 class="font-bold text-slate-900 text-sm">Plannings Prévisionnels des Besoins par CSB</h3>
@@ -862,6 +879,21 @@
                             <!-- Rempli en JS -->
                         </div>
                     </div>
+                </section>
+
+                <!-- ================= VIEW 5 bis: ANALYSE STOCKS & CMM (mode PostgreSQL) ================= -->
+                <section id="view-stock-analysis" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm flex items-center"><i class="ph ph-chart-line-up text-emerald-600 mr-2 text-base"></i> Analyse des stocks et de la CMM des CSB</h3>
+                                <p class="text-xs text-slate-500">Historique des états de stock et des consommations moyennes mensuelles relevés à chaque enregistrement de campagne, par CSB, district et région.</p>
+                            </div>
+                            <button id="stock-analysis-refresh" type="button" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-slate-700">Actualiser</button>
+                        </div>
+                        <p id="postgres-stock-analysis-status" class="px-5 py-2 text-xs text-slate-600" role="status"></p>
+                    </div>
+                    <div id="stock-analysis-content" class="space-y-4"></div>
                 </section>
 
                 <!-- ================= VIEW 6: MISSIONS DRONES ================= -->
@@ -1065,27 +1097,43 @@
     <!-- ========================================== -->
 
     <!-- Modal: Réception SALAMA -->
-    <div id="modal-salama" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-white rounded-2xl shadow-2xl z-50 hidden overflow-hidden no-print">
-        <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-            <h3 class="font-bold text-slate-900 text-sm flex items-center">
+    <div id="modal-salama" role="dialog" aria-modal="true" aria-labelledby="salama-modal-title" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-5xl max-h-[92vh] bg-white rounded-2xl shadow-2xl z-50 hidden flex flex-col overflow-hidden no-print">
+        <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
+            <h3 id="salama-modal-title" class="font-bold text-slate-900 text-sm flex items-center">
                 <i class="ph ph-arrow-down-left text-emerald-600 mr-2 text-lg"></i> Réception SALAMA Centrale
             </h3>
-            <button id="salama-close" type="button" onclick="closeModal('modal-salama')" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+            <button id="salama-close" type="button" onclick="closeModal('modal-salama')" aria-label="Fermer la réception" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
         </div>
-        <form id="salama-form" onsubmit="handleSalamaSubmit(event)" class="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
-            <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">N° Bordereau / Bon SALAMA</label>
-                <input type="text" id="salama-id" required placeholder="Ex: BL-SLM-2026-088" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 font-mono">
+        <form id="salama-form" onsubmit="handleSalamaSubmit(event)" class="flex flex-col flex-1 min-h-0">
+            <!-- Zone fixe : bon de réception -->
+            <div class="px-5 pt-4 pb-3 border-b border-slate-100 shrink-0 flex flex-col sm:flex-row sm:items-end gap-3">
+                <div class="flex-1">
+                    <label for="salama-id" class="block text-xs font-semibold text-slate-700 mb-1">N° Bordereau / Bon SALAMA</label>
+                    <input type="text" id="salama-id" required placeholder="Ex: BL-SLM-2026-088" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 font-mono">
+                </div>
+                <p id="salama-hint" hidden class="text-[11px] text-slate-500 sm:max-w-xs">Astuce : <kbd class="px-1 py-0.5 rounded border border-slate-300 bg-white font-mono text-[10px]">Entrée</kbd> passe à la ligne suivante et en crée une si besoin.</p>
             </div>
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-slate-800">Intrants du bon</span>
-                <button id="salama-add-row" type="button" onclick="addSalamaRow()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">+ Ajouter un intrant</button>
+            <!-- Zone défilante : lignes d'intrants, le bouton d'ajout suit toujours la dernière ligne -->
+            <div id="salama-scroll" class="flex-1 min-h-0 overflow-auto px-5 py-3">
+                <div class="min-w-[720px] space-y-2">
+                    <div id="salama-head" hidden></div>
+                    <div id="salama-items" class="space-y-2"></div>
+                    <div class="flex flex-wrap items-center gap-2 pt-1">
+                        <button id="salama-add-row" type="button" onclick="addSalamaRow()" class="px-3 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-dashed border-sky-300 rounded-lg text-xs font-bold">+ Ajouter un intrant</button>
+                        <button id="salama-add-five" type="button" hidden class="px-3 py-2 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-xs font-bold">+ 5 lignes</button>
+                    </div>
+                </div>
             </div>
-            <div id="salama-items" class="space-y-3"></div>
-            <p id="postgres-salama-form-status" class="text-xs text-rose-700 postgres-hidden" role="status" aria-live="polite"></p>
-            <div class="pt-2 flex justify-end space-x-2">
-                <button id="salama-cancel" type="button" onclick="closeModal('modal-salama')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
-                <button type="submit" id="salama-submit-btn" class="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold transition-colors">Valider l'Entrée</button>
+            <!-- Zone fixe : synthèse et validation -->
+            <div class="px-5 py-3 border-t border-slate-100 bg-white shrink-0 space-y-2">
+                <p id="postgres-salama-form-status" class="text-xs text-rose-700 postgres-hidden" role="status" aria-live="polite"></p>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <p id="salama-summary" class="text-[11px] font-semibold text-slate-600" aria-live="polite"></p>
+                    <div class="flex gap-2 ml-auto">
+                        <button id="salama-cancel" type="button" onclick="closeModal('modal-salama')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                        <button type="submit" id="salama-submit-btn" class="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold transition-colors">Valider l'Entrée</button>
+                    </div>
+                </div>
             </div>
         </form>
     </div>
@@ -1142,49 +1190,52 @@
     </div>
 
     <!-- Modal: Planifier des Vols Drone (un colis par vol) -->
-    <div id="modal-drone" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-6xl bg-white rounded-2xl shadow-2xl z-50 hidden overflow-hidden no-print">
+    <div id="modal-drone" role="dialog" aria-modal="true" aria-labelledby="drone-modal-title" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-6xl max-h-[92vh] bg-white rounded-2xl shadow-2xl z-50 hidden flex flex-col overflow-hidden no-print">
         <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
             <h3 class="font-bold text-slate-900 text-sm flex items-center">
                 <i class="ph ph-paper-plane-tilt text-cyan-600 mr-2 text-lg"></i> <span id="drone-modal-title">Planifier des Vols Drone</span>
                 <span class="ml-3 text-[11px] font-medium text-slate-500">1 drone = 1 colis = 1 N° BL</span>
             </h3>
-            <button id="drone-close" type="button" onclick="closeModal('modal-drone')" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+            <button id="drone-close" type="button" onclick="closeModal('modal-drone')" aria-label="Fermer la saisie des vols" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
         </div>
-        <form id="drone-form-main" onsubmit="handleDroneSubmit(event)" class="flex flex-col max-h-[85vh]">
+        <form id="drone-form-main" onsubmit="handleDroneSubmit(event)" class="flex flex-col flex-1 min-h-0">
+            <!-- Zone fixe : planning et destination côte à côte -->
+            <div class="px-5 py-3 border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
+                <div>
+                    <label for="drone-plan" class="block text-xs font-semibold text-slate-700 mb-1">1. Planning actif <span class="text-red-500">*</span></label>
+                    <select id="drone-plan" required onchange="onDronePlanChange()" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white font-bold text-slate-800">
+                        <!-- Rempli en JS -->
+                    </select>
+                    <p id="drone-plan-hint" class="text-[11px] text-amber-600 mt-1 hidden">Aucun planning actif : créez d'abord un planning dans l'onglet Planification.</p>
+                </div>
+                <div>
+                    <label for="drone-target" class="block text-xs font-semibold text-slate-700 mb-1">2. Destination (CSB cible)</label>
+                    <select id="drone-target" required disabled onchange="updateDronePlanningInfo()" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white font-bold text-slate-800 disabled:bg-slate-100 disabled:text-slate-400">
+                        <!-- Rempli en JS -->
+                    </select>
+                </div>
+            </div>
             <div class="grid grid-cols-1 lg:grid-cols-5 flex-1 min-h-0 overflow-hidden">
-                <!-- Colonne gauche : vols et colis -->
-                <div class="lg:col-span-3 p-5 space-y-4 overflow-y-auto max-h-[70vh]">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Planning actif <span class="text-red-500">*</span></label>
-                        <select id="drone-plan" required onchange="onDronePlanChange()" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white font-bold text-slate-800">
-                            <!-- Rempli en JS -->
-                        </select>
-                        <p id="drone-plan-hint" class="text-[11px] text-amber-600 mt-1 hidden">Aucun planning actif : créez d'abord un planning dans l'onglet Planification.</p>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Destination (CSB Cible)</label>
-                        <select id="drone-target" required disabled onchange="updateDronePlanningInfo()" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white font-bold text-slate-800 disabled:bg-slate-100 disabled:text-slate-400">
-                            <!-- Rempli en JS -->
-                        </select>
-                    </div>
-
-                    <div id="drone-flights-section" class="pt-3 border-t border-slate-200 hidden">
-                        <div class="flex items-center justify-between mb-3">
+                <!-- Colonne gauche : vols et colis (défilante) ; le bouton d'ajout suit le dernier vol -->
+                <div class="lg:col-span-3 p-5 overflow-y-auto min-h-0">
+                    <div id="drone-flights-section" class="hidden space-y-3">
+                        <div class="flex items-center justify-between">
                             <span class="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                                Vols programmés <span id="drone-flights-count" class="ml-1 px-1.5 py-0.5 bg-cyan-100 text-cyan-800 rounded-full text-[10px]">0</span>
+                                3. Vols programmés <span id="drone-flights-count" class="ml-1 px-1.5 py-0.5 bg-cyan-100 text-cyan-800 rounded-full text-[10px]">0</span>
                             </span>
-                            <button id="drone-add" type="button" onclick="addDroneFlight()" class="px-2.5 py-1 bg-cyan-600 text-white hover:bg-cyan-700 rounded-lg text-[11px] font-bold flex items-center transition-colors">
-                                <i class="ph ph-plus mr-1"></i> Ajouter un vol
-                            </button>
+                            <span id="drone-hint" hidden class="text-[10px] text-slate-500"><kbd class="px-1 py-0.5 rounded border border-slate-300 bg-white font-mono">Entrée</kbd> dans une quantité : intrant suivant</span>
                         </div>
-                        <div id="drone-flights-container" class="space-y-4">
+                        <div id="drone-flights-container" class="space-y-3">
                             <!-- Les vols (un colis chacun) sont injectés ici -->
                         </div>
+                        <button id="drone-add" type="button" onclick="addDroneFlight()" class="w-full px-3 py-2.5 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-dashed border-cyan-300 rounded-xl text-xs font-bold flex items-center justify-center transition-colors">
+                            <i class="ph ph-plus mr-1"></i> Ajouter un vol
+                        </button>
                     </div>
                 </div>
 
                 <!-- Colonne droite : planning actif du CSB -->
-                <aside class="lg:col-span-2 p-5 bg-sky-50/60 border-t lg:border-t-0 lg:border-l border-sky-200 overflow-y-auto max-h-[70vh]">
+                <aside class="lg:col-span-2 p-5 bg-sky-50/60 border-t lg:border-t-0 lg:border-l border-sky-200 overflow-y-auto min-h-0 max-h-[40vh] lg:max-h-none">
                     <div class="text-xs font-bold text-sky-900 uppercase tracking-wider mb-3 flex items-center">
                         <i class="ph ph-calendar-check mr-1.5 text-sky-600 text-base"></i> Planning actif du CSB
                     </div>
@@ -1194,10 +1245,16 @@
                 </aside>
             </div>
 
-            <p id="postgres-drone-form-status" class="px-5 text-xs text-rose-700 postgres-hidden" role="status"></p>
-            <div class="p-4 flex justify-end space-x-2 shrink-0 border-t border-slate-100 bg-white">
-                <button id="drone-cancel" type="button" onclick="closeModal('modal-drone')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
-                <button type="submit" id="drone-submit-btn" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold">Lancer les Vols</button>
+            <!-- Zone fixe : synthèse et validation -->
+            <div class="px-5 py-3 shrink-0 border-t border-slate-100 bg-white space-y-2">
+                <p id="postgres-drone-form-status" class="text-xs text-rose-700 postgres-hidden" role="status"></p>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <p id="drone-summary" class="text-[11px] font-semibold text-slate-600" aria-live="polite"></p>
+                    <div class="flex gap-2 ml-auto">
+                        <button id="drone-cancel" type="button" onclick="closeModal('modal-drone')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                        <button type="submit" id="drone-submit-btn" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold">Lancer les Vols</button>
+                    </div>
+                </div>
             </div>
         </form>
     </div>
@@ -1321,7 +1378,7 @@
     </div>
 
     <!-- Modal: Nouveau Planning CSB (Multi-intrants) -->
-    <div id="modal-planning" role="dialog" aria-modal="true" aria-labelledby="planning-modal-title" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-2xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[90vh] flex flex-col overflow-hidden no-print">
+    <div id="modal-planning" role="dialog" aria-modal="true" aria-labelledby="planning-modal-title" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-4xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[92vh] flex flex-col overflow-hidden no-print">
         <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
             <h3 id="planning-modal-title" class="font-bold text-slate-900 text-sm flex items-center">
                 <i class="ph ph-calendar-plus text-sky-600 mr-2 text-lg"></i> Nouvelle Campagne de Planning
@@ -1349,9 +1406,25 @@
                 <label for="plan-observations" class="block text-xs font-semibold text-slate-700 mb-1">Remarques et observations sur la modification (facultatif)</label>
                 <textarea id="plan-observations" maxlength="2000" rows="3" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200"></textarea>
             </div>
+            <!-- Sélection multiple des CSB (mode PostgreSQL) -->
+            <section id="plan-csb-picker" hidden class="border border-slate-200 rounded-xl overflow-hidden" aria-labelledby="plan-csb-picker-title">
+                <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <h4 id="plan-csb-picker-title" class="text-xs font-bold text-slate-800 flex items-center"><i class="ph ph-first-aid text-rose-500 mr-1.5"></i> 1. Centres sanitaires (CSB) de la campagne</h4>
+                        <p id="plan-csb-picker-count" class="text-[11px] text-slate-500 mt-0.5" aria-live="polite">0 CSB sélectionné</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <input id="plan-csb-search" type="search" placeholder="Rechercher un CSB, un district…" aria-label="Rechercher un CSB" class="w-52 text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-amber-400">
+                        <label class="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 cursor-pointer hover:bg-slate-100">
+                            <input id="plan-csb-all" type="checkbox" class="accent-sky-600"> Tous les CSB
+                        </label>
+                    </div>
+                </div>
+                <div id="plan-csb-options" class="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-44 overflow-y-auto"></div>
+            </section>
             <div>
                 <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-                    <span class="text-xs font-bold text-slate-800">Centres Sanitaires (CSB) inclus dans cette campagne</span>
+                    <span id="plan-csb-blocks-title" class="text-xs font-bold text-slate-800">Centres Sanitaires (CSB) inclus dans cette campagne</span>
                     <button id="planning-add" type="button" onclick="addPlanningCsbBlock()" class="px-2.5 py-1.5 bg-sky-600 text-white hover:bg-sky-700 rounded-lg text-xs font-bold flex items-center transition-colors">
                         <i class="ph ph-plus mr-1"></i> Ajouter un CSB
                     </button>
@@ -1465,7 +1538,7 @@
 
     <div id="planning-print-modal" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[95vh] flex flex-col overflow-hidden">
         <div class="p-4 border-b flex items-center justify-between no-print">
-            <h3 class="font-bold text-sm">Aperçu des besoins par CSB</h3>
+            <h3 id="planning-print-title" class="font-bold text-sm">Aperçu des besoins par CSB</h3>
             <div class="flex gap-2">
                 <button id="planning-print-button" type="button" class="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold">Imprimer</button>
                 <button id="planning-print-close" type="button" class="px-3 py-2 text-xs" aria-label="Fermer">Fermer</button>
