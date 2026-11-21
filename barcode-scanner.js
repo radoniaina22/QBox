@@ -70,6 +70,85 @@ function parseBarcode(raw) {
     return { gtin: null, lot: null, expiry: null, serial: null, raw: text, kind: 'text' };
 }
 
+// Lecture en continu gérée ici (et non par la boucle de ZXing, qui s'arrête sans prévenir à la
+// moindre erreur imprévue) : lecteur natif du navigateur (BarcodeDetector) s'il existe, sinon ZXing.
+// Le détecteur DataMatrix de ZXing ne trouve un code que si le centre de l'image tombe dessus
+// (à ±0,4 fois sa taille près) : on analyse donc une grille de fenêtres autour du centre.
+const NATIVE_FORMATS = ['data_matrix', 'qr_code', 'code_128', 'ean_13', 'ean_8', 'upc_a'];
+const SCAN_INTERVAL_MS = 60;
+const SCAN_BUDGET_MS = 90;
+const MAX_SCAN_SIDE = 1280;
+const CROP_SIDE = 0.5;   // fenêtre DataMatrix : moitié du petit côté de l'image
+const CROP_MAX_PX = 640;
+const CROP_STEP = 0.08;  // pas de la grille (fraction du petit côté), 5 × 5 positions
+
+// Positions de la grille, du centre vers l'extérieur.
+const CROP_OFFSETS = (() => {
+    const list = [];
+    for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) list.push([x * CROP_STEP, y * CROP_STEP]);
+    return list.sort((a, b) => Math.hypot(...a) - Math.hypot(...b));
+})();
+
+async function nativeDetector() {
+    if (typeof BarcodeDetector === 'undefined') return null;
+    try {
+        const supported = await BarcodeDetector.getSupportedFormats();
+        const formats = NATIVE_FORMATS.filter(format => supported.includes(format));
+        return formats.includes('data_matrix') ? new BarcodeDetector({ formats }) : null;
+    } catch { return null; }
+}
+
+function zxingDecoder() {
+    const F = ZXing.BarcodeFormat;
+    const readerFor = formats => {
+        const reader = new ZXing.MultiFormatReader();
+        reader.setHints(new Map([[ZXing.DecodeHintType.POSSIBLE_FORMATS, formats]]));
+        return reader;
+    };
+    // TRY_HARDER est volontairement absent : sans code visible, il fait passer l'analyse d'une image
+    // de ~20 ms à ~500 ms (bien plus sur téléphone), ce qui bloquait toute la lecture.
+    const linear = readerFor([F.QR_CODE, F.CODE_128, F.EAN_13, F.EAN_8, F.UPC_A]);
+    const dataMatrix = readerFor([F.DATA_MATRIX]);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d', { willReadFrequently: true }) || canvas.getContext('2d');
+    let step = 0;
+
+    function attempt(reader, video, sx, sy, sw, sh, maxSide) {
+        const scale = Math.min(1, maxSide / Math.max(sw, sh));
+        canvas.width = Math.round(sw * scale);
+        canvas.height = Math.round(sh * scale);
+        context.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+        const bitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(canvas)));
+        try {
+            return reader.decodeWithState(bitmap).getText();
+        } catch (error) {
+            if (error instanceof ZXing.NotFoundException || error instanceof ZXing.ChecksumException ||
+                error instanceof ZXing.FormatException) return null;
+            throw error;
+        } finally {
+            reader.reset();
+        }
+    }
+
+    // Tâches parcourues en boucle : toutes les 5 fenêtres DataMatrix, codes linéaires et QR sur l'image
+    // entière réduite ou (en alternance) sur le centre en résolution réelle (petits codes éloignés).
+    const tasks = CROP_OFFSETS.flatMap((offset, i) => (i % 5 === 0 ? [i % 10 ? 'center' : 'whole', offset] : [offset]));
+    return video => {
+        const width = video.videoWidth, height = video.videoHeight, short = Math.min(width, height);
+        const task = tasks[step++ % tasks.length];
+        if (task === 'whole') return attempt(linear, video, 0, 0, width, height, MAX_SCAN_SIDE);
+        if (task === 'center') {
+            const cw = Math.min(width, MAX_SCAN_SIDE), ch = Math.min(height, Math.round(MAX_SCAN_SIDE * 0.6));
+            return attempt(linear, video, Math.round((width - cw) / 2), Math.round((height - ch) / 2), cw, ch, MAX_SCAN_SIDE);
+        }
+        const [dx, dy] = task;
+        const side = Math.round(short * CROP_SIDE);
+        const sx = Math.max(0, Math.min(width - side, Math.round(width / 2 + dx * short - side / 2)));
+        const sy = Math.max(0, Math.min(height - side, Math.round(height / 2 + dy * short - side / 2)));
+        return attempt(dataMatrix, video, sx, sy, side, side, CROP_MAX_PX);
+    };
+}
+
 const QBoxScanner = (() => {
     let libraryLoading = null;
     let session = null;
@@ -88,8 +167,8 @@ const QBoxScanner = (() => {
 
     function close() {
         if (!session) return;
-        try { session.controls?.stop(); } catch { /* déjà arrêté */ }
-        try { session.reader?.reset(); } catch { /* déjà arrêté */ }
+        clearTimeout(session.timer);
+        session.stream?.getTracks().forEach(track => { try { track.stop(); } catch { /* déjà arrêté */ } });
         session.dialog.remove();
         session = null;
     }
@@ -118,11 +197,24 @@ const QBoxScanner = (() => {
         video.className = 'w-full aspect-[4/3] bg-black object-cover';
         video.muted = true;
         video.setAttribute('playsinline', '');
+        video.style.display = 'block';
+        // Cadre de visée (zone où la lecture est la plus fiable), styles posés en JS (pas de classe Tailwind à générer).
+        const viewport = document.createElement('div');
+        viewport.style.position = 'relative';
+        const aim = document.createElement('div');
+        aim.setAttribute('aria-hidden', 'true');
+        Object.assign(aim.style, {
+            position: 'absolute', left: '50%', top: '50%', width: '35%', aspectRatio: '1 / 1',
+            transform: 'translate(-50%, -50%)', border: '3px solid rgba(255, 255, 255, 0.9)', borderRadius: '12px',
+            boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.25)', pointerEvents: 'none'
+        });
+        viewport.style.overflow = 'hidden';
+        viewport.append(video, aim);
         const status = document.createElement('p');
         status.className = 'p-3 text-xs text-slate-600';
         status.setAttribute('role', 'status');
         status.textContent = 'Ouverture de la caméra…';
-        box.append(head, video, status);
+        box.append(head, viewport, status);
         dialog.append(box);
         document.body.append(dialog);
         session = { dialog };
@@ -136,25 +228,74 @@ const QBoxScanner = (() => {
             return;
         }
         try {
-            await loadLibrary();
-            if (session !== current) return;
-            const hints = new Map([[ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-                ZXing.BarcodeFormat.DATA_MATRIX, ZXing.BarcodeFormat.QR_CODE, ZXing.BarcodeFormat.CODE_128,
-                ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8, ZXing.BarcodeFormat.UPC_A]], [ZXing.DecodeHintType.TRY_HARDER, true]]);
-            const reader = new ZXing.BrowserMultiFormatReader(hints, 300);
-            current.reader = reader;
-            status.textContent = 'Placez le code-barres dans le cadre.';
-            await reader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } } }, video, (result) => {
-                if (!result || session !== current) return;
-                const parsed = parseBarcode(result.getText());
-                close();
-                onResult(parsed);
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: false,
+                video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
             });
+            if (session !== current) { stream.getTracks().forEach(track => track.stop()); return; }
+            current.stream = stream;
+            const track = stream.getVideoTracks()[0];
+            // Mise au point continue si l'appareil le permet (sinon les petits codes restent flous).
+            try {
+                if (track?.getCapabilities?.().focusMode?.includes('continuous')) {
+                    await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+                }
+            } catch { /* réglage facultatif */ }
+            video.srcObject = stream;
+            await video.play().catch(() => {});
+
+            let detect;
+            const detector = await nativeDetector();
+            if (detector) {
+                detect = async () => (await detector.detect(video))[0]?.rawValue || null;
+            } else {
+                status.textContent = 'Chargement du lecteur…';
+                await loadLibrary();
+                const decode = zxingDecoder();
+                // Plusieurs fenêtres par passage, dans un temps limité pour garder l'affichage fluide.
+                detect = async () => {
+                    const until = performance.now() + SCAN_BUDGET_MS;
+                    do {
+                        const text = decode(video);
+                        if (text) return text;
+                    } while (performance.now() < until);
+                    return null;
+                };
+            }
+            if (session !== current) return;
+            status.textContent = 'Placez le code dans le carré blanc et approchez jusqu’à ce qu’il en remplisse une bonne partie, net et bien éclairé.';
+
+            let errors = 0;
+            const scan = async () => {
+                if (session !== current) return;
+                let text = null;
+                if (video.readyState >= 2 && video.videoWidth > 0) {
+                    try {
+                        text = await detect();
+                        errors = 0;
+                    } catch (error) {
+                        errors += 1;
+                        if (errors === 1) console.warn('Lecture du code-barres :', error);
+                        if (errors >= 20) status.textContent = `Lecture difficile : ${error?.message || error}`;
+                    }
+                }
+                if (session !== current) return;
+                if (text) {
+                    const parsed = parseBarcode(text);
+                    close();
+                    onResult(parsed);
+                    return;
+                }
+                current.timer = setTimeout(scan, SCAN_INTERVAL_MS);
+            };
+            scan();
         } catch (error) {
             if (session !== current) return;
             status.textContent = error?.name === 'NotAllowedError'
                 ? 'Accès à la caméra refusé : autorisez-le dans les réglages du navigateur.'
-                : error?.name === 'NotFoundError' ? 'Aucune caméra détectée.' : `Lecture impossible : ${error.message}`;
+                : error?.name === 'NotFoundError' ? 'Aucune caméra détectée.'
+                : error?.name === 'NotReadableError' ? 'Caméra déjà utilisée par une autre application : fermez-la puis réessayez.'
+                : `Lecture impossible : ${error?.message || error}`;
         }
     }
 
