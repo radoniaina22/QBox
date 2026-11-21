@@ -932,7 +932,7 @@
         animation: qb-shimmer 1.3s linear infinite;
     }
     /* Listes encore vides (chargement en cours) : lignes fantômes */
-    html :is(#dash-missions-list, #dash-plannings-table, #dash-expirations-list, #dashboard-storage-transfers, #inventory-history):empty {
+    html :is(#dash-missions-list, #dash-plannings-table, #dash-expirations-list, #dash-low-stock-list, #dashboard-storage-transfers, #inventory-history):empty {
         min-height: 7rem;
         border-radius: var(--qb-radius);
         background:
@@ -942,9 +942,10 @@
         animation: qb-shimmer 1.3s linear infinite;
     }
     html #dash-expirations-list:empty,
+    html #dash-low-stock-list:empty,
     html #dash-plannings-table:empty { margin: 1.25rem; }
     /* Message unique « Aucun… » : présenté comme un état vide illustré */
-    html :is(#dash-missions-list, #dash-plannings-table, #dash-expirations-list, #dashboard-storage-transfers) > p:only-child {
+    html :is(#dash-missions-list, #dash-plannings-table, #dash-expirations-list, #dash-low-stock-list, #dashboard-storage-transfers) > p:only-child {
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -958,7 +959,7 @@
         font-size: .8rem;
         text-align: center;
     }
-    html :is(#dash-missions-list, #dash-plannings-table, #dash-expirations-list, #dashboard-storage-transfers) > p:only-child::before {
+    html :is(#dash-missions-list, #dash-plannings-table, #dash-expirations-list, #dash-low-stock-list, #dashboard-storage-transfers) > p:only-child::before {
         content: '';
         width: 2.5rem;
         height: 2.5rem;
@@ -969,8 +970,8 @@
         background-position: center;
         background-size: 1.3rem;
     }
-    html #dash-expirations-list > p:only-child { margin: 1rem; }
-    html #dash-expirations-list > p:only-child::before {
+    html :is(#dash-expirations-list, #dash-low-stock-list) > p:only-child { margin: 1rem; }
+    html :is(#dash-expirations-list, #dash-low-stock-list) > p:only-child::before {
         background-color: var(--qb-success-soft);
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23059669' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
     }
@@ -1063,7 +1064,7 @@
     @media (prefers-reduced-motion: reduce) {
         html #main-app > aside, html .qb-nav-scrim { transition: none; }
         html #view-dashboard.qb-loading .dashboard-kpi-value,
-        html :is(#dash-missions-list, #dash-plannings-table, #dash-expirations-list, #dashboard-storage-transfers, #inventory-history):empty { animation: none; }
+        html :is(#dash-missions-list, #dash-plannings-table, #dash-expirations-list, #dash-low-stock-list, #dashboard-storage-transfers, #inventory-history):empty { animation: none; }
     }
 
     /* ---------- 14. Mouvement réduit ---------- */

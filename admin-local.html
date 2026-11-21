@@ -3,18 +3,21 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Politique de sécurité : seuls les scripts du site et Chart.js (versions figées) peuvent s'exécuter ;
+         aucun script en ligne (les anciens attributs onclick sont inactifs, la logique est dans postgres-main.js). -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co http://127.0.0.1:56521 http://localhost:56521; frame-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
     <title>Q.box — Interface PostgreSQL</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="admin-local.css?v=20261118">
-    <link rel="stylesheet" href="signup-theme.css?v=20261118">
-    <script defer src="stock-history-csv.js?v=20261118"></script>
-    <script defer src="auth-policy.js?v=20261118"></script>
-    <script defer src="dashboard-report-postgres.js?v=20261118"></script>
-    <script defer src="inventory-report-postgres.js?v=20261118"></script>
-    <script defer src="admin-local.js?v=20261118"></script>
+    <link rel="stylesheet" href="admin-local.css?v=f36ff7576b">
+    <link rel="stylesheet" href="signup-theme.css?v=3a248e380c">
+    <script defer src="stock-history-csv.js?v=5f7a2bd698"></script>
+    <script defer src="auth-policy.js?v=925d045160"></script>
+    <script defer src="dashboard-report-postgres.js?v=d70c688518"></script>
+    <script defer src="inventory-report-postgres.js?v=5d7ae28a79"></script>
+    <script defer src="admin-local.js?v=a98befe4dd"></script>
 </head>
 <body class="signup-page">
     <main>

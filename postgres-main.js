@@ -1,3 +1,4 @@
+// FICHIER GÉNÉRÉ par `npm run build:assets` à partir de src/postgres-main/ : ne pas modifier ici.
 'use strict';
 
 (() => {
@@ -437,7 +438,9 @@
         for (const id of ['dash-total-stock', 'dash-active-drones', 'dash-active-plannings', 'dash-total-csb',
             'dash-global-rate', 'dash-global-ratio']) setText(id, '—');
         $('dash-global-bar').style.width = '0%';
-        for (const id of ['dash-missions-list', 'dash-plannings-table', 'dash-expirations-list']) $(id).replaceChildren();
+        for (const id of ['dash-missions-list', 'dash-plannings-table', 'dash-expirations-list', 'dash-low-stock-list', 'dash-expiry-summary']) $(id).replaceChildren();
+        $('dash-expiry-summary').hidden = true;
+        $('dash-low-stock-count').hidden = true;
         if (dashboardStockChart) dashboardStockChart.destroy();
         dashboardStockChart = null;
         $('stock-chart-details-body').replaceChildren();
@@ -5313,7 +5316,137 @@
         container.append(card);
     }
 
+    // Date du jour à Madagascar (AAAA-MM-JJ), et même date décalée de `months` mois (fin de mois bornée, comme PostgreSQL).
+    function madagascarDate(months = 0) {
+        const [year, month, day] = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Indian/Antananarivo' })
+            .format(new Date()).split('-').map(Number);
+        const target = new Date(Date.UTC(year, month - 1 + months, 1));
+        const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+        target.setUTCDate(Math.min(day, lastDay));
+        return target.toISOString().slice(0, 10);
+    }
+
+    function dashboardChip(text, tone) {
+        const chip = document.createElement('span');
+        chip.className = `px-2 py-0.5 rounded-full font-bold ${tone}`;
+        chip.textContent = text;
+        return chip;
+    }
+
+    // Synthèse péremption (tous les lots, pas seulement les 4 affichés) et alertes de seuil minimum,
+    // calculées à partir des lots déjà chargés pour le graphique des stocks.
+    function renderDashboardStockAlerts(stocks) {
+        const today = madagascarDate(), limit = madagascarDate(3);
+        const dated = stocks.filter(stock => stock.expiry_date && BigInt(stock.quantity) > 0n);
+        const expired = dated.filter(stock => stock.expiry_date < today);
+        const soon = dated.filter(stock => stock.expiry_date >= today && stock.expiry_date <= limit);
+        const summary = $('dash-expiry-summary');
+        summary.replaceChildren();
+        if (expired.length || soon.length) {
+            if (expired.length) summary.append(dashboardChip(`${expired.length} lot(s) périmé(s)`, 'bg-red-100 text-red-700'));
+            if (soon.length) summary.append(dashboardChip(`${soon.length} lot(s) périmant d’ici 3 mois`, 'bg-amber-100 text-amber-800'));
+            if (expired.length && hasRole(['admin', 'logistics'])) {
+                const action = document.createElement('button');
+                action.type = 'button';
+                action.className = 'ml-auto font-bold text-rose-700 hover:text-rose-800 flex items-center gap-1';
+                action.textContent = 'Isoler en quarantaine';
+                const arrow = document.createElement('i');
+                arrow.className = 'ph ph-arrow-right';
+                arrow.setAttribute('aria-hidden', 'true');
+                action.append(arrow);
+                action.addEventListener('click', () => selectView('quarantine'));
+                summary.append(action);
+            }
+        }
+        summary.hidden = !summary.children.length;
+
+        const totals = new Map();
+        for (const stock of stocks) {
+            const total = totals.get(stock.product_id) || { name:stock.name, unit:stock.unit, threshold:BigInt(stock.min_threshold), available:0n };
+            total.available += BigInt(stock.quantity) - BigInt(stock.reserved);
+            totals.set(stock.product_id, total);
+        }
+        const products = [...totals.values()];
+        const low = products.filter(product => product.threshold > 0n && product.available < product.threshold)
+            // Les plus critiques d'abord : disponible / seuil croissant.
+            .sort((a, b) => {
+                const difference = a.available * b.threshold - b.available * a.threshold;
+                return difference < 0n ? -1 : difference > 0n ? 1 : a.name.localeCompare(b.name, 'fr');
+            });
+        const withoutThreshold = products.filter(product => product.threshold <= 0n).length;
+        const list = $('dash-low-stock-list');
+        list.replaceChildren();
+        $('dash-low-stock-count').hidden = !low.length;
+        $('dash-low-stock-count').textContent = String(low.length);
+        if (!low.length) addLine(list, products.length ? 'Aucun intrant sous son seuil minimum.' : 'Aucun intrant en stock pour ce port.');
+        for (const product of low) {
+            const empty = product.available <= 0n;
+            const row = document.createElement('div');
+            row.className = 'p-3 flex items-center justify-between gap-3';
+            const info = document.createElement('div');
+            info.className = 'min-w-0';
+            const name = document.createElement('div');
+            name.className = 'text-xs font-bold text-slate-900 truncate';
+            name.textContent = product.name;
+            name.title = product.name;
+            const detail = document.createElement('div');
+            detail.className = 'text-[11px] text-slate-500 font-mono';
+            detail.textContent = `Disponible : ${number(product.available)} ${product.unit} · Seuil : ${number(product.threshold)}`;
+            info.append(name, detail);
+            const badge = document.createElement('span');
+            badge.className = `shrink-0 px-2.5 py-1 rounded border font-mono font-bold text-[11px] ${empty ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`;
+            badge.textContent = empty ? 'Rupture' : `Manque ${number(product.threshold - product.available)}`;
+            badge.title = 'Quantité à réapprovisionner pour revenir au seuil minimum';
+            row.append(info, badge);
+            list.append(row);
+        }
+        if (withoutThreshold) {
+            const note = document.createElement('p');
+            note.className = 'px-3 py-2 text-[10px] text-slate-500';
+            note.textContent = `${withoutThreshold} intrant(s) sans seuil défini, non surveillé(s) : renseignez le seuil dans le référentiel des intrants.`;
+            list.append(note);
+        }
+    }
+
+    // Boutons « Exporter CSV » : exportent le tableau tel qu'il est affiché (recherche comprise).
+    function installCsvExports() {
+        const exports = [
+            ['postgres-stocks-refresh', 'stocks-table-body', 'stocks-lots', true],
+            ['postgres-salama-refresh', 'salama-table-body', 'receptions', true],
+            ['postgres-products-refresh', 'catalog-table-body', 'referentiel-intrants', false],
+            ['postgres-csb-refresh', 'csb-table-body', 'csb', true],
+            ['postgres-ports-refresh', 'ports-table-body', 'magasins', false],
+            ['sortie-new', 'sorties-table-body', 'expeditions-terrestres', true],
+            ['delete-missing-csb-history', 'history-table-body', 'historique-vols', true]
+        ];
+        for (const [anchorId, bodyId, name, perSite] of exports) {
+            const anchor = $(anchorId);
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center';
+            const icon = document.createElement('i');
+            icon.className = 'ph ph-file-csv mr-1.5 text-emerald-600';
+            icon.setAttribute('aria-hidden', 'true');
+            const label = document.createElement('span');
+            label.textContent = 'Exporter CSV';
+            button.append(icon, label);
+            button.title = 'Télécharger le tableau affiché au format CSV (Excel)';
+            button.addEventListener('click', () => {
+                const site = perSite ? portSelect.selectedOptions[0]?.textContent : '';
+                downloadTableCsv($(bodyId).closest('table'), tableCsvFileName(name, site));
+            });
+            if (anchor.parentElement?.classList.contains('justify-between')) {
+                // Bouton seul dans l'en-tête : le regrouper avec l'export pour garder la mise en page.
+                const group = document.createElement('div');
+                group.className = 'flex items-center gap-2';
+                anchor.replaceWith(group);
+                group.append(button, anchor);
+            } else anchor.before(button);
+        }
+    }
+
     function renderDashboardStockChart(stocks) {
+        renderDashboardStockAlerts(stocks);
         const message = $('stock-chart-message');
         const canvas = $('stockBarChart');
         const details = $('stock-chart-details-body');
@@ -5448,6 +5581,8 @@
                 $('stock-chart-details').classList.add('hidden');
                 $('stock-chart-message').textContent = `Graphique des stocks indisponible : ${error.message}`;
                 $('stock-chart-message').classList.remove('hidden');
+                $('dash-low-stock-list').replaceChildren();
+                addLine($('dash-low-stock-list'), `Alertes de seuil indisponibles : ${error.message}`);
             }
             $('postgres-dashboard-status').textContent = `Actualisé le ${new Date().toLocaleString('fr-FR', { timeZone: 'Indian/Antananarivo' })} (heure de Madagascar).`;
             if (isStorage()) {
@@ -5783,8 +5918,8 @@
         $('transfer-add').addEventListener('click', addTransferItem);
         $('transfer-destination').addEventListener('change', transferDestinationChanged);
         $('dashboard-storage-link').addEventListener('click', () => selectView('transfers'));
-        setText('auth-network-status', 'version 3.4');
-        setText('auth-version', 'copyright RDN @2026');
+        setText('auth-network-status', 'Test local PostgreSQL');
+        setText('auth-version', 'TEST LOCAL');
         setText('dashboard-live-label', 'Instantané');
         setText('dashboard-fefo-label', 'Lots datés par péremption');
         $('login-username').value = '';
@@ -6101,6 +6236,8 @@
         $('legacy-stock-chart').classList.remove('postgres-hidden');
         $('postgres-dashboard-refresh').classList.remove('postgres-hidden');
         $('postgres-dashboard-refresh').addEventListener('click', refreshDashboard);
+        $('dashboard-low-stock-card').classList.remove('postgres-hidden');
+        installCsvExports();
         $('legacy-planning-link').classList.remove('postgres-hidden');
         $('legacy-planning-link').removeAttribute('onclick');
         $('legacy-planning-link').addEventListener('click', () => selectView('planning'));

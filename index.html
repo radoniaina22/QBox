@@ -4,19 +4,18 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Politique de sécurité : seuls les scripts du site et Chart.js (versions figées) peuvent s'exécuter ;
+         aucun script en ligne (les anciens attributs onclick sont inactifs, la logique est dans postgres-main.js). -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co http://127.0.0.1:56521 http://localhost:56521; frame-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
     <title>Q.box - Plateforme Logistique Santé & Drones</title>
 
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="tailwind-config.js?v=20261118"></script>
-
-    <!-- Phosphor Icons -->
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <!-- Phosphor Icons 2.1.2 (style regular), hébergées avec le site : npm run build:assets -->
+    <link rel="stylesheet" href="phosphor-regular.css?v=97be2a8900">
 
     <!-- Chart.js pour les visualisations avec secours CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="chart-fallback.js?v=20261118"></script>
-    <script src="chart-theme.js?v=20261118"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha384-9nhczxUqK87bcKHh20fSQcTGD4qq5GhayNYSYWqwBkINBhOfQLg/P5HG5lF1urn4" crossorigin="anonymous"></script>
+    <script src="chart-fallback.js?v=23640ecaf9"></script>
+    <script src="chart-theme.js?v=aadb33a01b"></script>
 
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -24,13 +23,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20261118">
-    <link rel="stylesheet" href="modern-theme.css?v=20261118">
-    <link rel="stylesheet" href="dark-theme.css?v=20261118">
-    <link rel="stylesheet" href="motion.css?v=20261118">
-    <script src="theme-toggle.js?v=20261118"></script>
-    <script src="hosted-mode.js"></script>
-    <script src="app-bootstrap.js"></script>
+    <link rel="stylesheet" href="styles.css?v=769c72fcb6">
+    <link rel="stylesheet" href="modern-theme.css?v=bfc580641c">
+    <link rel="stylesheet" href="dark-theme.css?v=5c6c497a0a">
+    <link rel="stylesheet" href="motion.css?v=76910e4310">
+    <!-- Tailwind compilé (npm run build:assets), chargé en dernier comme l'ancien CDN -->
+    <link rel="stylesheet" href="tailwind.css?v=85bac74b63">
+    <script src="theme-toggle.js?v=f439f0b4ec"></script>
+    <script src="app-bootstrap.js?v=85d7a116e6"></script>
 </head>
 <body class="h-full flex flex-col text-slate-800 bg-slate-100 overflow-hidden">
 
@@ -701,18 +701,37 @@
                         </div>
                     </div>
 
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                     <!-- ALERTES PÉREMPTION FEFO -->
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                        <div class="p-4 border-b border-slate-100 bg-rose-50/50 flex items-center justify-between">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden min-w-0">
+                        <div class="p-4 border-b border-slate-100 bg-rose-50/50 flex items-center justify-between gap-2">
                             <h3 class="font-bold text-rose-950 text-xs flex items-center">
                                 <i class="ph ph-warning-circle text-rose-600 mr-2 text-base"></i>
                                 Alertes de Péremption Proche & Déstockage Prioritaire (FEFO)
                             </h3>
-                            <span id="dashboard-fefo-label" class="text-[11px] font-semibold text-rose-700">Règle FEFO active</span>
+                            <span id="dashboard-fefo-label" class="text-[11px] font-semibold text-rose-700 shrink-0">Règle FEFO active</span>
                         </div>
+                        <!-- Synthèse calculée sur tous les lots du port (mode PostgreSQL) -->
+                        <div id="dash-expiry-summary" hidden class="px-4 py-2.5 border-b border-slate-100 flex flex-wrap items-center gap-2 text-[11px]" role="status"></div>
                         <div id="dash-expirations-list" class="divide-y divide-slate-100 text-xs">
                             <!-- Rempli en JS -->
                         </div>
+                    </div>
+
+                    <!-- ALERTES DE RUPTURE : intrants sous le seuil minimum (mode PostgreSQL) -->
+                    <div id="dashboard-low-stock-card" class="postgres-hidden bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden min-w-0">
+                        <div class="p-4 border-b border-slate-100 bg-amber-50/50 flex items-center justify-between gap-2">
+                            <h3 class="font-bold text-amber-950 text-xs flex items-center">
+                                <i class="ph ph-package text-amber-600 mr-2 text-base"></i>
+                                Intrants sous le seuil minimum
+                                <span id="dash-low-stock-count" hidden class="ml-2 px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold font-mono"></span>
+                            </h3>
+                            <span class="text-[11px] font-semibold text-amber-700 shrink-0">Disponible = stock − réservé</span>
+                        </div>
+                        <div id="dash-low-stock-list" class="divide-y divide-slate-100 text-xs" role="status">
+                            <!-- Rempli en JS -->
+                        </div>
+                    </div>
                     </div>
 
                 </section>
@@ -1690,14 +1709,16 @@
     <!-- TOAST NOTIFICATIONS -->
     <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none no-print"></div>
 
-    <script src="stock-history-csv.js?v=20261118"></script>
-    <script src="auth-policy.js?v=20261118"></script>
-    <script src="dashboard-report-postgres.js?v=20261118"></script>
-    <script src="inventory-report-postgres.js?v=20261118"></script>
-    <script src="stock-history-chart-style.js?v=20261118"></script>
-    <script src="dashboard-notice.js?v=20261118"></script>
-    <script src="layout-nav.js?v=20261118"></script>
-    <script src="motion.js?v=20261118"></script>
-    <script src="app-entry.js?v=20261118"></script>
+    <script src="stock-history-csv.js?v=5f7a2bd698"></script>
+    <script src="table-csv-export.js?v=59079b0722"></script>
+    <script src="offline-support.js?v=26f2ea9d90"></script>
+    <script src="auth-policy.js?v=925d045160"></script>
+    <script src="dashboard-report-postgres.js?v=d70c688518"></script>
+    <script src="inventory-report-postgres.js?v=5d7ae28a79"></script>
+    <script src="stock-history-chart-style.js?v=f600ec6479"></script>
+    <script src="dashboard-notice.js?v=1bdc6e1598"></script>
+    <script src="layout-nav.js?v=40b93e2a36"></script>
+    <script src="motion.js?v=d115514067"></script>
+    <script src="app-entry.js?v=82af97fff9"></script>
 </body>
 </html>
