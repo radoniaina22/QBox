@@ -2,6 +2,10 @@
 <html lang="fr" class="h-full bg-slate-900">
 <head>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <!-- Application installable (écran d'accueil du téléphone, fenêtre dédiée sur ordinateur) -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <meta name="theme-color" content="#1d58c9">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- Politique de sécurité : seuls les scripts du site et Chart.js (versions figées) peuvent s'exécuter ;
@@ -23,12 +27,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=769c72fcb6">
-    <link rel="stylesheet" href="modern-theme.css?v=bfc580641c">
+    <link rel="stylesheet" href="styles.css?v=52d129f76a">
+    <link rel="stylesheet" href="modern-theme.css?v=426057dace">
     <link rel="stylesheet" href="dark-theme.css?v=5c6c497a0a">
-    <link rel="stylesheet" href="motion.css?v=76910e4310">
+    <link rel="stylesheet" href="motion.css?v=1251c2b346">
+    <link rel="stylesheet" href="national-view.css?v=6c99d6819e">
+    <link rel="stylesheet" href="logistics-report.css?v=2e0cfd87ed">
     <!-- Tailwind compilé (npm run build:assets), chargé en dernier comme l'ancien CDN -->
-    <link rel="stylesheet" href="tailwind.css?v=85bac74b63">
+    <link rel="stylesheet" href="tailwind.css?v=d8d500df00">
     <script src="theme-toggle.js?v=f439f0b4ec"></script>
     <script src="app-bootstrap.js?v=85d7a116e6"></script>
 </head>
@@ -81,20 +87,9 @@
                     <p>Accédez à la plateforme de gestion des approvisionnements vitaux.</p>
                 </div>
 
-                <!-- Profils démo rapides -->
-                <div id="demo-profiles" class="qb-auth-demo">
-                    <div class="qb-auth-demo-label">
-                        <i class="ph ph-lightning"></i> Profils de démonstration
-                    </div>
-                    <div class="grid grid-cols-3 gap-2">
-                        <button type="button" onclick="quickLogin('op')">Opérateur</button>
-                        <button type="button" onclick="quickLogin('pharma')">Pharmacien</button>
-                        <button type="button" onclick="quickLogin('unfpa')">UNFPA</button>
-                    </div>
-                </div>
 
                 <!-- Formulaire Login -->
-                <form id="main-login" onsubmit="handleLogin(event)" class="qb-auth-form">
+                <form id="main-login" class="qb-auth-form">
                     <div>
                         <label for="login-username">Identifiant / Email</label>
                         <div class="qb-auth-field">
@@ -108,19 +103,12 @@
                         <div class="qb-auth-field">
                             <i class="ph ph-lock-key" aria-hidden="true"></i>
                             <input type="password" id="login-password" required autocomplete="current-password" placeholder="Votre mot de passe">
-                            <button type="button" onclick="togglePasswordVisibility()" class="qb-auth-eye" aria-label="Afficher ou masquer le mot de passe">
+                            <button type="button" class="qb-auth-eye" aria-label="Afficher ou masquer le mot de passe">
                                 <i id="pwd-eye-icon" class="ph ph-eye"></i>
                             </button>
                         </div>
                     </div>
 
-                    <div id="demo-login-options" class="qb-auth-options">
-                        <label>
-                            <input type="checkbox" checked>
-                            <span>Mémoriser ma session</span>
-                        </label>
-                        <a href="#" onclick="showToast('Contactez l\'administrateur UNFPA / Ministère', 'info')">Assistance ?</a>
-                    </div>
 
                     <button type="submit" class="qb-auth-submit">
                         <span>Ouvrir la session</span>
@@ -167,16 +155,20 @@
                 <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center">
                     <i class="ph ph-warehouse mr-1 text-amber-400"></i> Magasin actif
                 </label>
-                <select id="drone-port-select" onchange="changeDronePort(this.value)" class="w-full text-xs font-semibold bg-slate-900 border border-slate-700 text-white rounded-xl px-2.5 py-2 focus:outline-none focus:border-amber-400 cursor-pointer">
+                <select id="drone-port-select" class="w-full text-xs font-semibold bg-slate-900 border border-slate-700 text-white rounded-xl px-2.5 py-2 focus:outline-none focus:border-amber-400 cursor-pointer">
                     <!-- Rempli en JS -->
                 </select>
             </div>
 
             <!-- Navigation Links -->
             <nav aria-label="Navigation principale" class="sidebar-nav flex-1 overflow-y-auto p-3">
-                <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all bg-amber-400 text-slate-950">
+                <button id="nav-dashboard" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all bg-amber-400 text-slate-950">
                     <i class="ph ph-chart-polar text-base mr-3 shrink-0"></i>
                     <span>Tableau de Bord</span>
+                </button>
+                <button id="nav-national" class="postgres-hidden nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all">
+                    <i class="ph ph-globe-hemisphere-east text-base mr-3 shrink-0"></i>
+                    <span>Vue nationale</span>
                 </button>
                 <details class="sidebar-group">
                     <summary>
@@ -185,33 +177,31 @@
                         <i class="ph ph-caret-down sidebar-chevron" aria-hidden="true"></i>
                     </summary>
                     <div class="space-y-1">
-                        <button onclick="switchTab('stocks')" id="nav-stocks" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-stocks" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-package text-base mr-3 shrink-0 text-amber-400"></i>
                             <span class="flex-1 text-left">Stock & Lots (FEFO)</span>
-                            <span id="badge-stock-count" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">0</span>
                         </button>
-                        <button onclick="switchTab('inventory')" id="nav-inventory" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-inventory" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-clipboard-text text-base mr-3 shrink-0 text-amber-400"></i>
                             <span>Inventaire physique</span>
                         </button>
-                        <button onclick="switchTab('stock-history')" id="nav-stock-history" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-stock-history" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-clock-counter-clockwise text-base mr-3 shrink-0 text-sky-400"></i><span>Historique des stocks</span>
                         </button>
                         <button id="nav-logistics-report" type="button" class="nav-item postgres-hidden w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-chart-bar text-base mr-3 shrink-0 text-sky-400"></i><span>Rapport logistique</span>
                         </button>
-                        <button onclick="switchTab('quarantine')" id="nav-quarantine" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-quarantine" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-warning-octagon text-base mr-3 shrink-0 text-rose-400"></i>
                             <span>Quarantaine</span>
                         </button>
-                        <button onclick="switchTab('salama')" id="nav-salama" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-salama" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-arrow-down-left text-base mr-3 shrink-0 text-emerald-400"></i>
                             <span>Réceptions SALAMA</span>
                         </button>
-                        <button onclick="switchTab('products')" id="nav-products" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-products" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-dna text-base mr-3 shrink-0 text-teal-400"></i>
                             <span class="flex-1 text-left">Référentiel Intrants</span>
-                            <span id="badge-catalog-count" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">0</span>
                         </button>
                     </div>
                 </details>
@@ -223,12 +213,11 @@
                         <i class="ph ph-caret-down sidebar-chevron" aria-hidden="true"></i>
                     </summary>
                     <div class="space-y-1">
-                        <button onclick="switchTab('planning')" id="nav-planning" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-planning" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-calendar-check text-base mr-3 shrink-0 text-sky-400"></i>
                             <span class="flex-1 text-left">Besoins Prévisionnels</span>
-                            <span id="badge-planning-count" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">0</span>
                         </button>
-                        <button onclick="switchTab('archives')" id="nav-archives" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-archives" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-folder text-base mr-3 shrink-0 text-purple-400"></i>
                             <span>Dossiers d'Archives</span>
                         </button>
@@ -246,19 +235,18 @@
                         <i class="ph ph-caret-down sidebar-chevron" aria-hidden="true"></i>
                     </summary>
                     <div class="space-y-1">
-                        <button onclick="switchTab('drones')" id="nav-drones" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-drones" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-navigation-arrow text-base mr-3 shrink-0 text-cyan-400"></i>
                             <span class="flex-1 text-left">Vols & Largages Drones</span>
-                            <span id="badge-active-flights" class="text-[10px] bg-cyan-950 text-cyan-400 border border-cyan-800 px-2 py-0.5 rounded-full font-mono">0</span>
                         </button>
-                        <button onclick="switchTab('sorties')" id="nav-sorties" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-sorties" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-truck text-base mr-3 shrink-0 text-amber-300"></i>
                             <span>Expéditions Terrestres</span>
                         </button>
                         <button id="nav-transfers" type="button" class="nav-item postgres-hidden w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-arrows-left-right text-base mr-3 shrink-0 text-sky-400"></i><span>Transferts & expéditions</span>
                         </button>
-                        <button onclick="switchTab('history')" id="nav-history" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-history" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-clock-counter-clockwise text-base mr-3 shrink-0 text-emerald-400"></i>
                             <span>Historique Clôtures</span>
                         </button>
@@ -272,12 +260,11 @@
                         <i class="ph ph-caret-down sidebar-chevron" aria-hidden="true"></i>
                     </summary>
                     <div class="space-y-1">
-                        <button onclick="switchTab('csb')" id="nav-csb" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-csb" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-first-aid text-base mr-3 shrink-0 text-rose-400"></i>
                             <span class="flex-1 text-left">Réseau des CSB</span>
-                            <span id="badge-csb-count" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">0</span>
                         </button>
-                        <button onclick="switchTab('ports')" id="nav-ports" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                        <button id="nav-ports" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
                             <i class="ph ph-warehouse text-base mr-3 shrink-0 text-amber-400"></i>
                             <span class="flex-1 text-left">Magasins & données</span>
                         </button>
@@ -300,8 +287,9 @@
                         <div id="user-display-role" class="text-[10px] text-slate-400 truncate">Base Ranomafana</div>
                     </div>
                 </div>
+                <button id="alerts-open" type="button" class="postgres-hidden p-1.5 text-slate-400 hover:text-white" title="Mes alertes e-mail" aria-label="Mes alertes e-mail"><i class="ph ph-bell text-lg"></i></button>
                 <button id="password-open" type="button" class="postgres-hidden p-1.5 text-slate-400 hover:text-white" title="Changer mon mot de passe" aria-label="Changer mon mot de passe"><i class="ph ph-key text-lg"></i></button>
-                <button onclick="logout()" title="Déconnexion" class="p-1.5 text-slate-400 hover:text-red-400 rounded-lg hover:bg-slate-800 transition-colors">
+                <button title="Déconnexion" class="p-1.5 text-slate-400 hover:text-red-400 rounded-lg hover:bg-slate-800 transition-colors">
                     <i class="ph ph-sign-out text-lg"></i>
                 </button>
             </div>
@@ -320,10 +308,10 @@
                 </div>
 
                 <div id="legacy-header-actions" class="flex items-center space-x-3">
-                    <button id="legacy-new-flight" onclick="openModal('modal-drone')" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center transition-colors">
+                    <button id="legacy-new-flight" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center transition-colors">
                         <i class="ph ph-paper-plane-tilt mr-1.5 text-amber-400"></i> Nouvelle Mission Drone
                     </button>
-                    <button id="legacy-new-receipt" onclick="openModal('modal-salama')" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold flex items-center transition-colors">
+                    <button id="legacy-new-receipt" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold flex items-center transition-colors">
                         <i class="ph ph-plus-circle mr-1.5"></i> Entrée SALAMA
                     </button>
                 </div>
@@ -352,11 +340,14 @@
                                 <h3 class="font-bold text-slate-900 text-sm">Inventaire physique complet</h3>
                                 <p class="text-xs text-slate-500">Comptez tous les lots du port actif, y compris les lots à zéro. Excluez les colis drone en livraison et les produits en quarantaine.</p>
                             </div>
-                            <button id="inventory-new" type="button" onclick="startPhysicalInventory()" class="px-3 py-2 bg-amber-400 hover:bg-amber-500 rounded-xl text-xs font-bold">Commencer un inventaire</button>
+                            <button id="inventory-new" type="button" class="px-3 py-2 bg-amber-400 hover:bg-amber-500 rounded-xl text-xs font-bold">Commencer un inventaire</button>
                         </div>
                         <p id="postgres-inventory-status" class="text-xs text-slate-600 postgres-hidden" role="status"></p>
-                        <form id="inventory-form" onsubmit="submitPhysicalInventory(event)" class="hidden space-y-4">
-                            <p class="text-xs text-slate-500">Le stock théorique physique exclut les quantités en cours de livraison. Chaque lot doit être compté ; saisissez 0 si nécessaire.</p>
+                        <form id="inventory-form" class="hidden space-y-4">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <p class="text-xs text-slate-500">Le stock théorique physique exclut les quantités en cours de livraison. Chaque lot doit être compté ; saisissez 0 si nécessaire.</p>
+                                <button id="inventory-scan" type="button" class="shrink-0 px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center"><i class="ph ph-barcode mr-1" aria-hidden="true"></i>Scanner un lot</button>
+                            </div>
                             <div class="overflow-x-auto">
                                 <table class="w-full text-left text-xs">
                                     <thead class="text-slate-500"><tr>
@@ -369,7 +360,7 @@
                             <label for="inventory-observations" class="block text-xs font-semibold text-slate-700">Remarques et observations <span class="font-normal text-slate-500">(facultatif, 2 000 caractères maximum)</span></label>
                             <textarea id="inventory-observations" maxlength="2000" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm" placeholder="Précisez les remarques concernant cet inventaire"></textarea>
                             <div class="flex justify-end gap-2">
-                                <button id="inventory-cancel" type="button" onclick="cancelPhysicalInventory()" class="px-3 py-2 bg-slate-100 rounded-xl text-xs font-semibold">Annuler</button>
+                                <button id="inventory-cancel" type="button" class="px-3 py-2 bg-slate-100 rounded-xl text-xs font-semibold">Annuler</button>
                                 <button type="submit" class="px-3 py-2 bg-amber-400 hover:bg-amber-500 rounded-xl text-xs font-bold">Valider l’inventaire</button>
                             </div>
                         </form>
@@ -389,8 +380,8 @@
                                     <p class="text-xs text-slate-500">Suivez les mouvements, comparez les soldes et consultez les inventaires du port actif.</p></div>
                             </div>
                             <div class="stock-history-header-actions">
-                                <button id="stock-history-export" type="button" onclick="exportStockHistory()" class="stock-history-button stock-history-button-muted"><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter CSV</button>
-                                <button id="stock-history-print" type="button" onclick="printStockHistory()" class="stock-history-button stock-history-button-primary"><i class="ph ph-printer" aria-hidden="true"></i>Imprimer</button>
+                                <button id="stock-history-export" type="button" class="stock-history-button stock-history-button-muted"><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter CSV</button>
+                                <button id="stock-history-print" type="button" class="stock-history-button stock-history-button-primary"><i class="ph ph-printer" aria-hidden="true"></i>Imprimer</button>
                             </div>
                         </div>
                         <div class="stock-history-filter-panel">
@@ -401,16 +392,16 @@
                             </div>
                             <div class="stock-history-filter-grid">
                                 <label for="stock-history-from">Du
-                                    <input id="stock-history-from" type="date" onchange="renderStockHistory()">
+                                    <input id="stock-history-from" type="date">
                                 </label>
                                 <label for="stock-history-to">Au
-                                    <input id="stock-history-to" type="date" onchange="renderStockHistory()">
+                                    <input id="stock-history-to" type="date">
                                 </label>
                                 <label for="stock-history-type">Opération
-                                    <select id="stock-history-type" onchange="renderStockHistory()"><option value="">Toutes les opérations</option><option>Solde initial</option><option>Réception SALAMA</option><option>Réservation drone</option><option>Modification drone</option><option>Clôture drone</option><option>Expédition terrestre</option><option>Inventaire physique</option><option>Mise en quarantaine</option><option>Remise en stock</option><option>Destruction</option></select>
+                                    <select id="stock-history-type"><option value="">Toutes les opérations</option><option>Solde initial</option><option>Réception SALAMA</option><option>Réservation drone</option><option>Modification drone</option><option>Clôture drone</option><option>Expédition terrestre</option><option>Inventaire physique</option><option>Mise en quarantaine</option><option>Remise en stock</option><option>Destruction</option></select>
                                 </label>
                                 <label class="stock-history-search-field" for="stock-history-search">Intrant
-                                    <span class="stock-history-search-wrap"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><input id="stock-history-search" type="search" oninput="renderStockHistory()" placeholder="Rechercher un intrant"></span>
+                                    <span class="stock-history-search-wrap"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><input id="stock-history-search" type="search" placeholder="Rechercher un intrant"></span>
                                 </label>
                             </div>
                         </div>
@@ -483,8 +474,33 @@
                                 <button id="logistics-report-print" type="button" disabled class="stock-history-button stock-history-button-primary"><i class="ph ph-printer" aria-hidden="true"></i>Imprimer</button>
                             </div>
                         </div>
+                        <!-- Synthèse de l'année et navigation par mois (écran seulement) — style : logistics-report.css -->
+                        <div id="logistics-report-summary" class="lr-summary no-print"></div>
+                        <nav id="logistics-report-nav" class="lr-nav no-print" aria-label="Aller au mois"></nav>
                         <p id="logistics-report-print-context" class="logistics-report-print-context"></p>
                         <p class="logistics-report-note">Heure de Madagascar. Le stock physique de fin de mois est indiqué uniquement si un inventaire a été validé le dernier jour du mois. « — » signifie indisponible.</p>
+                        <!-- Indicateurs de performance mensuels (qbox_performance_indicators) -->
+                        <div class="logistics-indicators border border-slate-200 rounded-2xl overflow-hidden">
+                            <div class="p-4 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div>
+                                    <h4 class="font-bold text-slate-900 text-xs flex items-center"><i class="ph ph-gauge text-sky-600 mr-2 text-base" aria-hidden="true"></i>Indicateurs de performance</h4>
+                                    <p class="text-[11px] text-slate-500">Délai = jours entre départ et clôture des livraisons clôturées dans le mois. Satisfaction = livré ÷ planifié des plannings terminés dans le mois. Rupture = stock total d'un intrant tombé à 0. Quarantaine : total (dont expirés).</p>
+                                </div>
+                                <button id="indicators-export" type="button" disabled class="shrink-0 px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center disabled:opacity-50"><i class="ph ph-file-csv mr-1.5 text-emerald-600" aria-hidden="true"></i>Exporter CSV</button>
+                            </div>
+                            <p id="indicators-status" class="px-4 pt-2 text-xs text-slate-600" role="status"></p>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse text-xs">
+                                    <thead class="bg-slate-50 text-slate-500"><tr>
+                                        <th class="py-2 px-3 font-semibold">Mois</th><th class="py-2 px-3 font-semibold text-right">Vols clôturés</th><th class="py-2 px-3 font-semibold text-right">Délai vol (j)</th>
+                                        <th class="py-2 px-3 font-semibold text-right">Expéditions clôturées</th><th class="py-2 px-3 font-semibold text-right">Délai expédition (j)</th>
+                                        <th class="py-2 px-3 font-semibold text-right">Plannings terminés</th><th class="py-2 px-3 font-semibold text-right">Satisfaction</th>
+                                        <th class="py-2 px-3 font-semibold text-right">Intrants en rupture</th><th class="py-2 px-3 font-semibold text-right">Quarantaine (expirés)</th>
+                                    </tr></thead>
+                                    <tbody id="indicators-body" class="divide-y divide-slate-100"></tbody>
+                                </table>
+                            </div>
+                        </div>
                         <p id="logistics-report-status" role="status" aria-live="polite"></p>
                         <div id="logistics-report-months" class="logistics-report-months"></div>
                     </div>
@@ -501,7 +517,7 @@
                             <button id="postgres-quarantine-new" type="button" class="px-3 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold">Nouvelle mise en quarantaine</button>
                             <button id="postgres-quarantine-refresh" type="button" class="px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Actualiser</button>
                         </div>
-                        <form id="quarantine-form-main" onsubmit="submitQuarantine(event)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+                        <form id="quarantine-form-main" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
                             <label class="text-xs font-semibold text-slate-700">Intrant et lot
                                 <select id="quarantine-stock" required class="mt-1 w-full text-xs p-2 rounded-xl border border-slate-200 bg-white"></select>
                             </label>
@@ -538,7 +554,7 @@
                             <button id="postgres-dashboard-refresh" type="button" class="postgres-hidden px-3 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center">
                                 <i class="ph ph-arrows-clockwise text-base mr-2"></i> Actualiser
                             </button>
-                            <button id="legacy-dashboard-report" type="button" onclick="openDashboardReport()" class="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center transition-colors">
+                            <button id="legacy-dashboard-report" type="button" class="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center transition-colors">
                                 <i class="ph ph-file-chart-line text-base mr-2"></i> Générer un rapport
                             </button>
                         </div>
@@ -692,7 +708,7 @@
                                 </h3>
                                 <p class="text-xs text-slate-500">Progression des livraisons réelles par rapport aux besoins exprimés</p>
                             </div>
-                            <button id="legacy-planning-link" onclick="switchTab('planning')" class="text-xs font-bold text-slate-900 hover:text-amber-600 flex items-center">
+                            <button id="legacy-planning-link" class="text-xs font-bold text-slate-900 hover:text-amber-600 flex items-center">
                                 Voir tous les plannings <i class="ph ph-arrow-right ml-1"></i>
                             </button>
                         </div>
@@ -718,15 +734,15 @@
                         </div>
                     </div>
 
-                    <!-- ALERTES DE RUPTURE : intrants sous le seuil minimum (mode PostgreSQL) -->
+                    <!-- ALERTES DE RÉAPPROVISIONNEMENT : sous le seuil ou moins d'un mois de consommation -->
                     <div id="dashboard-low-stock-card" class="postgres-hidden bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden min-w-0">
                         <div class="p-4 border-b border-slate-100 bg-amber-50/50 flex items-center justify-between gap-2">
                             <h3 class="font-bold text-amber-950 text-xs flex items-center">
                                 <i class="ph ph-package text-amber-600 mr-2 text-base"></i>
-                                Intrants sous le seuil minimum
+                                Intrants à réapprovisionner
                                 <span id="dash-low-stock-count" hidden class="ml-2 px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold font-mono"></span>
                             </h3>
-                            <span class="text-[11px] font-semibold text-amber-700 shrink-0">Disponible = stock − réservé</span>
+                            <span class="text-[11px] font-semibold text-amber-700 shrink-0" title="Disponible = stock − réservé aux vols. CMM = sorties moyennes des 3 derniers mois.">Seuil et mois de stock</span>
                         </div>
                         <div id="dash-low-stock-list" class="divide-y divide-slate-100 text-xs" role="status">
                             <!-- Rempli en JS -->
@@ -734,6 +750,61 @@
                     </div>
                     </div>
 
+                </section>
+
+                <!-- ================= VUE NATIONALE (admin, logistique, UNFPA) — style : national-view.css ================= -->
+                <section id="view-national" class="tab-content hidden">
+                    <div class="nv">
+                        <header class="nv-hero">
+                            <div>
+                                <span class="nv-eyebrow"><span class="nv-live" aria-hidden="true"></span>Supervision nationale</span>
+                                <h3>Situation de tous les sites</h3>
+                                <p class="nv-hero-sub">Disponible = stock − réservé aux vols. Mois de stock = disponible ÷ CMM (sorties moyennes des 3 derniers mois). Cliquez sur un site pour ouvrir son tableau de bord.</p>
+                                <p id="national-status" role="status" aria-live="polite"></p>
+                            </div>
+                            <div class="nv-hero-actions">
+                                <button id="national-refresh" type="button"><i class="ph ph-arrows-clockwise" aria-hidden="true"></i>Actualiser</button>
+                                <button id="national-export" type="button" disabled class="nv-primary"><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter CSV</button>
+                            </div>
+                            <div id="national-kpis" class="nv-kpis"></div>
+                        </header>
+
+                        <div id="national-sites" class="nv-sites"></div>
+
+                        <section class="nv-panel" aria-labelledby="national-matrix-title">
+                            <div class="nv-panel-head">
+                                <div class="nv-panel-title"><i class="ph ph-map-trifold" aria-hidden="true"></i>
+                                    <div><h4 id="national-matrix-title">Couverture des intrants</h4><p>Disponible et mois de stock par site, coloré selon le seuil minimum.</p></div></div>
+                                <div class="nv-tools">
+                                    <label class="nv-search"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span class="sr-only">Rechercher un intrant</span>
+                                        <input id="national-search" type="search" placeholder="Rechercher un intrant…" autocomplete="off"></label>
+                                    <div class="nv-toggle" role="group" aria-label="Filtrer les intrants">
+                                        <button id="national-filter-all" type="button" aria-pressed="true">Tous</button>
+                                        <button id="national-filter-alerts" type="button" aria-pressed="false">Alertes seulement</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="nv-legend">
+                                <span><i class="nv-dot nv-seg-stockout"></i>Rupture</span><span><i class="nv-dot nv-seg-low"></i>Sous le seuil</span>
+                                <span><i class="nv-dot nv-seg-watch"></i>À surveiller (≤ 1,5 × seuil)</span><span><i class="nv-dot nv-seg-good"></i>Correct</span>
+                                <span><i class="nv-dot nv-seg-unknown"></i>Seuil non défini</span><span>Jauge : mois de stock vers l'objectif</span>
+                            </div>
+                            <div class="nv-matrix-scroll">
+                                <table class="nv-matrix">
+                                    <thead id="national-matrix-head"></thead>
+                                    <tbody id="national-matrix-body"></tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <section class="nv-panel" aria-labelledby="national-transfers-title">
+                            <div class="nv-panel-head">
+                                <div class="nv-panel-title"><i class="ph ph-arrows-left-right" aria-hidden="true"></i>
+                                    <div><h4 id="national-transfers-title">Rééquilibrage suggéré</h4><p>Entre magasin de stockage et drone port : d'un site au-dessus de 1,5 × le seuil vers un site sous le seuil.</p></div></div>
+                            </div>
+                            <div id="national-transfers" class="nv-routes"></div>
+                        </section>
+                    </div>
                 </section>
 
                 <!-- ================= VIEW 2: STOCKS ================= -->
@@ -751,9 +822,9 @@
                                 </button>
                                 <div class="relative">
                                     <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
-                                    <input type="text" id="stock-search" oninput="renderStocks()" placeholder="Rechercher produit, lot..." class="text-xs pl-8 pr-3 py-2 bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 w-48 sm:w-64">
+                                    <input type="text" id="stock-search" placeholder="Rechercher produit, lot..." class="text-xs pl-8 pr-3 py-2 bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 w-48 sm:w-64">
                                 </div>
-                                <button id="stocks-receive" onclick="openModal('modal-salama')" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
+                                <button id="stocks-receive" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
                                     <i class="ph ph-plus mr-1"></i> Réapprovisionner
                                 </button>
                             </div>
@@ -789,7 +860,7 @@
                                 <p id="salama-description" class="text-xs text-slate-500">Réapprovisionnements regroupés par numéro de bon SALAMA</p>
                             </div>
                             <div class="flex items-center gap-2"><button id="postgres-salama-refresh" type="button" class="postgres-hidden px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Actualiser</button>
-                            <button id="salama-receive" onclick="openModal('modal-salama')" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
+                            <button id="salama-receive" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
                                 <i class="ph ph-plus-circle mr-1.5 text-sm"></i> Enregistrer Réception
                             </button></div>
                         </div>
@@ -826,9 +897,9 @@
                                 <button id="postgres-products-refresh" type="button" class="postgres-hidden px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Actualiser</button>
                                 <div class="relative">
                                     <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
-                                    <input type="text" id="catalog-search" oninput="renderCatalog()" placeholder="Rechercher code, nom..." class="text-xs pl-8 pr-3 py-2 bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 w-48 sm:w-64">
+                                    <input type="text" id="catalog-search" placeholder="Rechercher code, nom..." class="text-xs pl-8 pr-3 py-2 bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 w-48 sm:w-64">
                                 </div>
-                                <button id="catalog-new" onclick="openProductModal()" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
+                                <button id="catalog-new" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
                                     <i class="ph ph-plus-circle mr-1.5 text-sm"></i> Ajouter un Intrant
                                 </button>
                             </div>
@@ -865,10 +936,10 @@
                                 <p class="text-xs text-slate-500">Dotation groupée multi-intrants par formation sanitaire avec suivi en temps réel</p>
                             </div>
                             <div class="flex items-center space-x-2">
-                                <button id="planning-archive" onclick="openArchiveModal()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center transition-colors">
+                                <button id="planning-archive" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center transition-colors">
                                     <i class="ph ph-archive-box mr-1.5"></i> Tout Archiver
                                 </button>
-                                <button id="planning-new" onclick="openPlanningModal()" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
+                                <button id="planning-new" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
                                     <i class="ph ph-plus-circle mr-1.5 text-sm"></i> Nouveau Planning CSB
                                 </button>
                             </div>
@@ -923,7 +994,7 @@
                                 <h3 class="font-bold text-slate-900 text-sm">Centre de Contrôle & Largages Aériens</h3>
                                 <p class="text-xs text-slate-500">Gestion des vols actifs, impression du BL et clôture des décharges</p>
                             </div>
-                            <button id="drone-new" onclick="openModal('modal-drone')" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center transition-colors">
+                            <button id="drone-new" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center transition-colors">
                                 <i class="ph ph-paper-plane-tilt mr-1.5 text-amber-400"></i> Lancer une Mission
                             </button>
                         </div>
@@ -943,7 +1014,7 @@
                                 <h3 class="font-bold text-slate-900 text-sm">Expéditions par Voie Terrestre</h3>
                                 <p class="text-xs text-slate-500">Envois par véhicule ou moto vers les CSB accessibles</p>
                             </div>
-                            <button id="sortie-new" onclick="openModal('modal-sortie')" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center transition-colors">
+                            <button id="sortie-new" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center transition-colors">
                                 <i class="ph ph-plus-circle mr-1.5 text-amber-400"></i> Nouvelle Expédition Terrestre
                             </button>
                         </div>
@@ -978,7 +1049,7 @@
                                 <h3 class="font-bold text-slate-900 text-sm">Historique des Livraisons Clôturées</h3>
                                 <p class="text-xs text-slate-500">Registre complet des missions terminées avec réimpression des BL</p>
                             </div>
-                            <button id="delete-missing-csb-history" type="button" onclick="deleteMissingCsbHistory()" class="hidden px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold">
+                            <button id="delete-missing-csb-history" type="button" class="hidden px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold">
                                 Supprimer les clôtures sans CSB
                             </button>
                         </div>
@@ -1041,12 +1112,11 @@
                             <div><h3 class="font-bold text-slate-900 text-sm">Gestion des magasins</h3>
                                 <p class="text-xs text-slate-500">Un magasin contenant des données ou un historique ne peut pas être supprimé. Au moins un magasin doit être conservé.</p></div>
                             <div class="flex gap-2"><button id="postgres-ports-refresh" type="button" class="postgres-hidden px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Actualiser</button>
-                            <button id="port-new" type="button" onclick="editPort()" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 rounded-xl text-xs font-bold">+ Ajouter un magasin</button></div>
+                            <button id="port-new" type="button" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 rounded-xl text-xs font-bold">+ Ajouter un magasin</button></div>
                         </div>
                         <p id="postgres-ports-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
-                        <form id="port-form" onsubmit="submitPort(event)" class="hidden p-5 border-b border-slate-100 space-y-3">
+                        <form id="port-form" class="hidden p-5 border-b border-slate-100 space-y-3">
                             <h4 id="port-form-title" class="font-bold text-sm"></h4>
-                            <input type="hidden" id="port-edit-id">
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div><label for="port-name" class="block text-xs font-semibold mb-1">Nom</label>
                                     <input id="port-name" required maxlength="120" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200"></div>
@@ -1057,17 +1127,12 @@
                                     <p class="text-xs text-slate-500 mt-1">Le type est définitif après création.</p></div>
                             </div>
                             <div class="flex gap-2"><button type="submit" class="px-4 py-2 bg-amber-400 rounded-xl text-xs font-bold">Enregistrer</button>
-                                <button id="port-cancel" type="button" onclick="document.getElementById('port-form').classList.add('hidden')" class="px-4 py-2 bg-slate-100 rounded-xl text-xs font-semibold">Annuler</button></div>
+                                <button id="port-cancel" type="button" class="px-4 py-2 bg-slate-100 rounded-xl text-xs font-semibold">Annuler</button></div>
                         </form>
                         <div class="overflow-x-auto"><table class="w-full text-left text-xs">
                             <thead class="bg-slate-50 text-slate-500"><tr><th class="py-3 px-4">Code</th><th class="py-3 px-4">Nom</th><th class="py-3 px-4">Région</th><th class="py-3 px-4 text-right">Actions</th></tr></thead>
                             <tbody id="ports-table-body" class="divide-y divide-slate-100"></tbody>
                         </table></div>
-                    </div>
-                    <div id="legacy-reset-data" class="bg-white rounded-2xl border border-red-200 p-5 space-y-2">
-                        <h3 class="text-sm font-bold text-red-800">Réinitialisation des données locales</h3>
-                        <p class="text-xs text-slate-600">Efface le catalogue, les CSB et toutes les données et historiques opérationnels de tous les ports dans ce navigateur. Les ports, catégories, régions et districts sont conservés. Une sauvegarde JSON est conservée localement et son téléchargement est lancé avant l'effacement ; vérifiez que le navigateur l'autorise.</p>
-                        <button type="button" onclick="resetApplicationData()" class="px-3.5 py-2 bg-red-700 hover:bg-red-800 text-white rounded-xl text-xs font-bold">Réinitialiser les données</button>
                     </div>
                 </section>
 
@@ -1080,7 +1145,7 @@
                                 <p class="text-xs text-slate-500">Centres de Santé de Base rattachés au Drone Port actif</p>
                             </div>
                             <div class="flex gap-2"><button id="postgres-csb-refresh" type="button" class="postgres-hidden px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Actualiser</button>
-                            <button id="csb-new" onclick="openCSBModal()" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
+                            <button id="csb-new" class="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center transition-colors">
                                 <i class="ph ph-plus-circle mr-1.5 text-sm"></i> Nouveau CSB
                             </button></div>
                         </div>
@@ -1121,9 +1186,9 @@
             <h3 id="salama-modal-title" class="font-bold text-slate-900 text-sm flex items-center">
                 <i class="ph ph-arrow-down-left text-emerald-600 mr-2 text-lg"></i> Réception SALAMA Centrale
             </h3>
-            <button id="salama-close" type="button" onclick="closeModal('modal-salama')" aria-label="Fermer la réception" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+            <button id="salama-close" type="button" aria-label="Fermer la réception" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
         </div>
-        <form id="salama-form" onsubmit="handleSalamaSubmit(event)" class="flex flex-col flex-1 min-h-0">
+        <form id="salama-form" class="flex flex-col flex-1 min-h-0">
             <!-- Zone fixe : bon de réception -->
             <div class="px-5 pt-4 pb-3 border-b border-slate-100 shrink-0 flex flex-col sm:flex-row sm:items-end gap-3">
                 <div class="flex-1">
@@ -1138,8 +1203,9 @@
                     <div id="salama-head" hidden></div>
                     <div id="salama-items" class="space-y-2"></div>
                     <div class="flex flex-wrap items-center gap-2 pt-1">
-                        <button id="salama-add-row" type="button" onclick="addSalamaRow()" class="px-3 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-dashed border-sky-300 rounded-lg text-xs font-bold">+ Ajouter un intrant</button>
+                        <button id="salama-add-row" type="button" class="px-3 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-dashed border-sky-300 rounded-lg text-xs font-bold">+ Ajouter un intrant</button>
                         <button id="salama-add-five" type="button" hidden class="px-3 py-2 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-xs font-bold">+ 5 lignes</button>
+                        <button id="salama-scan" type="button" class="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold flex items-center"><i class="ph ph-barcode mr-1" aria-hidden="true"></i>Scanner</button>
                     </div>
                 </div>
             </div>
@@ -1149,7 +1215,7 @@
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <p id="salama-summary" class="text-[11px] font-semibold text-slate-600" aria-live="polite"></p>
                     <div class="flex gap-2 ml-auto">
-                        <button id="salama-cancel" type="button" onclick="closeModal('modal-salama')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                        <button id="salama-cancel" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
                         <button type="submit" id="salama-submit-btn" class="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold transition-colors">Valider l'Entrée</button>
                     </div>
                 </div>
@@ -1163,11 +1229,10 @@
             <h3 id="product-modal-title" class="font-bold text-slate-900 text-sm flex items-center">
                 <i class="ph ph-dna text-teal-600 mr-2 text-lg"></i> Référencer un Intrant Médical
             </h3>
-            <button id="product-close" type="button" onclick="closeProductModal()" aria-label="Fermer la fenêtre des intrants" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+            <button id="product-close" type="button" aria-label="Fermer la fenêtre des intrants" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
         </div>
-        <form id="form-product" onsubmit="handleProductSubmit(event)" class="flex flex-col flex-1 min-h-0">
+        <form id="form-product" class="flex flex-col flex-1 min-h-0">
             <div class="p-5 space-y-4 overflow-y-auto min-h-0">
-            <input type="hidden" id="product-edit-id">
             <div>
                 <label for="product-code" class="block text-xs font-semibold text-slate-700 mb-1">Code interne <span class="font-normal text-slate-400">(généré automatiquement)</span></label>
                 <input type="text" id="product-code" readonly class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-600 font-mono">
@@ -1197,11 +1262,19 @@
                 <label for="product-min-threshold" class="block text-xs font-semibold text-slate-700 mb-1">Seuil Alerte Stock Minimum (Unités)</label>
                 <input type="number" id="product-min-threshold" min="0" value="500" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 font-mono">
             </div>
+            <div>
+                <label for="product-gtin" class="block text-xs font-semibold text-slate-700 mb-1">Code GTIN / EAN (facultatif)</label>
+                <div class="flex gap-2">
+                    <input type="text" id="product-gtin" inputmode="numeric" maxlength="14" pattern="[0-9]{8}|[0-9]{12,14}" placeholder="Chiffres du code-barres" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 font-mono">
+                    <button id="product-gtin-scan" type="button" class="shrink-0 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold flex items-center"><i class="ph ph-barcode mr-1" aria-hidden="true"></i>Scanner</button>
+                </div>
+                <p class="text-[10px] text-slate-500 mt-1">Permet de reconnaître l'intrant en scannant la boîte lors des réceptions et inventaires.</p>
+            </div>
             </div>
             <div class="p-4 border-t border-slate-100 bg-white shrink-0 space-y-2">
                 <p id="postgres-product-form-status" class="text-xs text-rose-700 postgres-hidden" role="status" aria-live="polite"></p>
                 <div class="flex flex-wrap justify-end gap-2">
-                <button id="product-cancel" type="button" onclick="closeProductModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button id="product-cancel" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
                 <button type="submit" id="product-submit-btn" class="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold">Enregistrer</button>
                 </div>
             </div>
@@ -1215,21 +1288,20 @@
                 <i class="ph ph-paper-plane-tilt text-cyan-600 mr-2 text-lg"></i> <span id="drone-modal-title">Planifier des Vols Drone</span>
                 <span class="ml-3 text-[11px] font-medium text-slate-500">1 drone = 1 colis = 1 N° BL</span>
             </h3>
-            <button id="drone-close" type="button" onclick="closeModal('modal-drone')" aria-label="Fermer la saisie des vols" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+            <button id="drone-close" type="button" aria-label="Fermer la saisie des vols" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
         </div>
-        <form id="drone-form-main" onsubmit="handleDroneSubmit(event)" class="flex flex-col flex-1 min-h-0">
+        <form id="drone-form-main" class="flex flex-col flex-1 min-h-0">
             <!-- Zone fixe : planning et destination côte à côte -->
             <div class="px-5 py-3 border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
                 <div>
                     <label for="drone-plan" class="block text-xs font-semibold text-slate-700 mb-1">1. Planning actif <span class="text-red-500">*</span></label>
-                    <select id="drone-plan" required onchange="onDronePlanChange()" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white font-bold text-slate-800">
+                    <select id="drone-plan" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white font-bold text-slate-800">
                         <!-- Rempli en JS -->
                     </select>
-                    <p id="drone-plan-hint" class="text-[11px] text-amber-600 mt-1 hidden">Aucun planning actif : créez d'abord un planning dans l'onglet Planification.</p>
                 </div>
                 <div>
                     <label for="drone-target" class="block text-xs font-semibold text-slate-700 mb-1">2. Destination (CSB cible)</label>
-                    <select id="drone-target" required disabled onchange="updateDronePlanningInfo()" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white font-bold text-slate-800 disabled:bg-slate-100 disabled:text-slate-400">
+                    <select id="drone-target" required disabled class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white font-bold text-slate-800 disabled:bg-slate-100 disabled:text-slate-400">
                         <!-- Rempli en JS -->
                     </select>
                 </div>
@@ -1247,7 +1319,7 @@
                         <div id="drone-flights-container" class="space-y-3">
                             <!-- Les vols (un colis chacun) sont injectés ici -->
                         </div>
-                        <button id="drone-add" type="button" onclick="addDroneFlight()" class="w-full px-3 py-2.5 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-dashed border-cyan-300 rounded-xl text-xs font-bold flex items-center justify-center transition-colors">
+                        <button id="drone-add" type="button" class="w-full px-3 py-2.5 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-dashed border-cyan-300 rounded-xl text-xs font-bold flex items-center justify-center transition-colors">
                             <i class="ph ph-plus mr-1"></i> Ajouter un vol
                         </button>
                     </div>
@@ -1270,7 +1342,7 @@
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <p id="drone-summary" class="text-[11px] font-semibold text-slate-600" aria-live="polite"></p>
                     <div class="flex gap-2 ml-auto">
-                        <button id="drone-cancel" type="button" onclick="closeModal('modal-drone')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                        <button id="drone-cancel" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
                         <button type="submit" id="drone-submit-btn" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold">Lancer les Vols</button>
                     </div>
                 </div>
@@ -1284,10 +1356,9 @@
             <h3 id="close-delivery-title" class="font-bold text-slate-900 text-sm flex items-center">
                 <i class="ph ph-check-circle text-emerald-600 mr-2 text-lg"></i> Confirmer la Clôture du Vol
             </h3>
-            <button id="close-delivery-x" type="button" onclick="closeModal('modal-close-drone')" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+            <button id="close-delivery-x" type="button" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
         </div>
-        <form id="close-delivery-form" onsubmit="handleCloseDroneSubmit(event)" class="p-5 space-y-4">
-            <input type="hidden" id="close-drone-id">
+        <form id="close-delivery-form" class="p-5 space-y-4">
             <p id="close-delivery-description" class="text-xs text-slate-600">
                 La clôture déduira définitivement les intrants du stock et actualisera en temps réel l'avancement du planning prévisionnel du CSB.
             </p>
@@ -1298,7 +1369,7 @@
                 <input type="date" id="close-drone-date" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400">
             </div>
             <div class="pt-2 flex justify-end space-x-2">
-                <button id="close-delivery-cancel" type="button" onclick="closeModal('modal-close-drone')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button id="close-delivery-cancel" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
                 <button id="close-delivery-submit" type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold">Confirmer la Clôture</button>
             </div>
         </form>
@@ -1351,9 +1422,9 @@
             <h3 class="font-bold text-slate-900 text-sm flex items-center">
                 <i class="ph ph-truck text-amber-600 mr-2 text-lg"></i> Expédition par Voie Terrestre
             </h3>
-            <button id="sortie-close" type="button" onclick="closeModal('modal-sortie')" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+            <button id="sortie-close" type="button" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
         </div>
-        <form id="sortie-form-main" onsubmit="handleSortieSubmit(event)" class="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+        <form id="sortie-form-main" class="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label for="sortie-id" class="block text-xs font-semibold text-slate-700 mb-1">N° Expédition / BL <span class="font-normal text-slate-400">(automatique)</span></label>
@@ -1371,7 +1442,7 @@
             </div>
             <div>
                 <label for="sortie-plan" class="block text-xs font-semibold text-slate-700 mb-1">Planning actif</label>
-                <select id="sortie-plan" required onchange="updateSortieTargets()" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white"></select>
+                <select id="sortie-plan" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white"></select>
                 <p class="text-[11px] text-slate-500 mt-1">L'expédition est affectée à ce planning et reste en transit jusqu'à sa clôture.</p>
             </div>
             <div>
@@ -1383,14 +1454,14 @@
             <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
                 <div class="flex items-center justify-between">
                     <span class="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Contenu du convoi</span>
-                    <button id="sortie-add" type="button" onclick="addSortieRow()" class="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-bold">+ Ajouter un intrant</button>
+                    <button id="sortie-add" type="button" class="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-bold">+ Ajouter un intrant</button>
                 </div>
                 <div id="sortie-items" class="space-y-3"></div>
             </div>
             <div id="postgres-sortie-needs" class="space-y-1 text-xs text-slate-600 postgres-hidden"></div>
             <p id="postgres-sortie-form-status" class="text-xs text-rose-700 postgres-hidden" role="status"></p>
             <div class="pt-2 flex justify-end space-x-2">
-                <button id="sortie-cancel" type="button" onclick="closeModal('modal-sortie')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button id="sortie-cancel" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
                 <button type="submit" class="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold">Enregistrer l'Expédition</button>
             </div>
         </form>
@@ -1402,11 +1473,10 @@
             <h3 id="planning-modal-title" class="font-bold text-slate-900 text-sm flex items-center">
                 <i class="ph ph-calendar-plus text-sky-600 mr-2 text-lg"></i> Nouvelle Campagne de Planning
             </h3>
-            <button id="planning-close" type="button" onclick="closeModal('modal-planning')" aria-label="Fermer la fenêtre du planning" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+            <button id="planning-close" type="button" aria-label="Fermer la fenêtre du planning" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
         </div>
-        <form id="planning-form-main" onsubmit="handlePlanningSubmit(event)" class="flex flex-col flex-1 min-h-0">
+        <form id="planning-form-main" class="flex flex-col flex-1 min-h-0">
             <div class="p-5 space-y-4 overflow-y-auto min-h-0">
-            <input type="hidden" id="plan-edit-id">
             
             <!-- Choix global de l'intervalle de date -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-sky-50/50 border border-sky-100 rounded-xl">
@@ -1444,7 +1514,7 @@
             <div>
                 <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <span id="plan-csb-blocks-title" class="text-xs font-bold text-slate-800">Centres Sanitaires (CSB) inclus dans cette campagne</span>
-                    <button id="planning-add" type="button" onclick="addPlanningCsbBlock()" class="px-2.5 py-1.5 bg-sky-600 text-white hover:bg-sky-700 rounded-lg text-xs font-bold flex items-center transition-colors">
+                    <button id="planning-add" type="button" class="px-2.5 py-1.5 bg-sky-600 text-white hover:bg-sky-700 rounded-lg text-xs font-bold flex items-center transition-colors">
                         <i class="ph ph-plus mr-1"></i> Ajouter un CSB
                     </button>
                 </div>
@@ -1458,7 +1528,7 @@
             <div class="p-4 border-t border-slate-100 bg-white shrink-0 space-y-2">
                 <p id="postgres-plan-form-status" class="text-xs text-rose-700 postgres-hidden" role="status" aria-live="polite"></p>
                 <div class="flex flex-wrap justify-end gap-2">
-                <button id="planning-cancel" type="button" onclick="closeModal('modal-planning')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button id="planning-cancel" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
                 <button type="submit" id="plan-submit-btn" class="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold">Enregistrer la Campagne</button>
                 </div>
             </div>
@@ -1471,9 +1541,9 @@
             <h3 class="font-bold text-slate-900 text-sm flex items-center">
                 <i class="ph ph-folder text-purple-600 mr-2 text-lg"></i> Archiver les Plannings
             </h3>
-            <button id="archive-close" type="button" onclick="closeModal('modal-archive')" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+            <button id="archive-close" type="button" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
         </div>
-        <form id="archive-form-main" onsubmit="handleArchiveSubmit(event)" class="p-5 space-y-4">
+        <form id="archive-form-main" class="p-5 space-y-4">
             <p class="text-xs text-slate-600">
                 Saisissez le nom du dossier pour regrouper tous les plannings actuellement actifs.
             </p>
@@ -1483,7 +1553,7 @@
             </div>
             <p id="postgres-archive-form-status" class="text-xs text-rose-700 postgres-hidden" role="status"></p>
             <div class="pt-2 flex justify-end space-x-2">
-                <button id="archive-cancel" type="button" onclick="closeModal('modal-archive')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button id="archive-cancel" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
                 <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold">Créer l'Archive</button>
             </div>
         </form>
@@ -1495,11 +1565,10 @@
             <h3 id="csb-modal-title" class="font-bold text-slate-900 text-sm flex items-center">
                 <i class="ph ph-first-aid text-rose-600 mr-2 text-lg"></i> Enregistrer un CSB
             </h3>
-            <button id="csb-close" type="button" onclick="closeModal('modal-csb')" aria-label="Fermer la fenêtre du CSB" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+            <button id="csb-close" type="button" aria-label="Fermer la fenêtre du CSB" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
         </div>
-        <form id="form-csb" onsubmit="handleCSBSubmit(event)" class="flex flex-col flex-1 min-h-0">
+        <form id="form-csb" class="flex flex-col flex-1 min-h-0">
             <div class="p-5 space-y-4 overflow-y-auto min-h-0">
-            <input type="hidden" id="csb-edit-id">
             <div>
                 <label for="csb-code" class="block text-xs font-semibold text-slate-700 mb-1">Code CSB</label>
                 <input type="text" id="csb-code" required placeholder="Ex: CSB-08" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 uppercase font-mono">
@@ -1519,7 +1588,7 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                     <label for="csb-region" class="block text-xs font-semibold text-slate-700 mb-1">Région</label>
-                    <select id="csb-region" onchange="updateCSBDistricts()" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white">
+                    <select id="csb-region" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white">
                         <!-- Rempli en JS -->
                     </select>
                 </div>
@@ -1538,7 +1607,7 @@
             <div class="p-4 border-t border-slate-100 bg-white shrink-0 space-y-2">
                 <p id="postgres-csb-form-status" class="text-xs text-rose-700 postgres-hidden" role="status" aria-live="polite"></p>
                 <div class="flex flex-wrap justify-end gap-2">
-                <button id="csb-cancel" type="button" onclick="closeModal('modal-csb')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button id="csb-cancel" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
                 <button type="submit" id="csb-submit-btn" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold">Enregistrer</button>
                 </div>
             </div>
@@ -1549,8 +1618,8 @@
     <div id="stock-history-print-modal" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[95vh] flex flex-col overflow-hidden">
         <div class="p-4 border-b flex items-center justify-between no-print">
             <h3 class="font-bold text-sm">Aperçu de l'historique des stocks</h3>
-            <div class="flex gap-2"><button id="stock-history-print-confirm" type="button" onclick="window.print()" class="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold">Imprimer</button>
-                <button id="stock-history-print-close" type="button" onclick="closeModal('stock-history-print-modal')" class="px-3 py-2 text-xs" aria-label="Fermer">Fermer</button></div>
+            <div class="flex gap-2"><button id="stock-history-print-confirm" type="button" class="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold">Imprimer</button>
+                <button id="stock-history-print-close" type="button" class="px-3 py-2 text-xs" aria-label="Fermer">Fermer</button></div>
         </div>
         <div class="report-preview-scroll"><article id="stock-history-print-content" class="dashboard-report"></article></div>
     </div>
@@ -1582,13 +1651,10 @@
         <div class="p-4 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 shrink-0 no-print">
             <div class="flex flex-wrap items-center gap-3">
                 <h3 class="font-bold text-slate-900 text-sm">Rapport de suivi</h3>
-                <label id="report-plan-label" class="text-xs font-semibold text-slate-600">Planning actif
-                    <select id="report-plan-select" onchange="renderDashboardReport()" class="ml-1 p-2 rounded-lg border border-slate-200 bg-white"></select>
-                </label>
             </div>
             <div class="flex items-center gap-2">
-                <button id="dashboard-report-print" type="button" onclick="window.print()" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl">Imprimer le rapport</button>
-                <button id="dashboard-report-close" type="button" onclick="closeModal('report-preview-modal')" aria-label="Fermer le rapport" class="p-2 text-slate-500 hover:text-slate-800"><i class="ph ph-x text-lg"></i></button>
+                <button id="dashboard-report-print" type="button" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl">Imprimer le rapport</button>
+                <button id="dashboard-report-close" type="button" aria-label="Fermer le rapport" class="p-2 text-slate-500 hover:text-slate-800"><i class="ph ph-x text-lg"></i></button>
             </div>
         </div>
         <div class="report-preview-scroll">
@@ -1605,10 +1671,10 @@
                 <h3 class="font-bold text-slate-900 text-sm">Aperçu du Bon de Livraison (BL) - Format Officiel A4</h3>
             </div>
             <div class="flex items-center space-x-2">
-                <button id="postgres-print-document" onclick="window.print()" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center transition-colors">
+                <button id="postgres-print-document" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center transition-colors">
                     <i class="ph ph-printer mr-1.5"></i> Imprimer le Document
                 </button>
-                <button id="postgres-print-close" onclick="closeModal('print-preview-modal')" class="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
+                <button id="postgres-print-close" class="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
                     <i class="ph ph-x text-lg"></i>
                 </button>
             </div>
@@ -1703,14 +1769,29 @@
             <div class="flex justify-end gap-2"><button id="password-cancel" type="button" class="px-3 py-2 rounded-lg bg-slate-100 text-xs">Annuler</button><button id="password-submit" type="submit" class="px-3 py-2 rounded-lg bg-amber-400 text-xs font-bold">Modifier</button></div>
         </form>
     </dialog>
+    <dialog id="alerts-dialog" aria-labelledby="alerts-title" class="rounded-2xl shadow-2xl p-6 w-[calc(100%-2rem)] max-w-sm">
+        <form id="alerts-form" class="space-y-4">
+            <h2 id="alerts-title" class="text-base font-bold text-slate-900">Mes alertes e-mail</h2>
+            <p class="text-xs text-slate-500">Envoyées à l'adresse de votre compte, pour tous les sites.</p>
+            <label class="flex items-start gap-2 text-xs"><input id="alerts-weekly" type="checkbox" class="mt-0.5 w-4 h-4">
+                <span><strong>Récapitulatif hebdomadaire</strong> (lundi, 7 h) : ruptures et intrants sous le seuil, lots périmés ou périmant sous 3 mois, livraisons en cours depuis plus de 7 jours.</span></label>
+            <label class="flex items-start gap-2 text-xs"><input id="alerts-stockout" type="checkbox" class="mt-0.5 w-4 h-4">
+                <span><strong>Rupture le jour même</strong> : un e-mail dès qu'un intrant suivi tombe à zéro sur un site (vérification toutes les heures, de 6 h à 18 h).</span></label>
+            <label class="flex items-start gap-2 text-xs"><input id="alerts-reports" type="checkbox" class="mt-0.5 w-4 h-4">
+                <span><strong>Rapports de suivi des plannings</strong> : le rapport du planning en cours de chaque site (lundi, 7 h) et le rapport final dès qu'un planning est livré à 100 %.</span></label>
+            <p id="alerts-status" role="status" aria-live="polite" class="text-xs text-slate-600"></p>
+            <div class="flex justify-end gap-2"><button id="alerts-cancel" type="button" class="px-3 py-2 rounded-lg bg-slate-100 text-xs">Fermer</button><button id="alerts-submit" type="submit" class="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold">Enregistrer</button></div>
+        </form>
+    </dialog>
     <!-- BACKDROP MODALES -->
-    <div id="modal-backdrop" onclick="closeAllModals()" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 hidden no-print"></div>
+    <div id="modal-backdrop" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 hidden no-print"></div>
 
     <!-- TOAST NOTIFICATIONS -->
     <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none no-print"></div>
 
     <script src="stock-history-csv.js?v=5f7a2bd698"></script>
     <script src="table-csv-export.js?v=59079b0722"></script>
+    <script src="barcode-scanner.js?v=d5e972b8c7"></script>
     <script src="offline-support.js?v=26f2ea9d90"></script>
     <script src="auth-policy.js?v=925d045160"></script>
     <script src="dashboard-report-postgres.js?v=d70c688518"></script>
@@ -1718,7 +1799,7 @@
     <script src="stock-history-chart-style.js?v=f600ec6479"></script>
     <script src="dashboard-notice.js?v=1bdc6e1598"></script>
     <script src="layout-nav.js?v=40b93e2a36"></script>
-    <script src="motion.js?v=d115514067"></script>
-    <script src="app-entry.js?v=82af97fff9"></script>
+    <script src="motion.js?v=7bd162fd50"></script>
+    <script src="app-entry.js?v=1711c233d1"></script>
 </body>
 </html>

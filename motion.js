@@ -30,7 +30,7 @@
     }
 
     function mount() {
-        document.querySelectorAll('.dashboard-kpi-value, #main-app .nav-item > span[id^="badge-"]').forEach(watch);
+        document.querySelectorAll('.dashboard-kpi-value').forEach(watch);
     }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);

@@ -1,0 +1,182 @@
+/* ==========================================================================
+   Q.box — Rapport logistique (écran)
+   Uniquement @media screen : l'impression (styles.css, logistics-report-print-mode)
+   reste strictement identique. Variables du thème Horizon : mode sombre automatique.
+   ========================================================================== */
+@media screen {
+    #view-logistics-report .logistics-report-page { display: grid; gap: 1.15rem; }
+    #view-logistics-report .logistics-report-page > * { margin: 0; }
+
+    /* ---------- Bandeau ---------- */
+    #view-logistics-report .stock-history-header {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        align-items: center;
+        gap: 1rem;
+        padding: 1.35rem 1.5rem;
+        border: 0;
+        border-radius: 18px;
+        background: var(--qb-hero);
+        box-shadow: 0 20px 40px -24px rgba(21, 71, 154, .8);
+    }
+    #view-logistics-report .stock-history-header::before {
+        content: '';
+        position: absolute; z-index: -1;
+        right: -3rem; top: -5rem;
+        width: 16rem; height: 16rem;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, .18);
+        box-shadow: 0 0 0 2.2rem rgba(255, 255, 255, .05), 0 0 0 4.4rem rgba(255, 255, 255, .03);
+        pointer-events: none;
+    }
+    #view-logistics-report .stock-history-header h3 { color: #fff !important; font-family: var(--qb-font-display); font-size: 1.35rem !important; font-weight: 800; letter-spacing: -.02em; }
+    #view-logistics-report .stock-history-header p { color: rgba(255, 255, 255, .8) !important; }
+    #view-logistics-report .stock-history-title-icon { background: rgba(255, 255, 255, .16) !important; color: #fff !important; box-shadow: none !important; }
+    #view-logistics-report .logistics-report-controls label { color: rgba(255, 255, 255, .85); }
+    #view-logistics-report .logistics-report-controls select {
+        border-color: rgba(255, 255, 255, .35);
+        background: rgba(255, 255, 255, .14);
+        color: #fff;
+        font-weight: 700;
+    }
+    #view-logistics-report .logistics-report-controls select option { color: #0f172a; }
+    #view-logistics-report .logistics-report-controls .stock-history-button {
+        border: 1px solid rgba(255, 255, 255, .3) !important;
+        background: rgba(255, 255, 255, .12) !important;
+        color: #fff !important;
+        box-shadow: none !important;
+    }
+    #view-logistics-report .logistics-report-controls .stock-history-button:hover:not(:disabled) { background: rgba(255, 255, 255, .24) !important; }
+    #view-logistics-report .logistics-report-controls .stock-history-button-primary { background: #fff !important; border-color: #fff !important; color: #1a4fb5 !important; }
+    #view-logistics-report .logistics-report-controls .stock-history-button:disabled { opacity: .5; }
+
+    /* ---------- Synthèse de l'année ---------- */
+    #view-logistics-report .lr-summary:empty, #view-logistics-report .lr-nav:empty { display: none; }
+    #view-logistics-report .lr-summary { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 1rem; }
+    #view-logistics-report .lr-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+    #view-logistics-report .lr-kpi {
+        --tone: var(--qb-primary);
+        display: flex; flex-direction: column; gap: .3rem;
+        min-width: 0;
+        padding: .9rem 1rem;
+        border: 1px solid var(--qb-line);
+        border-left: 4px solid var(--tone);
+        border-radius: 14px;
+        background: var(--qb-surface);
+        box-shadow: var(--qb-shadow-xs);
+    }
+    #view-logistics-report .lr-kpi-in { --tone: var(--qb-teal); }
+    #view-logistics-report .lr-kpi-out { --tone: var(--qb-accent); }
+    #view-logistics-report .lr-kpi-ok { --tone: var(--qb-success); }
+    #view-logistics-report .lr-kpi-warn { --tone: #f97316; }
+    #view-logistics-report .lr-kpi-label { display: flex; align-items: center; gap: .35rem; color: var(--qb-muted); font-size: .7rem; font-weight: 700; }
+    #view-logistics-report .lr-kpi-label i { color: var(--tone); font-size: 1.05rem; }
+    #view-logistics-report .lr-kpi-value { color: var(--qb-text); font-family: var(--qb-font-display); font-size: 1.45rem; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    #view-logistics-report .lr-kpi-hint { color: var(--qb-muted); font-size: .66rem; line-height: 1.4; }
+
+    #view-logistics-report .lr-chart { display: flex; flex-direction: column; gap: .6rem; padding: .9rem 1rem .7rem; border: 1px solid var(--qb-line); border-radius: 14px; background: var(--qb-surface); box-shadow: var(--qb-shadow-xs); min-width: 0; }
+    #view-logistics-report .lr-chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+    #view-logistics-report .lr-chart-head strong { color: var(--qb-text); font-size: .8rem; }
+    #view-logistics-report .lr-chart-legend { display: flex; align-items: center; gap: .35rem; color: var(--qb-muted); font-size: .66rem; }
+    #view-logistics-report .lr-chart-legend span { margin-right: .4rem; }
+    #view-logistics-report .lr-dot { display: inline-block; width: 8px; height: 8px; border-radius: 3px; }
+    #view-logistics-report .lr-dot-in, #view-logistics-report .lr-bar-in { background: var(--qb-teal); }
+    #view-logistics-report .lr-dot-out, #view-logistics-report .lr-bar-out { background: var(--qb-accent); }
+    #view-logistics-report .lr-bars { flex: 1; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: .3rem; min-height: 8.5rem; align-items: stretch; }
+    #view-logistics-report .lr-bar-col { display: flex; flex-direction: column; align-items: stretch; gap: .3rem; padding: .25rem .1rem 0; border-radius: 8px; transition: background-color .15s ease; }
+    #view-logistics-report .lr-bar-col:hover { background: var(--qb-row-hover); }
+    #view-logistics-report .lr-bar-col:focus-visible { outline: none; box-shadow: var(--qb-ring); }
+    #view-logistics-report .lr-bar-pair { flex: 1; display: flex; align-items: flex-end; justify-content: center; gap: 2px; border-bottom: 1px solid var(--qb-line); }
+    #view-logistics-report .lr-bar { display: block; width: 38%; max-width: 12px; border-radius: 4px 4px 0 0; transition: height .6s var(--qb-ease); }
+    #view-logistics-report .lr-bar-label { color: var(--qb-muted); font-size: .58rem; font-weight: 700; text-align: center; }
+    #view-logistics-report .lr-col-future .lr-bar-label { color: var(--qb-faint); }
+
+    /* ---------- Navigation par mois ---------- */
+    #view-logistics-report .lr-nav {
+        position: sticky; top: 0; z-index: 5;
+        display: flex; gap: .35rem;
+        overflow-x: auto;
+        padding: .5rem;
+        border: 1px solid var(--qb-line);
+        border-radius: 14px;
+        background: var(--qb-surface);
+        box-shadow: var(--qb-shadow-sm);
+    }
+    #view-logistics-report .lr-nav-chip { display: inline-flex; align-items: center; gap: .35rem; flex-shrink: 0; padding: .35rem .65rem; border-radius: 999px; color: var(--qb-text-2); font-size: .72rem; font-weight: 700; transition: background-color .15s ease; }
+    #view-logistics-report .lr-nav-chip:hover { background: var(--qb-surface-3); }
+    #view-logistics-report .lr-nav-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--qb-line-strong); }
+    #view-logistics-report .lr-col-ok .lr-nav-dot { background: var(--qb-success); }
+    #view-logistics-report .lr-col-warn .lr-nav-dot { background: #f97316; }
+    #view-logistics-report .lr-col-unknown .lr-nav-dot { background: var(--qb-accent); }
+    #view-logistics-report .lr-col-future { color: var(--qb-faint); }
+    #view-logistics-report .lr-split-legend { display: inline-flex; align-items: center; gap: .3rem; flex-shrink: 0; margin-left: auto; padding: 0 .5rem; color: var(--qb-muted); font-size: .66rem; font-weight: 600; white-space: nowrap; }
+    #view-logistics-report .lr-split-legend i { display: inline-block; width: 10px; height: 6px; border-radius: 999px; }
+    #view-logistics-report .lr-split-legend span + i { margin-left: .35rem; }
+
+    /* ---------- Note et indicateurs ---------- */
+    #view-logistics-report .logistics-report-note { display: flex; gap: .6rem; border-color: var(--qb-primary-line); background: var(--qb-primary-soft); color: var(--qb-text-2); border-radius: 12px; }
+    #view-logistics-report .logistics-report-note::before { content: 'i'; flex-shrink: 0; display: grid; place-items: center; width: 1.2rem; height: 1.2rem; border-radius: 50%; background: var(--qb-primary); color: #fff; font: 700 .7rem/1 var(--qb-font-display); font-style: italic; }
+    #view-logistics-report .logistics-indicators { border-color: var(--qb-line) !important; border-radius: 16px !important; background: var(--qb-surface); box-shadow: var(--qb-shadow-xs); }
+    #view-logistics-report .logistics-indicators tbody tr:last-child td { border-top: 2px solid var(--qb-line-strong); }
+    #view-logistics-report #logistics-report-status:empty { display: none; }
+
+    /* ---------- Mois ---------- */
+    #view-logistics-report .logistics-report-months { gap: 1rem; }
+    #view-logistics-report .logistics-month {
+        position: relative;
+        padding: 1rem 1.1rem 1.1rem;
+        border: 1px solid var(--qb-line);
+        border-radius: 16px;
+        background: var(--qb-surface);
+        box-shadow: var(--qb-shadow-xs);
+        scroll-margin-top: 4.5rem;
+    }
+    #view-logistics-report .logistics-month::before { content: ''; position: absolute; left: 0; top: 1rem; bottom: 1rem; width: 4px; border-radius: 0 4px 4px 0; background: var(--qb-line-strong); }
+    #view-logistics-report .lr-month-ok::before { background: var(--qb-success); }
+    #view-logistics-report .lr-month-warn::before { background: #f97316; }
+    #view-logistics-report .lr-month-unknown::before { background: var(--qb-accent); }
+    #view-logistics-report .logistics-month h4 { display: inline-block; margin: 0 .75rem .5rem 0; font-family: var(--qb-font-display); font-size: 1rem; letter-spacing: -.01em; }
+    #view-logistics-report .lr-month-meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-bottom: .75rem; vertical-align: middle; }
+    #view-logistics-report .lr-chip { padding: .2rem .55rem; border-radius: 999px; background: var(--qb-surface-3); color: var(--qb-text-2); font-size: .68rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    #view-logistics-report .lr-chip-in { background: color-mix(in srgb, var(--qb-teal) 13%, transparent); color: var(--qb-teal); }
+    #view-logistics-report .lr-chip-out { background: var(--qb-accent-soft); color: var(--qb-accent-ink); }
+    #view-logistics-report .lr-chip-inventory { background: var(--qb-primary-soft); color: var(--qb-primary-ink); }
+    #view-logistics-report .lr-status { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .6rem; border-radius: 999px; font-size: .68rem; font-weight: 800; }
+    #view-logistics-report .lr-status-ok { background: var(--qb-success-soft); color: var(--qb-success); }
+    #view-logistics-report .lr-status-warn { background: color-mix(in srgb, #f97316 14%, transparent); color: #ea580c; }
+    #view-logistics-report .lr-status-unknown { background: var(--qb-accent-soft); color: var(--qb-accent-ink); }
+    #view-logistics-report .lr-status-future, #view-logistics-report .lr-status-empty { background: var(--qb-surface-3); color: var(--qb-muted); }
+    /* Mois à venir : repliés, sans tableau. */
+    #view-logistics-report .lr-month-future { padding-bottom: .5rem; background: var(--qb-surface-2); box-shadow: none; border-style: dashed; }
+    #view-logistics-report .lr-month-future h4 { color: var(--qb-muted); }
+    #view-logistics-report .lr-month-future .stock-history-table-wrap { display: none; }
+
+    #view-logistics-report .logistics-month .stock-history-table th { background: var(--qb-surface-2); color: var(--qb-muted); font-size: .68rem; }
+    #view-logistics-report .logistics-month .stock-history-table td:not(:first-child),
+    #view-logistics-report .logistics-month .stock-history-table th:not(:first-child) { text-align: right; }
+    #view-logistics-report .logistics-month .stock-history-table td:first-child { color: var(--qb-text); font-weight: 700; }
+    #view-logistics-report .logistics-outgoing { justify-items: end; }
+    #view-logistics-report .logistics-outgoing small { text-align: right; font-size: .66rem; }
+    #view-logistics-report .lr-split { display: flex; gap: 2px; width: 9rem; height: 6px; border-radius: 999px; overflow: hidden; background: var(--qb-surface-3); }
+    #view-logistics-report .lr-split:empty { display: none; }
+    #view-logistics-report .lr-split i { display: block; height: 100%; min-width: 3px; }
+    #view-logistics-report .lr-split-flight { background: #0891b2; }
+    #view-logistics-report .lr-split-road { background: #7c3aed; }
+    #view-logistics-report .lr-split-transfer { background: var(--qb-primary); }
+    #view-logistics-report .lr-split-other { background: var(--qb-faint); }
+    #view-logistics-report .lr-flag { display: inline-block; margin-top: .3rem; padding: .1rem .45rem; border-radius: 999px; font-weight: 700; }
+    #view-logistics-report .lr-flag-unreconciled { background: color-mix(in srgb, #f97316 14%, transparent); color: #ea580c; }
+    #view-logistics-report .lr-flag-unknown { background: var(--qb-accent-soft); color: var(--qb-accent-ink); }
+
+    @media (max-width: 1100px) {
+        #view-logistics-report .lr-summary { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+        #view-logistics-report .lr-kpis { grid-template-columns: 1fr; }
+        #view-logistics-report .stock-history-header { padding: 1.1rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        #view-logistics-report .lr-bar { transition: none; }
+    }
+}

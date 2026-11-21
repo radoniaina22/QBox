@@ -58,15 +58,11 @@
 
     html .qb-auth-form-head { animation: qb-fade .6s .2s ease backwards; }
     html .qb-auth-title { animation: qb-rise .6s .25s var(--qb-out) backwards; }
-    html .qb-auth-demo,
     html .qb-auth-form > div,
-    html .qb-auth-options,
     html .qb-auth-submit,
     html #postgres-signup-link { animation: qb-rise .55s var(--qb-out) backwards; }
-    html .qb-auth-demo { animation-delay: .3s; }
     html .qb-auth-form > div:nth-child(1) { animation-delay: .35s; }
     html .qb-auth-form > div:nth-child(2) { animation-delay: .42s; }
-    html .qb-auth-options { animation-delay: .49s; }
     html .qb-auth-submit { animation-delay: .56s; }
     html #postgres-signup-link { animation-delay: .63s; }
     html .qb-auth-foot { animation: qb-fade .6s .7s ease backwards; }
@@ -230,7 +226,6 @@
     html :is(#main-app .tab-content, .modal-box) span.rounded-full[class*="bg-"]:not([id^="badge-"]) { animation: qb-pop .4s var(--qb-spring) backwards; }
 
     /* Badges de compteurs de la barre latérale : rebond quand la valeur change (motion.js) */
-    html #main-app .nav-item > span[id^="badge-"].qb-value-pop { animation: qb-pop .5s var(--qb-spring); }
 
     /* ======================================================================
        5. Fenêtres, encarts, notifications

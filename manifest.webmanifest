@@ -1,0 +1,16 @@
+{
+  "name": "Q.box — Logistique santé & drones",
+  "short_name": "Q.box",
+  "description": "Gestion des stocks, plannings, vols drone et expéditions vers les CSB (UNFPA / MSANP Madagascar).",
+  "lang": "fr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e2d5c",
+  "theme_color": "#1d58c9",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

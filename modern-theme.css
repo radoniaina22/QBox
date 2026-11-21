@@ -235,26 +235,6 @@
     html .qb-auth-title h2 { margin: 0; color: var(--qb-text); font-size: 1.75rem; font-weight: 800; letter-spacing: -.035em; }
     html .qb-auth-title p { margin-top: .35rem; color: var(--qb-muted); font-size: .875rem; }
 
-    html .qb-auth-demo {
-        margin-bottom: 1.25rem;
-        padding: .75rem;
-        border: 1px dashed var(--qb-primary-line);
-        border-radius: var(--qb-radius);
-        background: var(--qb-primary-soft);
-    }
-    html .qb-auth-demo-label { display: flex; align-items: center; gap: .35rem; margin-bottom: .5rem; color: var(--qb-primary-ink); font-size: .75rem; font-weight: 600; }
-    html .qb-auth-demo button {
-        padding: .45rem .5rem;
-        border: 1px solid var(--qb-primary-line);
-        border-radius: var(--qb-radius-sm);
-        background: var(--qb-surface);
-        color: var(--qb-primary-ink);
-        font-size: .75rem;
-        font-weight: 600;
-        transition: background-color .15s ease, border-color .15s ease;
-    }
-    html .qb-auth-demo button:hover { background: var(--qb-surface-2); border-color: var(--qb-primary); }
-
     html .qb-auth-form { display: grid; gap: 1rem; }
     html .qb-auth-form label[for] { display: block; margin-bottom: .4rem; color: var(--qb-text-2); font-size: .8rem; font-weight: 600; }
     html .qb-auth-field { position: relative; }
@@ -296,11 +276,6 @@
         font-size: 1.05rem;
     }
     html #auth-screen .qb-auth-eye:hover { transform: translateY(-50%); color: var(--qb-text); background: var(--qb-surface-3); }
-    html .qb-auth-options { display: flex; align-items: center; justify-content: space-between; color: var(--qb-muted); font-size: .8rem; }
-    html .qb-auth-options label { display: inline-flex; align-items: center; gap: .5rem; cursor: pointer; }
-    html .qb-auth-options input { accent-color: var(--qb-primary); width: 1rem; height: 1rem; }
-    html .qb-auth-options a { color: var(--qb-primary-ink); font-weight: 600; text-decoration: none; }
-    html .qb-auth-options a:hover { text-decoration: underline; }
     html .qb-auth-submit {
         display: flex;
         align-items: center;
@@ -439,13 +414,6 @@
     html #main-app .nav-item:hover { background: var(--qb-side-hover); color: #fff; }
     html #main-app .nav-item:focus-visible { outline: 2px solid #fcd34d; outline-offset: 1px; }
     html #main-app .nav-item:disabled { opacity: .45; cursor: not-allowed; }
-    html #main-app .nav-item > span[id^="badge-"] {
-        background: rgba(255, 255, 255, .1);
-        border: 1px solid rgba(255, 255, 255, .1);
-        color: #e3ecfa;
-        padding: .05rem .45rem;
-    }
-    html #main-app .nav-item > #badge-active-flights { background: rgba(34, 211, 238, .18); border-color: rgba(34, 211, 238, .35); color: #a5f3fc; }
 
     /* Élément actif : pastille blanche */
     html #main-app .nav-item.bg-amber-400 {
@@ -455,7 +423,6 @@
         box-shadow: 0 6px 16px -8px rgba(0, 0, 0, .45);
     }
     html #main-app .nav-item.bg-amber-400 > i { color: var(--qb-primary); }
-    html #main-app .nav-item.bg-amber-400 > span[id^="badge-"] { background: var(--qb-primary-soft); border-color: var(--qb-primary-line); color: var(--qb-primary-ink); }
 
     /* Pied (profil) */
     html #main-app > aside > div:last-child {

@@ -94,7 +94,7 @@
         if (remaining > 0) lockedForms.set(id, remaining);
         else lockedForms.delete(id);
     }
-    const nativeViewIds = ['stocks', 'salama', 'products', 'csb', 'ports', 'planning', 'archives', 'stock-analysis', 'drones', 'history', 'sorties', 'inventory', 'quarantine', 'stock-history', 'logistics-report', 'transfers'];
+    const nativeViewIds = ['stocks', 'salama', 'products', 'csb', 'ports', 'planning', 'archives', 'stock-analysis', 'drones', 'history', 'sorties', 'inventory', 'quarantine', 'stock-history', 'logistics-report', 'transfers', 'national'];
     const portSelect = $('drone-port-select');
     const login = $('main-login');
     const notice = $('postgres-dashboard-notice');
@@ -148,7 +148,8 @@
         'stock-history': { title: 'Historique global des stocks' },
         'logistics-report': { title: 'Rapport logistique' },
         'stock-analysis': { title: 'Analyse des stocks et de la CMM des CSB' },
-        transfers: { title: 'Transferts et expéditions terrestres' }
+        transfers: { title: 'Transferts et expéditions terrestres' },
+        national: { title: 'Vue nationale' }
     };
 
     function setText(id, value) { $(id).textContent = value; }
@@ -230,6 +231,10 @@
         $('auth-screen').classList.remove('postgres-hidden');
         portSelect.replaceChildren();
         clearDashboard();
+        clearNationalView();
+        clearPerformanceIndicators();
+        closeAlerts();
+        $('nav-national').classList.add('postgres-hidden');
         $('postgres-read-content').replaceChildren();
         $('postgres-read-status').textContent = '';
         for (const id of nativeViewIds) $(`view-${id}`).classList.add('hidden');
@@ -566,6 +571,8 @@
             $('product-name').value = product?.name || '';
             $('product-unit').value = product?.unit || '';
             $('product-min-threshold').value = product?.min_threshold ?? 0;
+            $('product-gtin').value = product?.gtin || '';
+            $('product-gtin').dataset.original = product?.gtin || '';
             if (product) $('product-category').value = product.category_id;
             setFormTitle('product-modal-title', product ? 'ph-pencil' : 'ph-dna', 'text-teal-600',
                 product ? "Modifier l'intrant médical" : 'Référencer un intrant médical');
@@ -598,23 +605,37 @@
             $('postgres-product-form-status').textContent = 'Indiquez un nom, une catégorie, un conditionnement et un seuil entier valide.';
             return;
         }
+        const gtin = $('product-gtin').value.replace(/\s/g, '');
+        if (gtin && !/^\d{8}$|^\d{12,14}$/.test(gtin)) {
+            $('postgres-product-form-status').textContent = 'Le code GTIN / EAN doit contenir 8, 12, 13 ou 14 chiffres.';
+            return;
+        }
+        const gtinChanged = gtin.padStart(gtin ? 14 : 0, '0') !== ($('product-gtin').dataset.original || '');
         const requestGeneration = sessionGeneration;
         productSaving = true;
         markFormLocked('form-product');
         for (const control of $('form-product').querySelectorAll('input, select, button')) control.disabled = true;
         $('product-close').disabled = true;
         try {
-            await api('/rest/v1/rpc/qbox_save_product', {
+            const savedId = await api('/rest/v1/rpc/qbox_save_product', {
                 product_id: productEditing, product_name: name, product_category: category,
                 product_unit: unit, product_threshold: threshold
             }, true);
             if (sessionGeneration !== requestGeneration) return;
+            // Le GTIN s'enregistre à part ; un refus (doublon, clé invalide) n'annule pas l'intrant enregistré.
+            let gtinError = '';
+            if (gtinChanged) {
+                try {
+                    await api('/rest/v1/rpc/qbox_set_product_gtin', { product_id: savedId || productEditing, product_gtin: gtin || null }, true);
+                } catch (error) { gtinError = error.message; }
+                if (sessionGeneration !== requestGeneration) return;
+            }
             productSaving = false;
             closeProduct();
             if (frameConnected) sendFrame({ type: 'qbox-catalog-changed' });
             await refreshCatalog();
             if (sessionGeneration !== requestGeneration) return;
-            $('postgres-products-status').textContent += ' Intrant enregistré.';
+            $('postgres-products-status').textContent += gtinError ? ` Intrant enregistré, mais code GTIN refusé : ${gtinError}` : ' Intrant enregistré.';
         } catch (error) {
             if (sessionGeneration === requestGeneration) $('postgres-product-form-status').textContent = `${error.message} Après une interruption, actualisez le catalogue avant de recommencer.`;
         } finally {
@@ -1070,7 +1091,8 @@
                 $('transfer-destination').add(new Option(`${site.name} · ${site.region}`, site.id));
             if (isStorage()) $('transfer-destination').add(new Option('Destinataire externe', 'external'));
             transferDestinationChanged();
-            addTransferItem();
+            const suggestionMessage = applyTransferSuggestion(port);
+            if (!suggestionMessage) addTransferItem();
             for (const transfer of transfers) $('transfer-list').append(renderTransferCard(transfer, port));
             if (!transfers.length) {
                 const empty = document.createElement('p');
@@ -1079,7 +1101,7 @@
                 $('transfer-list').append(empty);
             }
             $('transfer-form').classList.toggle('postgres-hidden', !hasRole(['admin', 'logistics']));
-            $('transfer-status').textContent = `${transfers.length} opération(s). Les transferts sont enregistrés comme reçus immédiatement.`;
+            $('transfer-status').textContent = suggestionMessage || `${transfers.length} opération(s). Les transferts sont enregistrés comme reçus immédiatement.`;
             return true;
         } catch (error) {
             if (sequence === requestSequence && sessionGeneration === requestGeneration && activeView === 'transfers' && port === portSelect.value) {
@@ -3095,6 +3117,7 @@
     }
 
     async function refreshLogisticsReport() {
+            refreshPerformanceIndicators();
             const port = portSelect.value;
             const year = Number($('logistics-report-year').value);
             const requestGeneration = sessionGeneration;
@@ -3106,6 +3129,7 @@
             $('logistics-report-print-context').textContent = '';
             $('logistics-report-print-header').replaceChildren();
             container.replaceChildren();
+            clearLogisticsSummary();
             if (!port) {
                 reportStatus.textContent = 'Sélectionnez un magasin pour afficher le rapport.';
                 return;
@@ -3124,7 +3148,9 @@
                     if (month.month !== index + 1 || !Array.isArray(month.items))
                         throw new Error('Données mensuelles invalides.');
                     const section = document.createElement('section');
-                    section.className = 'logistics-month';
+                    const monthStatus = logisticsMonthStatus(month.items);
+                    section.className = `logistics-month lr-month-${monthStatus}`;
+                    section.id = `logistics-month-${month.month}`;
                     const title = document.createElement('h4');
                     title.textContent = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
                         .format(new Date(Date.UTC(year, month.month - 1, 1)));
@@ -3167,13 +3193,13 @@
                         total.textContent = `Total : ${formatQuantity(item.outgoing)}`;
                         const breakdown = document.createElement('small');
                         breakdown.textContent = `Vol : ${formatQuantity(item.flight_outgoing)} · Terrestre : ${formatQuantity(item.terrestrial_outgoing)} · Transfert : ${formatQuantity(item.transfer_outgoing)} · Autres : ${formatQuantity(item.other_outgoing)}`;
-                        outgoingDetails.append(total, breakdown);
+                        outgoingDetails.append(total, logisticsOutgoingBar(item), breakdown);
                         outgoing.append(outgoingDetails);
                         const closing = document.createElement('td');
                         closing.textContent = formatQuantity(item.closing_stock);
                         if (item.reconciliation_status === 'unreconciled' || item.reconciliation_status === 'unknown') {
                             const reconciliation = document.createElement('span');
-                            reconciliation.className = 'logistics-inventory-date';
+                            reconciliation.className = `logistics-inventory-date lr-flag lr-flag-${item.reconciliation_status}`;
                             reconciliation.textContent = item.reconciliation_status === 'unreconciled'
                                 ? 'Mouvements non réconciliés' : 'Réconciliation indisponible';
                             closing.append(reconciliation);
@@ -3193,9 +3219,10 @@
                     }
                     table.append(head, body);
                     wrapper.append(table);
-                    section.append(title, wrapper);
+                    section.append(title, logisticsMonthMeta(month.items, monthStatus), wrapper);
                     container.append(section);
                 }
+                renderLogisticsSummary(result.months, year);
                 reportStatus.textContent = Array.isArray(result.warnings) && result.warnings.length
                     ? result.warnings.join(' ') : 'Rapport actualisé.';
                 const warehouse = warehouseRows.find(row => row.id === port);
@@ -3209,6 +3236,7 @@
                 if (sequence !== logisticsReportSequence || activeView !== 'logistics-report' ||
                     port !== portSelect.value || year !== Number($('logistics-report-year').value) || requestGeneration !== sessionGeneration) return;
                 container.replaceChildren();
+                clearLogisticsSummary();
                 reportStatus.textContent = `Rapport indisponible : ${error.message}`;
             }
     }
@@ -3492,6 +3520,238 @@
         }
     }
 
+    // ---------- Indicateurs de performance (Rapport logistique) ----------
+    let indicatorsSequence = 0;
+    const MONTH_NAMES = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+
+    function clearPerformanceIndicators() {
+        indicatorsSequence++;
+        $('indicators-body').replaceChildren();
+        $('indicators-status').textContent = '';
+        $('indicators-export').disabled = true;
+    }
+
+    // Moyenne des délais pondérée par le nombre de livraisons de chaque mois.
+    function weightedDays(months, countKey, daysKey) {
+        let count = 0, total = 0;
+        for (const month of months) {
+            if (month[daysKey] === null || month[daysKey] === undefined || !month[countKey]) continue;
+            count += month[countKey];
+            total += Number(month[daysKey]) * month[countKey];
+        }
+        return count ? total / count : null;
+    }
+
+    function indicatorRow(label, values, strong = false) {
+        const row = document.createElement('tr');
+        row.className = strong ? 'bg-slate-50 font-bold' : 'hover:bg-slate-50';
+        for (const [index, value] of [label, ...values].entries()) {
+            const cell = document.createElement('td');
+            cell.className = `py-2 px-3 ${index ? 'font-mono text-right' : 'text-slate-900'}`;
+            cell.textContent = value;
+            row.append(cell);
+        }
+        return row;
+    }
+
+    async function refreshPerformanceIndicators() {
+        clearPerformanceIndicators();
+        const port = portSelect.value, year = Number($('logistics-report-year').value);
+        const sequence = indicatorsSequence, requestGeneration = sessionGeneration;
+        if (!port) return;
+        $('indicators-status').textContent = 'Chargement des indicateurs…';
+        try {
+            const result = await api('/rest/v1/rpc/qbox_performance_indicators', { selected_port: port, selected_year: year }, true);
+            if (sequence !== indicatorsSequence || activeView !== 'logistics-report' || port !== portSelect.value ||
+                year !== Number($('logistics-report-year').value) || requestGeneration !== sessionGeneration) return;
+            const months = result?.months;
+            if (!Array.isArray(months) || months.length !== 12) throw new Error('Données des indicateurs invalides.');
+            const days = value => value === null || value === undefined ? '—' : decimal(Number(value));
+            const body = $('indicators-body');
+            for (const month of months) {
+                body.append(indicatorRow(MONTH_NAMES[month.month - 1], [
+                    String(month.flights_closed), days(month.flight_avg_days),
+                    String(month.shipments_closed), days(month.shipment_avg_days),
+                    String(month.plannings_ended), month.satisfaction_pct === null ? '—' : `${decimal(Number(month.satisfaction_pct))} %`,
+                    String(month.stockout_products),
+                    `${number(month.quarantined)} (${number(month.quarantined_expired)})`
+                ]));
+            }
+            // Ligne annuelle : sommes, délais pondérés, satisfaction = livré ÷ planifié sur l'année.
+            const sum = key => months.reduce((total, month) => total + BigInt(month[key]), 0n);
+            const planned = sum('planned'), delivered = sum('delivered');
+            const flightDays = weightedDays(months, 'flights_closed', 'flight_avg_days');
+            const shipmentDays = weightedDays(months, 'shipments_closed', 'shipment_avg_days');
+            body.append(indicatorRow(`Année ${year}`, [
+                String(months.reduce((total, month) => total + month.flights_closed, 0)), flightDays === null ? '—' : decimal(flightDays),
+                String(months.reduce((total, month) => total + month.shipments_closed, 0)), shipmentDays === null ? '—' : decimal(shipmentDays),
+                String(months.reduce((total, month) => total + month.plannings_ended, 0)),
+                planned > 0n ? `${decimal(Number(delivered * 1000n / planned) / 10)} %` : '—',
+                String(months.reduce((total, month) => total + month.stockout_products, 0)),
+                `${number(sum('quarantined'))} (${number(sum('quarantined_expired'))})`
+            ], true));
+            $('indicators-export').disabled = false;
+            $('indicators-status').textContent = '';
+        } catch (error) {
+            if (sequence === indicatorsSequence && requestGeneration === sessionGeneration)
+                $('indicators-status').textContent = `Indicateurs indisponibles : ${error.message}`;
+        }
+    }
+
+    function exportPerformanceIndicators() {
+        const site = portSelect.selectedOptions[0]?.textContent || '';
+        downloadTableCsv($('indicators-body').closest('table'), tableCsvFileName(`indicateurs-${$('logistics-report-year').value}`, site));
+    }
+
+    // ---------- Rapport logistique : éléments d'écran (style : logistics-report.css) ----------
+    // Synthèse de l'année, graphique entrées / sorties, navigation par mois, en-têtes de mois et
+    // répartition des sorties. Tous marqués « no-print » : l'impression du rapport reste inchangée.
+    const LR_MONTHS = ['Janv.', 'Févr.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'];
+    const LR_STATUS = {
+        ok: ['Réconcilié', 'ph-check-circle'], warn: ['Écarts à vérifier', 'ph-warning'],
+        unknown: ['Réconciliation indisponible', 'ph-question'], future: ['Mois à venir', 'ph-hourglass-medium'],
+        empty: ['Aucun intrant', 'ph-minus-circle']
+    };
+
+    function lrElement(tag, className = '', text = '') {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text) element.textContent = text;
+        return element;
+    }
+
+    function lrIcon(name) {
+        const icon = lrElement('i', `ph ${name}`);
+        icon.setAttribute('aria-hidden', 'true');
+        return icon;
+    }
+
+    const lrBig = value => { try { return value == null ? 0n : BigInt(value); } catch { return 0n; } };
+    const lrSum = (items, key) => items.reduce((total, item) => total + lrBig(item[key]), 0n);
+
+    function logisticsMonthStatus(items) {
+        if (!items.length) return 'empty';
+        if (items.every(item => item.flows_status === 'future')) return 'future';
+        if (items.some(item => item.reconciliation_status === 'unreconciled')) return 'warn';
+        if (items.some(item => item.reconciliation_status === 'unknown')) return 'unknown';
+        return 'ok';
+    }
+
+    // Pastilles du mois : entrées, sorties, inventaire et statut de réconciliation.
+    function logisticsMonthMeta(items, status) {
+        const meta = lrElement('div', 'lr-month-meta no-print');
+        if (status !== 'future' && items.length) {
+            meta.append(lrElement('span', 'lr-chip lr-chip-in', `↓ Entrées ${number(lrSum(items, 'incoming'))}`),
+                lrElement('span', 'lr-chip lr-chip-out', `↑ Sorties ${number(lrSum(items, 'outgoing'))}`));
+            if (items.some(item => item.inventory_status === 'counted'))
+                meta.append(lrElement('span', 'lr-chip lr-chip-inventory', 'Inventaire de fin de mois'));
+        }
+        const [label, icon] = LR_STATUS[status];
+        const pill = lrElement('span', `lr-status lr-status-${status}`);
+        pill.append(lrIcon(icon), lrElement('span', '', label));
+        meta.append(pill);
+        return meta;
+    }
+
+    // Barre de répartition des sorties (vol, terrestre, transfert, autres).
+    function logisticsOutgoingBar(item) {
+        const bar = lrElement('span', 'lr-split no-print');
+        const total = lrBig(item.outgoing);
+        if (total <= 0n) return bar;
+        bar.setAttribute('role', 'img');
+        const parts = [['flight', item.flight_outgoing, 'Vol'], ['road', item.terrestrial_outgoing, 'Terrestre'],
+            ['transfer', item.transfer_outgoing, 'Transfert'], ['other', item.other_outgoing, 'Autres']]
+            .filter(([, value]) => lrBig(value) > 0n);
+        bar.setAttribute('aria-label', parts.map(([, value, label]) => `${label} ${number(lrBig(value))}`).join(', '));
+        for (const [kind, value, label] of parts) {
+            const segment = lrElement('i', `lr-split-${kind}`);
+            segment.style.flexGrow = String(Number(lrBig(value) * 1000n / total));
+            segment.title = `${label} : ${number(lrBig(value))}`;
+            bar.append(segment);
+        }
+        return bar;
+    }
+
+    function clearLogisticsSummary() {
+        for (const id of ['logistics-report-summary', 'logistics-report-nav']) $(id).replaceChildren();
+    }
+
+    function scrollToLogisticsMonth(month) {
+        $(`logistics-month-${month}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    }
+
+    function renderLogisticsSummary(months, year) {
+        clearLogisticsSummary();
+        const all = months.flatMap(month => month.items);
+        const recorded = months.filter(month => month.items.length && logisticsMonthStatus(month.items) !== 'future');
+        const balanced = recorded.filter(month => logisticsMonthStatus(month.items) === 'ok').length;
+        const inventories = recorded.filter(month => month.items.some(item => item.inventory_status === 'counted')).length;
+        const products = new Set(all.map(item => item.product_id)).size;
+        const incoming = lrSum(all, 'incoming'), outgoing = lrSum(all, 'outgoing');
+
+        // Indicateurs de l'année.
+        const summary = $('logistics-report-summary');
+        const kpis = lrElement('div', 'lr-kpis');
+        for (const [label, icon, value, hint, tone] of [
+            ['Entrées de l’année', 'ph-arrow-circle-down', number(incoming), `Réceptions ${number(lrSum(all, 'receipt_incoming'))} · transferts ${number(lrSum(all, 'transfer_incoming'))}`, 'in'],
+            ['Sorties de l’année', 'ph-arrow-circle-up', number(outgoing), `Vols ${number(lrSum(all, 'flight_outgoing'))} · terrestre ${number(lrSum(all, 'terrestrial_outgoing'))} · transferts ${number(lrSum(all, 'transfer_outgoing'))}`, 'out'],
+            ['Mois réconciliés', 'ph-scales', `${balanced} / ${recorded.length}`, recorded.length && balanced < recorded.length ? 'Des écarts restent à vérifier' : 'Soldes cohérents avec les mouvements', balanced < recorded.length ? 'warn' : 'ok'],
+            ['Inventaires de fin de mois', 'ph-clipboard-text', `${inventories} / ${recorded.length}`, `${products} intrant(s) suivi(s) en ${year}`, inventories < recorded.length ? 'warn' : 'ok']
+        ]) {
+            const tile = lrElement('div', `lr-kpi lr-kpi-${tone}`);
+            const head = lrElement('span', 'lr-kpi-label');
+            head.append(lrIcon(icon), lrElement('span', '', label));
+            tile.append(head, lrElement('strong', 'lr-kpi-value', value), lrElement('span', 'lr-kpi-hint', hint));
+            kpis.append(tile);
+        }
+
+        // Graphique : entrées et sorties par mois (cliquer pour aller au mois).
+        const chart = lrElement('div', 'lr-chart');
+        const chartHead = lrElement('div', 'lr-chart-head');
+        chartHead.append(lrElement('strong', '', `Flux mensuels ${year}`));
+        const legend = lrElement('span', 'lr-chart-legend');
+        legend.append(lrElement('i', 'lr-dot lr-dot-in'), lrElement('span', '', 'Entrées'), lrElement('i', 'lr-dot lr-dot-out'), lrElement('span', '', 'Sorties'));
+        chartHead.append(legend);
+        const bars = lrElement('div', 'lr-bars');
+        const totals = months.map(month => ({ month: month.month, incoming: lrSum(month.items, 'incoming'), outgoing: lrSum(month.items, 'outgoing'),
+            status: logisticsMonthStatus(month.items) }));
+        const max = totals.reduce((top, month) => [month.incoming, month.outgoing, top].reduce((a, b) => a > b ? a : b), 1n);
+        for (const month of totals) {
+            const column = lrElement('button', `lr-bar-col lr-col-${month.status}`);
+            column.type = 'button';
+            column.title = `${LR_MONTHS[month.month - 1]} : entrées ${number(month.incoming)}, sorties ${number(month.outgoing)}`;
+            column.setAttribute('aria-label', column.title);
+            const pair = lrElement('span', 'lr-bar-pair');
+            for (const [kind, value] of [['in', month.incoming], ['out', month.outgoing]]) {
+                const bar = lrElement('i', `lr-bar lr-bar-${kind}`);
+                bar.style.height = `${value > 0n ? Math.max(3, Number(value * 1000n / max) / 10) : 0}%`;
+                pair.append(bar);
+            }
+            column.append(pair, lrElement('span', 'lr-bar-label', LR_MONTHS[month.month - 1]));
+            column.addEventListener('click', () => scrollToLogisticsMonth(month.month));
+            bars.append(column);
+        }
+        chart.append(chartHead, bars);
+        summary.append(kpis, chart);
+
+        // Navigation par mois (pastille colorée selon le statut).
+        const nav = $('logistics-report-nav');
+        for (const month of totals) {
+            const chip = lrElement('button', `lr-nav-chip lr-col-${month.status}`);
+            chip.type = 'button';
+            chip.append(lrElement('i', 'lr-nav-dot'), lrElement('span', '', LR_MONTHS[month.month - 1]));
+            chip.title = LR_STATUS[month.status][0];
+            chip.addEventListener('click', () => scrollToLogisticsMonth(month.month));
+            nav.append(chip);
+        }
+        // Légende des barres de sorties des tableaux.
+        const splitLegend = lrElement('span', 'lr-split-legend');
+        splitLegend.append(lrElement('span', '', 'Sorties :'));
+        for (const [kind, label] of [['flight', 'Vol'], ['road', 'Terrestre'], ['transfer', 'Transfert'], ['other', 'Autres']])
+            splitLegend.append(lrElement('i', `lr-split-${kind}`), lrElement('span', '', label));
+        nav.append(splitLegend);
+    }
+
     async function refreshInventories() {
         const port = portSelect.value, sequence = ++requestSequence, requestGeneration = sessionGeneration;
         const list = $('inventory-history');
@@ -3605,7 +3865,7 @@
             const snapshot = await api('/rest/v1/rpc/qbox_inventory_snapshot', {selected_port:port}, true);
             if (sequence !== requestSequence || activeView !== 'inventory' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
             if (!snapshot.items.length) throw new Error('Aucun lot à inventorier.');
-            inventoryDraft = {port, revision:snapshot.revision, id:crypto.randomUUID()};
+            inventoryDraft = {port, revision:snapshot.revision, id:crypto.randomUUID(), items:snapshot.items, inputs:new Map(), products:null};
             $('inventory-observations').value = '';
             const rows = $('inventory-count-rows');
             rows.replaceChildren();
@@ -3625,6 +3885,7 @@
                 input.step = '1';
                 input.required = true;
                 input.dataset.stockId = item.stock_id;
+                inventoryDraft.inputs.set(item.stock_id, input);
                 input.className = 'postgres-inventory-count w-full border rounded-lg p-2';
                 const difference = document.createElement('td');
                 difference.className = 'p-2 text-right';
@@ -5142,6 +5403,99 @@
     const number = value => BigInt(value).toLocaleString('fr-FR');
     const items = rows => rows.map(item => `${item.name} · lot ${item.lot} : ${number(item.quantity)} ${item.unit}`);
 
+    // ---------- Lecture de codes-barres (barcode-scanner.js) ----------
+    function scannerAvailable(statusId) {
+        if (typeof QBoxScanner !== 'undefined') return true;
+        $(statusId).textContent = 'Lecteur de codes-barres indisponible : actualisez la page.';
+        return false;
+    }
+
+    function unknownCodeMessage(parsed) {
+        if (!parsed) return 'Aucun code lu.';
+        if (!parsed.gtin) return `Code lu « ${parsed.raw} » : ce n’est pas un code produit (GS1 ou EAN).`;
+        return `Code ${parsed.gtin} inconnu : renseignez ce GTIN dans la fiche de l’intrant (référentiel des intrants).`;
+    }
+
+    // Fiche intrant : remplit le GTIN.
+    function scanProductGtin() {
+        if (!scannerAvailable('postgres-product-form-status')) return;
+        QBoxScanner.open({ title: 'Scanner le code de la boîte', onResult: parsed => {
+            if (!productOpen) return;
+            if (!parsed?.gtin) {
+                $('postgres-product-form-status').textContent = unknownCodeMessage(parsed);
+                return;
+            }
+            $('product-gtin').value = parsed.gtin;
+            $('postgres-product-form-status').textContent = `Code ${parsed.gtin} lu.`;
+        } });
+    }
+
+    // Réception : remplit intrant, lot et péremption sur la première ligne vide (ou une nouvelle ligne).
+    function applyReceiptScan(parsed) {
+        const status = $('postgres-salama-form-status');
+        const product = parsed?.gtin ? receiptProducts.find(item => item.gtin === parsed.gtin) : null;
+        if (!product) {
+            status.textContent = unknownCodeMessage(parsed);
+            return;
+        }
+        const entry = receiptRows.find(row => receiptRowBlank(row)) || addReceiptRow(receiptProducts, {focus: false});
+        entry.product.value = product.id;
+        if (parsed.lot) entry.lot.value = parsed.lot;
+        if (parsed.expiry) entry.expiry.value = parsed.expiry;
+        updateReceiptSummary();
+        entry.row.scrollIntoView?.({block: 'nearest', behavior: 'smooth'});
+        (parsed.lot && parsed.expiry ? entry.quantity : parsed.lot ? entry.expiry : entry.lot).focus?.();
+        const missing = [!parsed.lot && 'n° de lot', !parsed.expiry && 'péremption'].filter(Boolean);
+        status.textContent = `${product.name} ajouté${missing.length ? ` : complétez ${missing.join(' et ')}` : ''}, puis la quantité.`;
+    }
+
+    function scanReceipt() {
+        if (!receiptId || receiptSaving || !scannerAvailable('postgres-salama-form-status')) return;
+        const id = receiptId;
+        QBoxScanner.open({ title: 'Scanner un intrant reçu', onResult: parsed => { if (receiptId === id) applyReceiptScan(parsed); } });
+    }
+
+    // Inventaire : retrouve la ligne du lot scanné et place le curseur sur sa quantité comptée.
+    async function applyInventoryScan(parsed) {
+        const draft = inventoryDraft, status = $('postgres-inventory-status');
+        if (!draft) return;
+        if (!parsed?.gtin) {
+            status.textContent = unknownCodeMessage(parsed);
+            return;
+        }
+        try {
+            draft.products ||= await api('/rest/v1/rpc/qbox_list_products', {}, true);
+        } catch (error) {
+            status.textContent = `Référentiel indisponible : ${error.message}`;
+            return;
+        }
+        if (inventoryDraft !== draft) return;
+        const product = draft.products.find(item => item.gtin === parsed.gtin);
+        if (!product) {
+            status.textContent = unknownCodeMessage(parsed);
+            return;
+        }
+        const sameLot = value => String(value).trim().toLowerCase() === String(parsed.lot || '').trim().toLowerCase();
+        const lots = draft.items.filter(item => item.product_name === product.name);
+        const matches = parsed.lot ? lots.filter(item => sameLot(item.lot)) : lots;
+        if (matches.length !== 1) {
+            status.textContent = !lots.length ? `${product.name} : aucun lot de cet intrant dans l’inventaire.`
+                : parsed.lot && !matches.length ? `${product.name} lot ${parsed.lot} : lot absent de l’inventaire (lots attendus : ${lots.map(item => item.lot).join(', ')}).`
+                    : `${product.name} : ${lots.length} lots possibles, saisissez la quantité sur la bonne ligne (le code ne contient pas de n° de lot).`;
+            return;
+        }
+        const input = draft.inputs.get(matches[0].stock_id);
+        input.scrollIntoView?.({block: 'center', behavior: 'smooth'});
+        input.focus?.();
+        input.select?.();
+        status.textContent = `${product.name} · lot ${matches[0].lot} : saisissez la quantité comptée.`;
+    }
+
+    function scanInventory() {
+        if (!inventoryDraft || inventorySaving || !scannerAvailable('postgres-inventory-status')) return;
+        QBoxScanner.open({ title: 'Scanner un lot inventorié', onResult: parsed => applyInventoryScan(parsed) });
+    }
+
     function renderDashboardExpirations(data) {
         const container = $('dash-expirations-list');
         container.replaceChildren();
@@ -5335,7 +5689,7 @@
 
     // Synthèse péremption (tous les lots, pas seulement les 4 affichés) et alertes de seuil minimum,
     // calculées à partir des lots déjà chargés pour le graphique des stocks.
-    function renderDashboardStockAlerts(stocks) {
+    function renderDashboardStockAlerts(stocks, consumption = null) {
         const today = madagascarDate(), limit = madagascarDate(3);
         const dated = stocks.filter(stock => stock.expiry_date && BigInt(stock.quantity) > 0n);
         const expired = dated.filter(stock => stock.expiry_date < today);
@@ -5362,25 +5716,26 @@
 
         const totals = new Map();
         for (const stock of stocks) {
-            const total = totals.get(stock.product_id) || { name:stock.name, unit:stock.unit, threshold:BigInt(stock.min_threshold), available:0n };
+            const total = totals.get(stock.product_id) || { id:stock.product_id, name:stock.name, unit:stock.unit, threshold:BigInt(stock.min_threshold), available:0n };
             total.available += BigInt(stock.quantity) - BigInt(stock.reserved);
             totals.set(stock.product_id, total);
         }
         const products = [...totals.values()];
-        const low = products.filter(product => product.threshold > 0n && product.available < product.threshold)
-            // Les plus critiques d'abord : disponible / seuil croissant.
-            .sort((a, b) => {
-                const difference = a.available * b.threshold - b.available * a.threshold;
-                return difference < 0n ? -1 : difference > 0n ? 1 : a.name.localeCompare(b.name, 'fr');
-            });
+        for (const product of products) Object.assign(product, stockCoverage(product.available, consumption?.get(product.id)));
+        // À réapprovisionner : sous le seuil minimum, ou moins d'un mois de consommation disponible.
+        const low = products.filter(product => (product.threshold > 0n && product.available < product.threshold) ||
+                (product.cmm > 0 && product.months < 1))
+            // Les plus critiques d'abord : plus petit rapport disponible / seuil ou mois de stock.
+            .sort((a, b) => urgency(a) - urgency(b) || a.name.localeCompare(b.name, 'fr'));
         const withoutThreshold = products.filter(product => product.threshold <= 0n).length;
         const list = $('dash-low-stock-list');
         list.replaceChildren();
         $('dash-low-stock-count').hidden = !low.length;
         $('dash-low-stock-count').textContent = String(low.length);
-        if (!low.length) addLine(list, products.length ? 'Aucun intrant sous son seuil minimum.' : 'Aucun intrant en stock pour ce port.');
+        if (!low.length) addLine(list, products.length ? 'Aucun intrant à réapprovisionner.' : 'Aucun intrant en stock pour ce port.');
         for (const product of low) {
             const empty = product.available <= 0n;
+            const underThreshold = product.threshold > 0n && product.available < product.threshold;
             const row = document.createElement('div');
             row.className = 'p-3 flex items-center justify-between gap-3';
             const info = document.createElement('div');
@@ -5391,21 +5746,60 @@
             name.title = product.name;
             const detail = document.createElement('div');
             detail.className = 'text-[11px] text-slate-500 font-mono';
-            detail.textContent = `Disponible : ${number(product.available)} ${product.unit} · Seuil : ${number(product.threshold)}`;
+            detail.textContent = `Disponible : ${number(product.available)} ${product.unit} · Seuil : ${number(product.threshold)}${coverageText(product, consumption)}`;
             info.append(name, detail);
+            const order = suggestedOrder(product);
+            if (order > 0n) {
+                const suggestion = document.createElement('div');
+                suggestion.className = 'text-[11px] font-semibold text-slate-700';
+                suggestion.textContent = `À commander : ${number(order)} ${product.unit}${product.cmm > 0 ? ` (objectif ${PLANNING_CMM_MONTHS} mois de consommation)` : ' (retour au seuil)'}`;
+                info.append(suggestion);
+            }
             const badge = document.createElement('span');
             badge.className = `shrink-0 px-2.5 py-1 rounded border font-mono font-bold text-[11px] ${empty ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`;
-            badge.textContent = empty ? 'Rupture' : `Manque ${number(product.threshold - product.available)}`;
-            badge.title = 'Quantité à réapprovisionner pour revenir au seuil minimum';
+            badge.textContent = empty ? 'Rupture' : underThreshold ? `Manque ${number(product.threshold - product.available)}` : '< 1 mois';
+            badge.title = underThreshold ? 'Quantité manquante pour revenir au seuil minimum' : 'Moins d’un mois de consommation disponible';
             row.append(info, badge);
             list.append(row);
         }
         if (withoutThreshold) {
             const note = document.createElement('p');
             note.className = 'px-3 py-2 text-[10px] text-slate-500';
-            note.textContent = `${withoutThreshold} intrant(s) sans seuil défini, non surveillé(s) : renseignez le seuil dans le référentiel des intrants.`;
+            note.textContent = `${withoutThreshold} intrant(s) sans seuil défini : renseignez le seuil dans le référentiel des intrants.`;
             list.append(note);
         }
+    }
+
+    // Couverture d'un stock disponible (BigInt) par la consommation mensuelle moyenne (texte SQL, null si inconnue).
+    function stockCoverage(available, cmmText) {
+        const cmm = cmmText === null || cmmText === undefined ? null : Number(cmmText);
+        return { cmm, months: cmm > 0 ? Number(available) / cmm : null };
+    }
+
+    function decimal(value) {
+        return value.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+    }
+
+    function coverageText(product, consumption) {
+        if (!consumption) return '';
+        if (product.cmm === null) return ' · CMM : historique insuffisant';
+        if (product.cmm === 0) return ' · CMM : 0 (aucune sortie sur 3 mois)';
+        return ` · CMM : ${decimal(product.cmm)} · ${decimal(Math.max(product.months, 0))} mois`;
+    }
+
+    // Quantité suggérée : revenir au seuil, ou à l'objectif de mois de consommation s'il est plus élevé.
+    function suggestedOrder(product) {
+        const toThreshold = product.threshold - product.available;
+        const toTarget = product.cmm > 0 ? BigInt(Math.ceil(product.cmm * PLANNING_CMM_MONTHS)) - product.available : 0n;
+        const order = toThreshold > toTarget ? toThreshold : toTarget;
+        return order > 0n ? order : 0n;
+    }
+
+    function urgency(product) {
+        const ratios = [];
+        if (product.threshold > 0n) ratios.push(Number(product.available) / Number(product.threshold));
+        if (product.cmm > 0) ratios.push(product.months);
+        return ratios.length ? Math.min(...ratios) : Infinity;
     }
 
     // Boutons « Exporter CSV » : exportent le tableau tel qu'il est affiché (recherche comprise).
@@ -5445,8 +5839,8 @@
         }
     }
 
-    function renderDashboardStockChart(stocks) {
-        renderDashboardStockAlerts(stocks);
+    function renderDashboardStockChart(stocks, consumption = null) {
+        renderDashboardStockAlerts(stocks, consumption);
         const message = $('stock-chart-message');
         const canvas = $('stockBarChart');
         const details = $('stock-chart-details-body');
@@ -5574,7 +5968,14 @@
             try {
                 const stocks = await api('/rest/v1/rpc/qbox_dashboard_stock_chart_exact', {selected_port:port}, true);
                 if (seq !== requestSequence || activeView !== 'dashboard' || port !== portSelect.value || sessionGeneration !== requestGeneration || !token) return;
-                renderDashboardStockChart(stocks);
+                // CMM facultative : sans elle, les alertes restent fondées sur le seuil minimum.
+                let consumption = null;
+                try {
+                    const rows = await api('/rest/v1/rpc/qbox_site_consumption', {selected_port:port}, true);
+                    consumption = new Map(rows.map(row => [row.product_id, row.cmm]));
+                } catch { /* consommation indisponible */ }
+                if (seq !== requestSequence || activeView !== 'dashboard' || port !== portSelect.value || sessionGeneration !== requestGeneration || !token) return;
+                renderDashboardStockChart(stocks, consumption);
             } catch (error) {
                 if (seq !== requestSequence || activeView !== 'dashboard' || port !== portSelect.value || sessionGeneration !== requestGeneration || !token) return;
                 $('stock-chart-scroll').classList.add('hidden');
@@ -5655,6 +6056,412 @@
                 $('postgres-dashboard-status').textContent = `Impression impossible : ${error.message}`;
             }
         } finally { if (sessionGeneration === requestGeneration) $('dashboard-report-print').disabled = false; }
+    }
+
+    // ---------- Vue nationale (admin, logistique, UNFPA) — style : national-view.css ----------
+    // Bandeau de supervision (santé du réseau, indicateurs), cartes de site, carte de chaleur
+    // intrants × sites (mois de stock) et rééquilibrage suggéré entre magasin et drone ports.
+    let nationalSequence = 0;
+    let nationalData = null;
+    let nationalFilter = { query: '', alertsOnly: false };
+    // Transfert suggéré à pré-remplir à l'ouverture de l'écran Transferts (voir refreshTransfers).
+    let pendingTransferSuggestion = null;
+    const NATIONAL_ROLES = ['admin', 'logistics', 'unfpa'];
+    const LEVEL_LABELS = { stockout: 'Rupture', low: 'Sous le seuil', watch: 'À surveiller', good: 'Correct', unknown: 'Seuil non défini' };
+
+    function nationalElement(tag, className = '', text = '') {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text) element.textContent = text;
+        return element;
+    }
+
+    function nationalIcon(name) {
+        const icon = nationalElement('i', `ph ${name}`);
+        icon.setAttribute('aria-hidden', 'true');
+        return icon;
+    }
+
+    function nationalLevel(available, threshold) {
+        if (threshold <= 0n) return 'unknown';
+        if (available <= 0n) return 'stockout';
+        if (available < threshold) return 'low';
+        return available * 2n <= threshold * 3n ? 'watch' : 'good';
+    }
+
+    // Rééquilibrage glouton : les plus gros besoins sont servis par les plus gros excédents,
+    // uniquement entre sites de types différents (magasin de stockage ↔ drone port), comme les transferts.
+    function nationalTransferSuggestions(data) {
+        const suggestions = [];
+        const sites = new Map((data.sites || []).map(site => [site.id, site]));
+        for (const product of data.products || []) {
+            const threshold = BigInt(product.min_threshold);
+            if (threshold <= 0n) continue;
+            const needs = [], surpluses = [];
+            const keep = (threshold * 3n + 1n) / 2n; // 1,5 × seuil, arrondi au supérieur
+            for (const cell of product.cells || []) {
+                const available = BigInt(cell.available);
+                if (available < threshold) needs.push({ port: cell.port_id, quantity: threshold - available });
+                if (available > keep) surpluses.push({ port: cell.port_id, quantity: available - keep });
+            }
+            const byQuantity = (a, b) => a.quantity < b.quantity ? 1 : a.quantity > b.quantity ? -1 : 0;
+            needs.sort(byQuantity);
+            surpluses.sort(byQuantity);
+            for (const need of needs) {
+                for (const surplus of surpluses) {
+                    if (need.quantity <= 0n) break;
+                    const from = sites.get(surplus.port), to = sites.get(need.port);
+                    if (surplus.quantity <= 0n || !from || !to || from.site_type === to.site_type) continue;
+                    const quantity = need.quantity < surplus.quantity ? need.quantity : surplus.quantity;
+                    need.quantity -= quantity;
+                    surplus.quantity -= quantity;
+                    suggestions.push({ product, from, to, quantity });
+                }
+            }
+        }
+        return suggestions;
+    }
+
+    // Niveau de chaque couple intrant × site, et répartition par site.
+    function nationalLevels(data) {
+        const perSite = new Map((data.sites || []).map(site => [site.id, { stockout: 0, low: 0, watch: 0, good: 0, unknown: 0 }]));
+        const cells = [];
+        for (const product of data.products || []) {
+            const threshold = BigInt(product.min_threshold);
+            for (const cell of product.cells || []) {
+                const level = nationalLevel(BigInt(cell.available), threshold);
+                perSite.get(cell.port_id) && perSite.get(cell.port_id)[level]++;
+                cells.push(level);
+            }
+        }
+        return { perSite, cells };
+    }
+
+    function clearNationalView() {
+        nationalSequence++;
+        nationalData = null;
+        for (const id of ['national-kpis', 'national-sites', 'national-matrix-head', 'national-matrix-body', 'national-transfers']) $(id).replaceChildren();
+        $('national-status').textContent = '';
+        $('national-export').disabled = true;
+    }
+
+    async function refreshNationalView() {
+        clearNationalView();
+        if (!hasRole(NATIONAL_ROLES)) {
+            $('national-status').textContent = 'Vous ne disposez pas des autorisations nécessaires.';
+            return;
+        }
+        const sequence = nationalSequence, requestGeneration = sessionGeneration;
+        $('national-status').textContent = 'Chargement de la vue nationale…';
+        try {
+            const data = await api('/rest/v1/rpc/qbox_national_overview', {}, true);
+            if (sequence !== nationalSequence || activeView !== 'national' || sessionGeneration !== requestGeneration) return;
+            nationalData = data;
+            renderNationalView(data);
+            $('national-status').textContent = `Actualisé le ${localDateTime(data.generated_at)} (heure de Madagascar).`;
+        } catch (error) {
+            if (sequence === nationalSequence && activeView === 'national' && sessionGeneration === requestGeneration)
+                $('national-status').textContent = `Vue nationale indisponible : ${error.message}`;
+        }
+    }
+
+    function renderNationalKpis(data, levels) {
+        const sites = data.sites || [];
+        const sum = key => sites.reduce((total, site) => total + Number(site[key] || 0), 0);
+        const rated = levels.cells.filter(level => level !== 'unknown');
+        const health = rated.length ? Math.round(rated.filter(level => level === 'good' || level === 'watch').length * 100 / rated.length) : null;
+        const kpis = $('national-kpis');
+        const ringTile = nationalElement('div', 'nv-ring-tile');
+        const ring = nationalElement('div', 'nv-ring');
+        ring.setAttribute('role', 'img');
+        ring.setAttribute('aria-label', health === null ? 'Santé du réseau indisponible' : `Santé du réseau : ${health} %`);
+        ring.dataset.label = health === null ? '—' : `${health} %`;
+        // Départ à 0 puis valeur réelle : l'anneau se remplit à l'affichage.
+        ring.style.setProperty?.('--p', '0');
+        requestAnimationFrameSafe(() => ring.style.setProperty?.('--p', String(health ?? 0)));
+        const ringText = nationalElement('div');
+        ringText.append(nationalElement('strong', '', 'Santé du réseau'),
+            nationalElement('span', '', 'Part des couples intrant × site au-dessus du seuil minimum.'));
+        ringTile.append(ring, ringText);
+        kpis.append(ringTile);
+        for (const [label, icon, value, hint, tone] of [
+            ['Sites suivis', 'ph-globe-hemisphere-east', sites.length, `${sites.filter(site => site.site_type === 'storage').length} magasin(s) · ${sites.filter(site => site.site_type !== 'storage').length} drone port(s)`, ''],
+            ['Ruptures', 'ph-warning-octagon', sum('stockouts'), 'Intrants à zéro sur un site', sum('stockouts') ? 'nv-alert' : ''],
+            ['Sous le seuil', 'ph-trend-down', sum('below_threshold'), 'Ruptures comprises', sum('below_threshold') ? 'nv-warn' : ''],
+            ['Lots périmés', 'ph-calendar-x', sum('expired_lots'), `${sum('expiring_lots')} autre(s) sous 3 mois`, sum('expired_lots') ? 'nv-alert' : '']
+        ]) {
+            const tile = nationalElement('div', `nv-kpi ${tone}`.trim());
+            const head = nationalElement('span', 'nv-kpi-label');
+            head.append(nationalIcon(icon), document.createTextNode?.(label) || nationalElement('span', '', label));
+            tile.append(head, nationalElement('span', 'nv-kpi-value', String(value)), nationalElement('span', 'nv-kpi-hint', hint));
+            kpis.append(tile);
+        }
+    }
+
+    function requestAnimationFrameSafe(callback) {
+        if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(() => window.requestAnimationFrame(callback));
+        else callback();
+    }
+
+    function renderNationalSites(data, levels) {
+        const cards = $('national-sites');
+        const sites = data.sites || [];
+        if (!sites.length) cards.append(nationalElement('p', 'nv-empty', 'Aucun site enregistré.'));
+        for (const [index, site] of sites.entries()) {
+            const tone = site.stockouts > 0 || site.expired_lots > 0 ? 'danger' : site.below_threshold > 0 ? 'warn' : 'ok';
+            const card = nationalElement('button', `nv-site nv-tone-${tone}`);
+            card.type = 'button';
+            card.style.setProperty?.('--i', String(index));
+            card.title = `Ouvrir le tableau de bord de ${site.name}`;
+            const head = nationalElement('div', 'nv-site-head');
+            const icon = nationalElement('span', 'nv-site-icon');
+            icon.append(nationalIcon(site.site_type === 'storage' ? 'ph-warehouse' : 'ph-drone'));
+            const name = nationalElement('div', 'nv-site-name');
+            name.append(nationalElement('strong', '', site.name),
+                nationalElement('span', '', `${site.region} · ${site.site_type === 'storage' ? 'Magasin de stockage' : 'Drone port'}`));
+            const status = site.stockouts > 0 ? `${site.stockouts} rupture(s)` : site.below_threshold > 0 ? `${site.below_threshold} sous le seuil` : 'Stock correct';
+            head.append(icon, name);
+
+            const figure = nationalElement('div', 'nv-site-figure');
+            figure.append(nationalElement('strong', '', number(site.available)), nationalElement('span', '', 'disponibles'),
+                nationalElement('span', 'nv-pill', status));
+
+            const counts = levels.perSite.get(site.id) || {};
+            const health = nationalElement('div', 'nv-health');
+            health.setAttribute('role', 'img');
+            const parts = ['stockout', 'low', 'watch', 'good', 'unknown'].filter(level => counts[level] > 0);
+            health.setAttribute('aria-label', parts.map(level => `${counts[level]} ${LEVEL_LABELS[level].toLowerCase()}`).join(', ') || 'Aucun intrant');
+            for (const level of parts) {
+                const segment = nationalElement('span', `nv-seg-${level}`);
+                segment.style.flexGrow = String(counts[level]);
+                segment.title = `${LEVEL_LABELS[level]} : ${counts[level]} intrant(s)`;
+                health.append(segment);
+            }
+            const legend = nationalElement('div', 'nv-health-legend');
+            for (const level of parts) {
+                const entry = nationalElement('span');
+                entry.append(nationalElement('i', `nv-dot nv-seg-${level}`), nationalElement('b', '', String(counts[level])),
+                    nationalElement('span', '', ` ${LEVEL_LABELS[level].toLowerCase()}`));
+                legend.append(entry);
+            }
+            if (!parts.length) legend.append(nationalElement('span', '', 'Aucun intrant stocké'));
+
+            const facts = nationalElement('ul', 'nv-facts');
+            for (const [icon, value, label, hot] of [
+                ['ph-calendar-x', site.expired_lots, 'périmé(s)', site.expired_lots > 0],
+                ['ph-hourglass-medium', site.expiring_lots, '< 3 mois', false],
+                ['ph-airplane-tilt', site.flights_in_progress, 'vol(s)', false],
+                ['ph-truck', site.shipments_in_progress, 'expédition(s)', false]
+            ]) {
+                const fact = nationalElement('li', hot ? 'nv-hot' : '');
+                fact.title = { 'ph-calendar-x': 'Lots périmés encore en stock', 'ph-hourglass-medium': 'Lots qui périment dans les 3 mois', 'ph-airplane-tilt': 'Vols en cours', 'ph-truck': 'Expéditions terrestres en cours' }[icon];
+                fact.append(nationalIcon(icon), nationalElement('b', '', String(value)), nationalElement('span', '', label));
+                facts.append(fact);
+            }
+            const open = nationalElement('span', 'nv-open', 'Ouvrir le tableau de bord');
+            open.append(nationalIcon('ph-arrow-right'));
+            card.append(head, figure, health, legend, facts, open);
+            card.addEventListener('click', () => {
+                if (![...portSelect.options].some(option => option.value === site.id)) return;
+                portSelect.value = site.id;
+                updateSiteNavigation();
+                if (frameConnected) sendFrame({ type: 'qbox-set-port', port: site.id });
+                selectView('dashboard');
+            });
+            cards.append(card);
+        }
+    }
+
+    function renderNationalMatrix(data) {
+        const sites = data.sites || [];
+        const target = data.target_months || PLANNING_CMM_MONTHS;
+        const head = $('national-matrix-head'), body = $('national-matrix-body');
+        head.replaceChildren();
+        body.replaceChildren();
+        const headRow = nationalElement('tr');
+        headRow.append(nationalElement('th', 'nv-sticky', 'Intrant'), nationalElement('th', 'nv-num', 'Seuil'));
+        for (const site of sites) headRow.append(nationalElement('th', '', site.name));
+        headRow.append(nationalElement('th', 'nv-num', 'Total disponible'));
+        head.append(headRow);
+        const query = nationalFilter.query.trim().toLocaleLowerCase('fr-FR');
+        let shown = 0;
+        for (const product of data.products || []) {
+            const threshold = BigInt(product.min_threshold);
+            const cells = new Map((product.cells || []).map(cell => [cell.port_id, cell]));
+            const levels = [...cells.values()].map(cell => nationalLevel(BigInt(cell.available), threshold));
+            if (query && !`${product.name} ${product.code}`.toLocaleLowerCase('fr-FR').includes(query)) continue;
+            if (nationalFilter.alertsOnly && !levels.some(level => level === 'stockout' || level === 'low')) continue;
+            shown++;
+            const row = nationalElement('tr');
+            const name = nationalElement('td', 'nv-sticky nv-product');
+            name.append(nationalElement('strong', '', product.name), nationalElement('span', '', `${product.code} · ${product.unit}`));
+            row.append(name, nationalElement('td', 'nv-num', threshold > 0n ? number(threshold) : '—'));
+            let total = 0n;
+            for (const site of sites) {
+                const cell = cells.get(site.id);
+                const td = nationalElement('td');
+                if (!cell) {
+                    const none = nationalElement('div', 'nv-cell nv-c-none', '—');
+                    none.title = `${site.name} : jamais stocké sur ce site`;
+                    td.append(none);
+                } else {
+                    const available = BigInt(cell.available);
+                    total += available;
+                    const level = nationalLevel(available, threshold);
+                    const coverage = stockCoverage(available, cell.cmm);
+                    const box = nationalElement('div', `nv-cell nv-c-${level}`);
+                    box.append(nationalElement('span', 'nv-cell-value', number(available)),
+                        nationalElement('span', 'nv-cell-months',
+                            coverage.cmm === null ? 'CMM inconnue' : coverage.cmm === 0 ? 'aucune sortie' : `${decimal(Math.max(coverage.months, 0))} mois`));
+                    if (coverage.months !== null) {
+                        const gauge = nationalElement('span', 'nv-gauge');
+                        const fill = nationalElement('i');
+                        fill.style.width = `${Math.min(100, Math.max(0, coverage.months / target * 100))}%`;
+                        gauge.append(fill);
+                        box.append(gauge);
+                    }
+                    box.title = `${site.name} · ${LEVEL_LABELS[level]} · stock ${number(cell.stock)}, réservé ${number(cell.reserved)}` +
+                        (coverage.cmm === null ? '' : ` · CMM ${decimal(coverage.cmm)} (objectif ${target} mois)`);
+                    td.append(box);
+                }
+                row.append(td);
+            }
+            row.append(nationalElement('td', 'nv-num nv-product', number(total)));
+            body.append(row);
+        }
+        if (!shown) {
+            const row = nationalElement('tr');
+            const cell = nationalElement('td', 'nv-empty',
+                (data.products || []).length ? 'Aucun intrant ne correspond au filtre.' : 'Aucun intrant en stock.');
+            cell.colSpan = sites.length + 3;
+            row.append(cell);
+            body.append(row);
+        }
+    }
+
+    function renderNationalTransfers(data) {
+        const container = $('national-transfers');
+        container.replaceChildren();
+        const suggestions = nationalTransferSuggestions(data);
+        if (!suggestions.length) {
+            const calm = nationalElement('div', 'nv-calm');
+            calm.append(nationalIcon('ph-check-circle'),
+                nationalElement('span', '', 'Aucun transfert suggéré : aucun site sous le seuil ne peut être complété par un site excédentaire d’un autre type.'));
+            container.append(calm);
+            return;
+        }
+        const canTransfer = hasRole(['admin', 'logistics']);
+        for (const [index, suggestion] of suggestions.entries()) {
+            const card = nationalElement('article', 'nv-route');
+            card.style.setProperty?.('--i', String(index));
+            const product = nationalElement('div', 'nv-route-product');
+            product.append(nationalElement('strong', '', suggestion.product.name),
+                nationalElement('span', 'nv-route-qty', `${number(suggestion.quantity)} ${suggestion.product.unit}`));
+            const path = nationalElement('div', 'nv-route-path');
+            const from = nationalElement('div', 'nv-stop');
+            from.append(nationalElement('small', '', 'Depuis'), nationalElement('span', '', suggestion.from.name));
+            const to = nationalElement('div', 'nv-stop nv-to');
+            to.append(nationalElement('small', '', 'Vers'), nationalElement('span', '', suggestion.to.name));
+            const arrow = nationalElement('span', 'nv-arrow');
+            arrow.setAttribute('aria-hidden', 'true');
+            path.append(from, arrow, to);
+            card.append(product, path);
+            if (canTransfer) {
+                const prepare = nationalElement('button');
+                prepare.type = 'button';
+                prepare.append(nationalIcon('ph-truck'), nationalElement('span', '', 'Préparer ce transfert'));
+                prepare.addEventListener('click', () => prepareNationalTransfer(suggestion));
+                card.append(prepare);
+            }
+            container.append(card);
+        }
+    }
+
+    function renderNationalView(data) {
+        const levels = nationalLevels(data);
+        for (const id of ['national-kpis', 'national-sites']) $(id).replaceChildren();
+        renderNationalKpis(data, levels);
+        renderNationalSites(data, levels);
+        renderNationalMatrix(data);
+        renderNationalTransfers(data);
+        $('national-export').disabled = !(data.products || []).length;
+    }
+
+    function setNationalFilter(changes) {
+        Object.assign(nationalFilter, changes);
+        $('national-filter-all').setAttribute('aria-pressed', String(!nationalFilter.alertsOnly));
+        $('national-filter-alerts').setAttribute('aria-pressed', String(nationalFilter.alertsOnly));
+        if (nationalData) renderNationalMatrix(nationalData);
+    }
+
+    // Ouvre l'écran Transferts depuis le site excédentaire, destination choisie, lots répartis par FEFO.
+    function prepareNationalTransfer(suggestion) {
+        if (![...portSelect.options].some(option => option.value === suggestion.from.id)) return;
+        pendingTransferSuggestion = { from: suggestion.from.id, to: suggestion.to.id, productId: suggestion.product.id,
+            productName: suggestion.product.name, unit: suggestion.product.unit, quantity: suggestion.quantity, toName: suggestion.to.name };
+        portSelect.value = suggestion.from.id;
+        updateSiteNavigation();
+        if (frameConnected) sendFrame({ type: 'qbox-set-port', port: suggestion.from.id });
+        selectView('transfers');
+    }
+
+    // Appelée par refreshTransfers une fois le formulaire prêt : renvoie le message à afficher, ou null.
+    function applyTransferSuggestion(port) {
+        const suggestion = pendingTransferSuggestion;
+        pendingTransferSuggestion = null;
+        if (!suggestion || suggestion.from !== port) return null;
+        const destination = $('transfer-destination');
+        if (![...destination.options].some(option => option.value === suggestion.to)) return null;
+        destination.value = suggestion.to;
+        transferDestinationChanged();
+        const lots = transferStocks.filter(lot => lot.product_id === suggestion.productId && BigInt(lot.available) > 0n)
+            .sort((a, b) => String(a.expiry_date || '9999').localeCompare(String(b.expiry_date || '9999')));
+        let remaining = suggestion.quantity, rows = 0;
+        for (const lot of lots) {
+            if (remaining <= 0n) break;
+            const quantity = BigInt(lot.available) < remaining ? BigInt(lot.available) : remaining;
+            addTransferItem();
+            const row = $('transfer-items').children[$('transfer-items').children.length - 1];
+            const [stock, input] = row.children;
+            stock.value = lot.id;
+            input.value = quantity.toString();
+            remaining -= quantity;
+            rows++;
+        }
+        if (!rows) return null;
+        return `Transfert suggéré préparé : ${number(suggestion.quantity - remaining)} ${suggestion.unit} de ${suggestion.productName} vers ${suggestion.toName}` +
+            ` (${rows} lot(s), péremption la plus proche d’abord). Vérifiez puis validez.`;
+    }
+
+    // CSV : deux colonnes par site (disponible, mois de stock) pour rester exploitable dans Excel.
+    function nationalCsv(data) {
+        const sites = data.sites || [];
+        const header = ['Code', 'Intrant', 'Unité', 'Seuil', ...sites.flatMap(site => [`${site.name} disponible`, `${site.name} mois de stock`]), 'Total disponible'];
+        const lines = (data.products || []).map(product => {
+            const cells = new Map((product.cells || []).map(cell => [cell.port_id, cell]));
+            let total = 0n;
+            const values = sites.flatMap(site => {
+                const cell = cells.get(site.id);
+                if (!cell) return ['', ''];
+                total += BigInt(cell.available);
+                const coverage = stockCoverage(BigInt(cell.available), cell.cmm);
+                return [cell.available, coverage.months === null ? '' : decimal(Math.max(coverage.months, 0))];
+            });
+            return [product.code, product.name, product.unit, product.min_threshold, ...values, total.toString()];
+        });
+        return '﻿' + [header, ...lines].map(row => row.map(historyCsvCell).join(';')).join('\r\n');
+    }
+
+    function exportNationalView() {
+        if (!nationalData) return;
+        const url = URL.createObjectURL(new Blob([nationalCsv(nationalData)], { type: 'text/csv;charset=utf-8' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = tableCsvFileName('vue-nationale', '');
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
     async function refreshReadView() {
@@ -5742,7 +6549,7 @@
                 if (group) group.open = true;
             }
         }
-        if (dashboard) refreshDashboard(); else if (view === 'transfers') refreshTransfers(); else if (view === 'products') refreshCatalog(); else if (view === 'csb') refreshCsbs(); else if (view === 'ports') refreshPorts(); else if (['planning', 'archives'].includes(view)) refreshPlanCards(view); else if (view === 'stock-analysis') refreshStockAnalysis(); else if (['drones', 'history', 'sorties'].includes(view)) refreshDeliveries(view); else if (view === 'inventory') refreshInventories(); else if (view === 'quarantine') refreshQuarantines(); else if (view === 'stock-history') refreshStockHistory(); else if (view === 'logistics-report') refreshLogisticsReport(); else if (native) refreshNativeView(view); else refreshReadView();
+        if (dashboard) refreshDashboard(); else if (view === 'transfers') refreshTransfers(); else if (view === 'products') refreshCatalog(); else if (view === 'csb') refreshCsbs(); else if (view === 'ports') refreshPorts(); else if (['planning', 'archives'].includes(view)) refreshPlanCards(view); else if (view === 'stock-analysis') refreshStockAnalysis(); else if (['drones', 'history', 'sorties'].includes(view)) refreshDeliveries(view); else if (view === 'inventory') refreshInventories(); else if (view === 'quarantine') refreshQuarantines(); else if (view === 'stock-history') refreshStockHistory(); else if (view === 'logistics-report') refreshLogisticsReport(); else if (view === 'national') refreshNationalView(); else if (native) refreshNativeView(view); else refreshReadView();
     }
 
     const operationSections = {
@@ -5873,24 +6680,62 @@
         }
     });
 
+    // ---------- Préférences d'alertes e-mail ----------
+    let alertsGeneration = 0;
+
+    async function openAlerts() {
+        const generation = ++alertsGeneration, requestGeneration = sessionGeneration;
+        $('alerts-form').reset();
+        for (const id of ['alerts-weekly', 'alerts-stockout', 'alerts-reports', 'alerts-submit']) $(id).disabled = true;
+        $('alerts-status').textContent = 'Chargement…';
+        $('alerts-dialog').showModal();
+        try {
+            const [preferences] = await api('/rest/v1/rpc/qbox_my_alert_preferences', {}, true);
+            if (generation !== alertsGeneration || requestGeneration !== sessionGeneration) return;
+            $('alerts-weekly').checked = !!preferences?.weekly;
+            $('alerts-stockout').checked = !!preferences?.stockout;
+            $('alerts-reports').checked = !!preferences?.reports;
+            for (const id of ['alerts-weekly', 'alerts-stockout', 'alerts-reports', 'alerts-submit']) $(id).disabled = false;
+            $('alerts-status').textContent = preferences?.customized ? '' : 'Réglage par défaut selon votre rôle.';
+        } catch (error) {
+            if (generation === alertsGeneration) $('alerts-status').textContent = `Préférences indisponibles : ${error.message}`;
+        }
+    }
+
+    async function submitAlerts(event) {
+        event.preventDefault();
+        const generation = alertsGeneration, requestGeneration = sessionGeneration;
+        $('alerts-submit').disabled = true;
+        $('alerts-status').textContent = 'Enregistrement…';
+        try {
+            await api('/rest/v1/rpc/qbox_set_alert_preferences', { weekly: $('alerts-weekly').checked, stockout: $('alerts-stockout').checked, reports: $('alerts-reports').checked }, true);
+            if (generation !== alertsGeneration || requestGeneration !== sessionGeneration) return;
+            $('alerts-status').textContent = 'Préférences enregistrées.';
+        } catch (error) {
+            if (generation === alertsGeneration) $('alerts-status').textContent = `Enregistrement impossible : ${error.message}`;
+        } finally {
+            if (generation === alertsGeneration) $('alerts-submit').disabled = false;
+        }
+    }
+
+    function closeAlerts() {
+        alertsGeneration++;
+        if ($('alerts-dialog').open) $('alerts-dialog').close();
+    }
+
     function setup() {
-        $('demo-profiles').classList.add('postgres-hidden');
-        $('demo-login-options').classList.add('postgres-hidden');
         $('postgres-signup-link').classList.remove('postgres-hidden');
         for (const id of ['legacy-header-actions', 'legacy-dashboard-report'])
             $(id).classList.add('postgres-hidden');
-        $('legacy-new-flight').removeAttribute('onclick');
         $('legacy-new-flight').addEventListener('click', () => {
             selectView('drones');
             openFlights();
         });
-        $('legacy-new-receipt').removeAttribute('onclick');
         $('legacy-new-receipt').addEventListener('click', () => {
             selectView('salama');
             openReceipt();
         });
         for (const button of document.querySelectorAll('.nav-item')) {
-            button.removeAttribute('onclick');
             const view = button.id.slice(4);
             if (view === 'dashboard' || readViews[view]) {
                 button.addEventListener('click', () => selectView(view));
@@ -5907,6 +6752,19 @@
         $('nav-logistics-report').classList.remove('postgres-hidden');
         $('nav-stock-analysis').classList.remove('postgres-hidden');
         $('stock-analysis-refresh').addEventListener('click', refreshStockAnalysis);
+        $('national-refresh').addEventListener('click', refreshNationalView);
+        $('national-export').addEventListener('click', exportNationalView);
+        $('national-search').addEventListener('input', () => setNationalFilter({ query: $('national-search').value }));
+        $('national-filter-all').addEventListener('click', () => setNationalFilter({ alertsOnly: false }));
+        $('national-filter-alerts').addEventListener('click', () => setNationalFilter({ alertsOnly: true }));
+        $('indicators-export').addEventListener('click', exportPerformanceIndicators);
+        $('product-gtin-scan').addEventListener('click', scanProductGtin);
+        $('salama-scan').addEventListener('click', scanReceipt);
+        $('inventory-scan').addEventListener('click', scanInventory);
+        $('alerts-open').classList.remove('postgres-hidden');
+        $('alerts-open').addEventListener('click', openAlerts);
+        $('alerts-form').addEventListener('submit', submitAlerts);
+        $('alerts-cancel').addEventListener('click', closeAlerts);
         const currentYear = Number(new Intl.DateTimeFormat('en', { year: 'numeric', timeZone: 'Indian/Antananarivo' }).format(new Date()));
         for (let year = currentYear; year >= 2000; year--) $('logistics-report-year').add(new Option(String(year), String(year)));
         $('logistics-report-year').value = String(currentYear);
@@ -5928,10 +6786,6 @@
         $('login-username').autocomplete = 'username';
         $('login-password').autocomplete = 'current-password';
         for (const id of ['stocks-receive', 'salama-receive', 'salama-close', 'salama-cancel', 'salama-add-row'])
-            $(id).removeAttribute('onclick');
-        $('stock-search').removeAttribute('oninput');
-        $('salama-form').removeAttribute('onsubmit');
-        $('modal-backdrop').removeAttribute('onclick');
         for (const id of ['stocks-receive', 'salama-receive']) $(id).addEventListener('click', openReceipt);
         for (const id of ['salama-close', 'salama-cancel']) $(id).addEventListener('click', closeReceipt);
         $('modal-backdrop').addEventListener('click', () => { if (productOpen) closeProduct(); else if (csbOpen) closeCsb(); else if (planningDraft) closePlanning(); else if (archiveDraft) closeArchive(); else if (flightDraft) closeFlights(); else if (shipmentDraft) closeShipment(); else if (deliveryCloseDraft) closeDeliveryModal(); else if (deliveryEditDraft) closeDeliveryEdit(); else if (deliveryPrintDraft) closeDeliveryPrint(); else if (planningPrintDraft) closePlanningPrint(); else if (stockHistoryPrintOpen) closeStockHistoryPrint(); else if (dashboardReportPort) closePostgresDashboardReport(); else if (inventoryPrintDraft) closeInventoryPrint(); else closeReceipt(); });
@@ -5963,9 +6817,6 @@
         setText('stocks-status-heading', 'Réservé / Disponible');
         setText('stocks-fefo-description', 'Lots classés par intrant et date de péremption ; le choix du lot reste manuel.');
         setText('salama-description', 'Chaque réception enregistrée est affichée séparément ; les références peuvent être identiques.');
-        for (const id of ['catalog-new', 'product-close', 'product-cancel']) $(id).removeAttribute('onclick');
-        $('catalog-search').removeAttribute('oninput');
-        $('form-product').removeAttribute('onsubmit');
         $('catalog-new').addEventListener('click', () => openProduct());
         for (const id of ['product-close', 'product-cancel']) $(id).addEventListener('click', closeProduct);
         $('form-product').addEventListener('submit', submitProduct);
@@ -5975,9 +6826,6 @@
         $('product-name').maxLength = 150;
         $('product-unit').maxLength = 120;
         $('product-min-threshold').max = '9007199254740991';
-        for (const id of ['csb-new', 'csb-close', 'csb-cancel']) $(id).removeAttribute('onclick');
-        $('form-csb').removeAttribute('onsubmit');
-        $('csb-region').removeAttribute('onchange');
         $('csb-new').addEventListener('click', () => openCsb());
         for (const id of ['csb-close', 'csb-cancel']) $(id).addEventListener('click', closeCsb);
         $('form-csb').addEventListener('submit', submitCsb);
@@ -5989,17 +6837,11 @@
         $('csb-dist').min = '0';
         $('csb-dist').max = '99999999.99';
         $('csb-dist').step = '0.01';
-        $('legacy-reset-data').classList.add('postgres-hidden');
-        for (const id of ['port-new', 'port-cancel']) $(id).removeAttribute('onclick');
-        $('port-form').removeAttribute('onsubmit');
         $('port-new').addEventListener('click', () => openPort());
         $('port-cancel').addEventListener('click', closePort);
         $('port-form').addEventListener('submit', submitPort);
         $('postgres-ports-refresh').addEventListener('click', refreshPorts);
         for (const id of ['postgres-ports-refresh', 'postgres-ports-status']) $(id).classList.remove('postgres-hidden');
-        for (const id of ['planning-archive', 'planning-new', 'planning-close', 'planning-cancel', 'planning-add', 'archive-close', 'archive-cancel']) $(id).removeAttribute('onclick');
-        $('planning-form-main').removeAttribute('onsubmit');
-        $('archive-form-main').removeAttribute('onsubmit');
         $('planning-new').addEventListener('click', () => openPlanning());
         $('planning-archive').addEventListener('click', openArchive);
         for (const id of ['planning-close', 'planning-cancel']) $(id).addEventListener('click', closePlanning);
@@ -6031,10 +6873,6 @@
             actions.append(refresh, manage);
             $(`postgres-${view}-status`).before(actions);
         }
-        for (const id of ['drone-new', 'drone-close', 'drone-cancel', 'drone-add']) $(id).removeAttribute('onclick');
-        $('drone-form-main').removeAttribute('onsubmit');
-        $('drone-plan').removeAttribute('onchange');
-        $('drone-target').removeAttribute('onchange');
         $('drone-new').addEventListener('click', openFlights);
         for (const id of ['drone-close', 'drone-cancel']) $(id).addEventListener('click', closeFlights);
         $('drone-add').addEventListener('click', () => addFlightParcel());
@@ -6060,9 +6898,6 @@
         });
         $('drone-form-main').addEventListener('submit', submitFlights);
         $('postgres-drone-form-status').classList.remove('postgres-hidden');
-        for (const id of ['sortie-new', 'sortie-close', 'sortie-cancel', 'sortie-add']) $(id).removeAttribute('onclick');
-        $('sortie-form-main').removeAttribute('onsubmit');
-        $('sortie-plan').removeAttribute('onchange');
         $('sortie-new').addEventListener('click', openShipment);
         for (const id of ['sortie-close', 'sortie-cancel']) $(id).addEventListener('click', closeShipment);
         $('sortie-add').addEventListener('click', addShipmentItem);
@@ -6087,8 +6922,6 @@
         });
         $('sortie-form-main').addEventListener('submit', submitShipment);
         for (const id of ['postgres-sortie-form-status', 'postgres-sortie-needs']) $(id).classList.remove('postgres-hidden');
-        for (const id of ['inventory-new', 'inventory-cancel']) $(id).removeAttribute('onclick');
-        $('inventory-form').removeAttribute('onsubmit');
         $('inventory-new').addEventListener('click', openInventory);
         $('inventory-cancel').addEventListener('click', closeInventory);
         $('inventory-form').addEventListener('submit', submitInventory);
@@ -6107,17 +6940,12 @@
         inventoryPrint.addEventListener('click', () => openOperations(operationSections.inventory));
         inventoryActions.append(inventoryRefresh, inventoryPrint);
         $('postgres-inventory-status').before(inventoryActions);
-        $('quarantine-form-main').removeAttribute('onsubmit');
         $('quarantine-quantity').max = '9007199254740991';
         $('postgres-quarantine-new').addEventListener('click', openQuarantine);
         $('postgres-quarantine-refresh').addEventListener('click', refreshQuarantines);
         $('postgres-quarantine-cancel').addEventListener('click', closeQuarantine);
         $('quarantine-form-main').addEventListener('submit', submitQuarantine);
         for (const id of ['postgres-quarantine-status', 'postgres-quarantine-actions', 'postgres-quarantine-cancel']) $(id).classList.remove('postgres-hidden');
-        for (const id of ['stock-history-from', 'stock-history-to', 'stock-history-type', 'stock-history-search']) {
-            $(id).removeAttribute('onchange');
-            $(id).removeAttribute('oninput');
-        }
         $('stock-history-reset').classList.remove('postgres-hidden');
         $('stock-history-reset').addEventListener('click', () => {
             for (const id of ['stock-history-from', 'stock-history-to', 'stock-history-type', 'stock-history-search'])
@@ -6134,30 +6962,22 @@
         $('postgres-stock-history-apply').addEventListener('click', () => refreshStockHistory());
         $('postgres-stock-history-more').addEventListener('click', () => refreshStockHistory(true));
         $('postgres-stock-history-operations').addEventListener('click', () => openOperations(operationSections['stock-history']));
-        $('stock-history-export').removeAttribute('onclick');
         $('stock-history-export').addEventListener('click', exportStockHistory);
-        $('stock-history-print').removeAttribute('onclick');
         $('stock-history-print').addEventListener('click', openStockHistoryPrint);
-        $('stock-history-print-confirm').removeAttribute('onclick');
         $('stock-history-print-confirm').addEventListener('click', () => {
             if (!stockHistoryPrintOpen) return;
             document.body.classList.add('stock-history-print-mode');
             window.print();
         });
-        $('stock-history-print-close').removeAttribute('onclick');
         $('stock-history-print-close').addEventListener('click', closeStockHistoryPrint);
         for (const id of ['close-delivery-x', 'close-delivery-cancel']) {
-            $(id).removeAttribute('onclick');
             $(id).addEventListener('click', closeDeliveryModal);
         }
-        $('close-delivery-form').removeAttribute('onsubmit');
         $('close-delivery-form').addEventListener('submit', submitDeliveryClose);
         for (const id of ['postgres-close-delivery-detail', 'postgres-close-delivery-status']) $(id).classList.remove('postgres-hidden');
         for (const id of ['delivery-edit-close', 'delivery-edit-cancel']) $(id).addEventListener('click', closeDeliveryEdit);
         $('delivery-edit-add').addEventListener('click', () => { addDeliveryEditItem(); updateDeliveryEditNeeds(); });
         $('delivery-edit-form').addEventListener('submit', submitDeliveryEdit);
-        $('postgres-print-close').removeAttribute('onclick');
-        $('postgres-print-document').removeAttribute('onclick');
         $('postgres-print-close').addEventListener('click', closeDeliveryPrint);
         $('postgres-print-document').addEventListener('click', printDelivery);
         $('planning-print-close').addEventListener('click', closePlanningPrint);
@@ -6190,10 +7010,6 @@
             $(`postgres-${view}-status`).before(actions);
             $(`postgres-${view}-status`).classList.remove('postgres-hidden');
         }
-        login.removeAttribute('onsubmit');
-        document.querySelector('[onclick="togglePasswordVisibility()"]').removeAttribute('onclick');
-        document.querySelector('[title="Déconnexion"]').removeAttribute('onclick');
-        portSelect.removeAttribute('onchange');
         const passwordToggle = document.getElementById('pwd-eye-icon').parentElement;
         passwordToggle.addEventListener('click', () => {
             const input = $('login-password');
@@ -6225,13 +7041,13 @@
             else if (activeView === 'quarantine') refreshQuarantines();
             else if (activeView === 'stock-history') refreshStockHistory();
             else if (activeView === 'logistics-report') refreshLogisticsReport();
+            else if (activeView === 'national') return; // vue indépendante du site sélectionné
             else if (['stocks', 'salama'].includes(activeView)) refreshNativeView(activeView);
             else refreshReadView();
         });
         $('postgres-read-refresh').addEventListener('click', refreshReadView);
         $('postgres-read-manage').addEventListener('click', () => openOperations(operationSections[activeView]));
         $('legacy-dashboard-report').classList.remove('postgres-hidden');
-        $('legacy-dashboard-report').removeAttribute('onclick');
         $('legacy-dashboard-report').addEventListener('click', openPostgresDashboardReport);
         $('legacy-stock-chart').classList.remove('postgres-hidden');
         $('postgres-dashboard-refresh').classList.remove('postgres-hidden');
@@ -6239,12 +7055,8 @@
         $('dashboard-low-stock-card').classList.remove('postgres-hidden');
         installCsvExports();
         $('legacy-planning-link').classList.remove('postgres-hidden');
-        $('legacy-planning-link').removeAttribute('onclick');
         $('legacy-planning-link').addEventListener('click', () => selectView('planning'));
-        $('report-plan-label').classList.add('postgres-hidden');
-        $('dashboard-report-close').removeAttribute('onclick');
         $('dashboard-report-close').addEventListener('click', closePostgresDashboardReport);
-        $('dashboard-report-print').removeAttribute('onclick');
         $('dashboard-report-print').addEventListener('click', printPostgresDashboardReport);
         $('inventory-print-close').addEventListener('click', closeInventoryPrint);
         $('inventory-print-button').addEventListener('click', async () => {
@@ -6338,6 +7150,7 @@
                 passwordIdentity = {id:user.user_id, email:user.email};
                 userRole = user.role;
                 $('nav-admin-postgres').classList.toggle('postgres-hidden', userRole !== 'admin');
+                $('nav-national').classList.toggle('postgres-hidden', !hasRole(NATIONAL_ROLES));
                 for (const button of document.querySelectorAll('.postgres-admin-flight-operations'))
                     button.classList.toggle('postgres-hidden', userRole !== 'admin');
                 const canManageFlights = hasRole(['admin', 'pilot']);

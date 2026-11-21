@@ -738,7 +738,10 @@ html.postgres-mode:not(.postgres-ready) #main-app { visibility: hidden !importan
     body.logistics-report-print-mode #main-app > :not(main),
     body.logistics-report-print-mode main > div > :not(#view-logistics-report),
     body.logistics-report-print-mode .logistics-report-controls,
+    body.logistics-report-print-mode #indicators-export,
+    body.logistics-report-print-mode #indicators-status:empty,
     body.logistics-report-print-mode .stock-history-title-icon { display: none !important; }
+    body.logistics-report-print-mode .logistics-indicators { break-inside: avoid; }
     body.logistics-report-print-mode #main-app,
     body.logistics-report-print-mode #main-app > main,
     body.logistics-report-print-mode #main-app > main > div {
@@ -774,7 +777,6 @@ html.postgres-mode:not(.postgres-ready) #main-app { visibility: hidden !importan
     body.logistics-report-print-mode .logistics-month th:nth-child(4) { width: 26%; }
     body.logistics-report-print-mode .logistics-month tr { break-inside: avoid; }
 }
-html.postgres-mode .nav-item span[id^="badge-"] { display: none !important; }
 #nav-admin-postgres.bg-amber-400 > i { color: #0f172a; }
 .postgres-notice { background: #e0f2fe; border: 1px solid #7dd3fc; border-radius: 12px; color: #0c4a6e; padding: 14px; font-size: 13px; }
 .postgres-notice a { text-decoration: underline; font-weight: 700; }
