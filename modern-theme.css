@@ -1023,6 +1023,56 @@
         html .dashboard-kpi { padding: .9rem; }
         html .dashboard-kpi-value, html .dashboard-kpi-progress .dashboard-kpi-value { font-size: 1.45rem; }
         html .dashboard-kpi-icon { flex-basis: 2rem; width: 2rem; height: 2rem; }
+
+        /* Réception SALAMA sur mobile : plein écran, une carte par intrant, barre d'actions fixe en bas. */
+        html #modal-salama {
+            top: 0; right: 0; bottom: 0; left: 0;
+            width: 100%; max-width: none;
+            height: 100vh; height: 100dvh; max-height: none;
+            transform: none;
+            border: 0; border-radius: 0;
+        }
+        html #modal-salama:not(.hidden) { animation: qb-sheet-enter .25s cubic-bezier(.16, 1, .3, 1); }
+        html #modal-salama > div:first-child { padding: calc(.9rem + env(safe-area-inset-top)) 1rem .9rem; }
+        html #modal-salama > form > div:first-child,
+        html #salama-scroll { padding-left: 1rem; padding-right: 1rem; }
+        html #salama-footer { padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom)); box-shadow: 0 -6px 16px rgba(15, 23, 42, .06); }
+        /* 16 px minimum : en dessous, Safari (iPhone) zoome sur le champ touché. */
+        html #modal-salama :is(input, select) { font-size: 16px; min-height: 2.75rem; }
+        html #modal-salama #salama-footer button,
+        html #modal-salama #salama-add-row { min-height: 2.75rem; }
+        html #salama-head { display: none !important; }
+        html #salama-items .salama-row {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-areas:
+                "number actions"
+                "product-caption product-caption"
+                "product product"
+                "lot-caption quantity-caption"
+                "lot quantity"
+                "expiry-caption expiry-caption"
+                "expiry expiry";
+            column-gap: .6rem; row-gap: .3rem;
+            padding: .5rem .75rem .85rem;
+            border-radius: 14px;
+        }
+        html #salama-items [data-area="number"] { grid-area: number; text-align: left; font-size: .75rem; color: var(--qb-muted); }
+        html #salama-items [data-area="number"]::before { content: 'Ligne '; }
+        html #salama-items [data-area="actions"] { grid-area: actions; }
+        html #salama-items [data-area="actions"] button { width: 2.75rem; height: 2.75rem; font-size: 1.05rem; }
+        html #salama-items [data-area$="-caption"] { margin-top: .3rem; color: var(--qb-text-2); font-size: .75rem; }
+        html #salama-items [data-area="product"] { grid-area: product; }
+        html #salama-items [data-area="product-caption"] { grid-area: product-caption; }
+        html #salama-items [data-area="lot"] { grid-area: lot; }
+        html #salama-items [data-area="lot-caption"] { grid-area: lot-caption; }
+        html #salama-items [data-area="quantity"] { grid-area: quantity; }
+        html #salama-items [data-area="quantity-caption"] { grid-area: quantity-caption; }
+        html #salama-items [data-area="expiry"] { grid-area: expiry; }
+        html #salama-items [data-area="expiry-caption"] { grid-area: expiry-caption; }
+    }
+    @keyframes qb-sheet-enter {
+        from { opacity: 0; transform: translateY(16px); }
+        to { opacity: 1; transform: none; }
     }
     @media (max-width: 520px) {
         html #active-port-badge { display: none; }

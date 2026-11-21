@@ -5120,7 +5120,9 @@
         const requestGeneration = sessionGeneration;
         const body = $(view === 'stocks' ? 'stocks-table-body' : 'salama-table-body');
         const notice = $(view === 'stocks' ? 'postgres-stocks-status' : 'postgres-salama-status');
+        const cards = view === 'salama' ? $('salama-cards') : null;
         body.replaceChildren();
+        cards?.replaceChildren();
         if (view === 'stocks') stockRows = [];
         notice.textContent = port ? 'Chargement…' : 'Aucun port disponible.';
         if (!port) return;
@@ -5136,6 +5138,7 @@
                 renderStocks();
             } else {
                 for (const receipt of data[0]) {
+                    cards?.append(receiptCard(receipt));
                     const group = document.createElement('tr');
                     group.className = 'bg-slate-100';
                     const header = document.createElement('th');
@@ -5162,14 +5165,61 @@
                         body.append(row);
                     }
                 }
-                if (!data[0].length) body.append(emptyTableRow('Aucune réception enregistrée.', 6));
+                if (!data[0].length) {
+                    body.append(emptyTableRow('Aucune réception enregistrée.', 6));
+                    const empty = document.createElement('p');
+                    empty.className = 'px-4 py-6 text-center text-xs text-slate-500';
+                    empty.textContent = 'Aucune réception enregistrée.';
+                    cards?.append(empty);
+                }
             }
             notice.textContent = `Actualisé le ${localDateTime(new Date())} (heure de Madagascar).`;
         } catch (error) {
             if (seq !== requestSequence || activeView !== view || port !== portSelect.value || sessionGeneration !== requestGeneration || !token) return;
             body.replaceChildren();
+            cards?.replaceChildren();
             notice.textContent = `Lecture indisponible : ${error.message}`;
         }
+    }
+
+    // Historique sur mobile : une carte par bon SALAMA, une ligne par intrant reçu.
+    function receiptCard(receipt) {
+        const card = document.createElement('article');
+        card.className = 'px-4 py-3 space-y-2';
+        const head = document.createElement('div');
+        head.className = 'flex items-baseline justify-between gap-3';
+        const reference = document.createElement('p');
+        reference.className = 'font-mono font-bold text-sm text-slate-900 break-all';
+        reference.textContent = receipt.reference;
+        const date = document.createElement('p');
+        date.className = 'shrink-0 text-[11px] text-slate-500';
+        date.textContent = localDateTime(receipt.received_at);
+        head.append(reference, date);
+        const list = document.createElement('ul');
+        list.className = 'space-y-1.5';
+        for (const item of receipt.items) {
+            const line = document.createElement('li');
+            line.className = 'flex items-start justify-between gap-3 text-xs';
+            const label = document.createElement('div');
+            label.className = 'min-w-0';
+            const name = document.createElement('p');
+            name.className = 'font-bold text-slate-900';
+            name.textContent = item.name;
+            const lot = document.createElement('p');
+            lot.className = 'font-mono text-[11px] font-bold text-amber-900';
+            lot.textContent = `Lot ${item.lot}`;
+            label.append(name, lot);
+            const quantity = document.createElement('span');
+            quantity.className = 'shrink-0 font-mono font-bold text-slate-900';
+            quantity.textContent = number(item.quantity);
+            line.append(label, quantity);
+            list.append(line);
+        }
+        const status = document.createElement('p');
+        status.className = 'text-[11px] font-bold text-emerald-700';
+        status.textContent = `Réception enregistrée · ${receipt.items.length} ligne(s)`;
+        card.append(head, list, status);
+        return card;
     }
 
     // --- Réception SALAMA : lignes compactes sur une seule ligne, saisie rapide au clavier ---
@@ -5210,14 +5260,28 @@
         input.name = name;
         input.required = true;
         input.setAttribute('aria-label', label);
+        input.setAttribute('data-area', name);
         if (type !== 'select') input.type = type;
         return input;
+    }
+
+    // Étiquette visible seulement sur mobile (la ligne devient une carte) ; sur PC, l'en-tête de colonnes suffit.
+    let receiptFieldSequence = 0;
+    function receiptCaption(field, text) {
+        field.id = `salama-field-${++receiptFieldSequence}`;
+        const caption = document.createElement('label');
+        caption.htmlFor = field.id;
+        caption.className = 'sm:hidden text-[11px] font-semibold text-slate-600';
+        caption.setAttribute('data-area', `${field.name}-caption`);
+        caption.textContent = text;
+        return caption;
     }
 
     function addReceiptRow(products, {after = null, productId = '', expiry = '', focus = true} = {}) {
         const row = document.createElement('div');
         const lineNumber = document.createElement('span');
         lineNumber.className = 'text-center text-[10px] font-bold font-mono text-slate-400';
+        lineNumber.setAttribute('data-area', 'number');
         const product = receiptInput('product', 'select', 'Intrant');
         product.add(new Option('Sélectionner un intrant…', ''));
         for (const item of products) product.add(new Option(`${item.code} · ${item.name} · ${item.unit}`, item.id));
@@ -5229,8 +5293,10 @@
         expiryInput.value = expiry;
         const quantity = receiptInput('quantity', 'number', 'Quantité');
         Object.assign(quantity, {min: '1', max: '9007199254740991', step: '1', placeholder: 'Qté'});
+        quantity.setAttribute('inputmode', 'numeric');
         const actions = document.createElement('div');
         actions.className = 'flex items-center justify-end gap-1';
+        actions.setAttribute('data-area', 'actions');
         const duplicate = document.createElement('button');
         duplicate.type = 'button';
         duplicate.className = 'w-8 h-8 flex items-center justify-center text-slate-400 hover:text-sky-700 hover:bg-sky-50 rounded-lg';
@@ -5250,7 +5316,9 @@
         removeIcon.setAttribute('aria-hidden', 'true');
         remove.append(removeIcon);
         actions.append(duplicate, remove);
-        row.append(lineNumber, product, lot, expiryInput, quantity, actions);
+        // Le numéro reste le premier enfant et les actions le dernier ; la carte mobile les place par zones (modern-theme.css).
+        row.append(lineNumber, receiptCaption(product, 'Intrant'), product, receiptCaption(lot, 'N° de lot'), lot,
+            receiptCaption(expiryInput, 'Péremption'), expiryInput, receiptCaption(quantity, 'Quantité'), quantity, actions);
         const entry = {row, number: lineNumber, product, lot, expiry: expiryInput, quantity, invalid: false};
         markReceiptRow(entry, false);
         const changed = () => { if (entry.invalid && receiptRowComplete(entry)) markReceiptRow(entry, false); updateReceiptSummary(); };
@@ -6759,7 +6827,7 @@
         $('national-filter-alerts').addEventListener('click', () => setNationalFilter({ alertsOnly: true }));
         $('indicators-export').addEventListener('click', exportPerformanceIndicators);
         $('product-gtin-scan').addEventListener('click', scanProductGtin);
-        $('salama-scan').addEventListener('click', scanReceipt);
+        for (const id of ['salama-scan', 'salama-scan-mobile']) $(id).addEventListener('click', scanReceipt);
         $('inventory-scan').addEventListener('click', scanInventory);
         $('alerts-open').classList.remove('postgres-hidden');
         $('alerts-open').addEventListener('click', openAlerts);
