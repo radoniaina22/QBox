@@ -1118,3 +1118,234 @@ html .report-district h3 {
             print-color-adjust: exact;
 }
 html .report-csb h4 { color: #1a4fb5; }
+
+/* ==========================================================================
+   Besoins prévisionnels — Répartition des intrants planifiés par district
+   (classes pd-*, rendu par 04-plannings-affichage.js ; écran uniquement)
+   ========================================================================== */
+@media screen {
+    html #planning-district-summary {
+        border: 1px solid var(--qb-line);
+        border-radius: 18px;
+        background: var(--qb-surface);
+        box-shadow: var(--qb-shadow-sm);
+    }
+
+    /* ---------- Bandeau ---------- */
+    html #planning-district-summary .pd-hero {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .9rem 1rem;
+        padding: 1.2rem 1.4rem;
+        background: var(--qb-hero);
+        color: #fff;
+    }
+    html #planning-district-summary .pd-hero::before {
+        content: '';
+        position: absolute; z-index: -1;
+        right: -3rem; top: -6rem;
+        width: 15rem; height: 15rem;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, .18);
+        box-shadow: 0 0 0 2.2rem rgba(255, 255, 255, .05), 0 0 0 4.4rem rgba(255, 255, 255, .03);
+        pointer-events: none;
+    }
+    html #planning-district-summary .pd-hero-icon {
+        display: grid; place-items: center;
+        flex: none;
+        width: 2.6rem; height: 2.6rem;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, .16);
+        font-size: 1.35rem;
+    }
+    html #planning-district-summary .pd-hero-text { flex: 1 1 16rem; min-width: 0; }
+    html #planning-district-summary .pd-title {
+        margin: 0;
+        color: #fff;
+        font-family: var(--qb-font-display);
+        font-size: 1.12rem;
+        font-weight: 800;
+        letter-spacing: -.015em;
+        line-height: 1.3;
+    }
+    html #planning-district-summary .pd-hero-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .6rem; margin-top: .4rem; }
+    html #planning-district-summary .pd-chip {
+        padding: .15rem .55rem;
+        border: 1px solid rgba(255, 255, 255, .3);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, .14);
+        font-family: var(--qb-font-mono);
+        font-size: .68rem;
+        font-weight: 700;
+    }
+    html #planning-district-summary .pd-hero-period { color: rgba(255, 255, 255, .82); font-size: .72rem; }
+    html #planning-district-summary .pd-hero-status { box-shadow: 0 1px 2px rgba(0, 0, 0, .15); }
+    html #planning-district-summary .pd-print {
+        display: inline-flex; align-items: center; gap: .4rem;
+        flex: none;
+        padding: .55rem .9rem;
+        border: 1px solid #fff;
+        border-radius: 12px;
+        background: #fff;
+        color: #1a4fb5;
+        font-size: .74rem;
+        font-weight: 800;
+        cursor: pointer;
+        transition: transform .15s var(--qb-ease), box-shadow .15s var(--qb-ease);
+    }
+    html #planning-district-summary .pd-print::before { content: "\e3dc"; font-family: "Phosphor"; font-size: 1rem; font-weight: 400; }
+    html #planning-district-summary .pd-print:hover { transform: translateY(-1px); box-shadow: 0 8px 18px -8px rgba(0, 0, 0, .45); }
+    html #planning-district-summary .pd-print:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(255, 255, 255, .55); }
+
+    /* ---------- Indicateurs ---------- */
+    html #planning-district-summary .pd-kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: .75rem;
+        padding: 1.1rem 1.4rem 0;
+    }
+    html #planning-district-summary .pd-kpi {
+        --tone: var(--qb-primary);
+        display: flex; align-items: center; gap: .7rem;
+        min-width: 0;
+        padding: .75rem .9rem;
+        border: 1px solid var(--qb-line);
+        border-radius: 14px;
+        background: var(--qb-surface-2);
+    }
+    html #planning-district-summary .pd-tone-teal { --tone: var(--qb-teal); }
+    html #planning-district-summary .pd-tone-accent { --tone: var(--qb-accent); }
+    html #planning-district-summary .pd-tone-violet { --tone: #7c3aed; }
+    html #planning-district-summary .pd-kpi-icon {
+        display: grid; place-items: center;
+        flex: none;
+        width: 2.2rem; height: 2.2rem;
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--tone) 14%, transparent);
+        color: var(--tone);
+        font-size: 1.15rem;
+    }
+    html #planning-district-summary .pd-kpi-text { display: flex; flex-direction: column; min-width: 0; }
+    html #planning-district-summary .pd-kpi-label { color: var(--qb-muted); font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    html #planning-district-summary .pd-kpi-value { color: var(--qb-text); font-family: var(--qb-font-display); font-size: 1.3rem; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+
+    /* ---------- Cartes district ---------- */
+    html #planning-district-summary .pd-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+        gap: .75rem;
+        padding: 1rem 1.4rem;
+    }
+    html #planning-district-summary .pd-card {
+        --tone: #1d58c9;
+        position: relative;
+        display: flex; flex-direction: column; gap: .5rem;
+        padding: .85rem .95rem .8rem 1.05rem;
+        border: 1px solid var(--qb-line);
+        border-radius: 14px;
+        background: var(--qb-surface);
+        box-shadow: var(--qb-shadow-xs);
+        overflow: hidden;
+        transition: border-color .15s var(--qb-ease), box-shadow .15s var(--qb-ease), transform .15s var(--qb-ease);
+    }
+    html #planning-district-summary .pd-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--tone); }
+    html #planning-district-summary .pd-card:hover { border-color: var(--qb-line-hover); box-shadow: var(--qb-shadow-md); transform: translateY(-1px); }
+    html #planning-district-summary .pd-card[data-tone="1"] { --tone: #0e9384; }
+    html #planning-district-summary .pd-card[data-tone="2"] { --tone: #f59e0b; }
+    html #planning-district-summary .pd-card[data-tone="3"] { --tone: #7c3aed; }
+    html #planning-district-summary .pd-card[data-tone="4"] { --tone: #e11d48; }
+    html #planning-district-summary .pd-card[data-tone="5"] { --tone: #0891b2; }
+    html #planning-district-summary .pd-card[data-tone="none"] { --tone: var(--qb-faint); border-style: dashed; }
+    html #planning-district-summary .pd-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: .5rem; }
+    html #planning-district-summary .pd-card-name { color: var(--qb-text); font-size: .8rem; font-weight: 800; line-height: 1.3; }
+    html #planning-district-summary .pd-pill {
+        flex: none;
+        padding: .1rem .5rem;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--tone) 13%, transparent);
+        color: var(--qb-text-2);
+        font-size: .64rem;
+        font-weight: 800;
+    }
+    html #planning-district-summary .pd-card-value { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+    html #planning-district-summary .pd-card-value strong { color: var(--qb-text); font-family: var(--qb-font-display); font-size: 1.3rem; font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+    html #planning-district-summary .pd-card-share { color: var(--tone); font-size: .78rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    html #planning-district-summary .pd-track { height: 6px; border-radius: 999px; background: var(--qb-surface-3); overflow: hidden; }
+    html #planning-district-summary .pd-fill { height: 100%; border-radius: inherit; background: var(--tone); transition: width .5s var(--qb-ease); }
+    html #planning-district-summary .pd-card-lead { display: flex; align-items: center; gap: .3rem; color: var(--qb-muted); font-size: .66rem; min-width: 0; }
+    html #planning-district-summary .pd-card-lead i { color: var(--tone); flex: none; }
+    html #planning-district-summary .pd-card-lead span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ---------- Tableau croisé ---------- */
+    html #planning-district-summary .pd-matrix { margin: 0 1.4rem 1.2rem; border: 1px solid var(--qb-line); border-radius: 14px; overflow: hidden; }
+    html #planning-district-summary .pd-matrix-head {
+        display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem;
+        padding: .7rem .95rem;
+        border-bottom: 1px solid var(--qb-line);
+        background: var(--qb-surface-2);
+    }
+    html #planning-district-summary .pd-subtitle { display: flex; align-items: center; gap: .4rem; margin: 0; color: var(--qb-text); font-size: .78rem; font-weight: 800; }
+    html #planning-district-summary .pd-subtitle i { color: var(--qb-primary); font-size: 1rem; }
+    html #planning-district-summary .pd-legend { display: flex; align-items: center; gap: .25rem; color: var(--qb-muted); font-size: .64rem; font-weight: 600; }
+    html #planning-district-summary .pd-legend > span:first-child { margin-right: .25rem; }
+    html #planning-district-summary .pd-legend > span:last-child { margin-left: .25rem; }
+    html #planning-district-summary .pd-swatch { width: 1rem; height: .7rem; border-radius: 3px; border: 1px solid var(--qb-line); }
+    html #planning-district-summary [data-heat="1"] { background: color-mix(in srgb, var(--qb-primary) 8%, transparent); }
+    html #planning-district-summary [data-heat="2"] { background: color-mix(in srgb, var(--qb-primary) 17%, transparent); }
+    html #planning-district-summary [data-heat="3"] { background: color-mix(in srgb, var(--qb-primary) 28%, transparent); }
+    html #planning-district-summary [data-heat="4"] { background: color-mix(in srgb, var(--qb-primary) 42%, transparent); }
+    html #planning-district-summary .pd-scroll { overflow-x: auto; }
+    html #planning-district-summary .pd-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .74rem; }
+    html #planning-district-summary .pd-table :is(th, td) { padding: .55rem .75rem; border-bottom: 1px solid var(--qb-line-soft); white-space: nowrap; }
+    html #planning-district-summary .pd-th {
+        background: var(--qb-surface);
+        color: var(--qb-muted);
+        font-size: .63rem;
+        font-weight: 700;
+        text-align: left;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        border-bottom-color: var(--qb-line);
+    }
+    html #planning-district-summary .pd-right { text-align: right; }
+    html #planning-district-summary .pd-name {
+        position: sticky; left: 0; z-index: 1;
+        background: var(--qb-surface);
+        color: var(--qb-text);
+        font-weight: 700;
+        text-align: left;
+    }
+    html #planning-district-summary thead .pd-th:first-child { position: sticky; left: 0; z-index: 2; }
+    html #planning-district-summary .pd-num { color: var(--qb-text-2); font-family: var(--qb-font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+    html #planning-district-summary .pd-num:is([data-heat="3"], [data-heat="4"]) { color: var(--qb-text); font-weight: 700; }
+    html #planning-district-summary .pd-empty { color: var(--qb-faint); opacity: .6; }
+    html #planning-district-summary .pd-total { background: var(--qb-surface-2); color: var(--qb-text); font-weight: 800; }
+    html #planning-district-summary .pd-th.pd-total { color: var(--qb-primary-ink); }
+    html #planning-district-summary tbody tr:hover > :is(th, td):not([data-heat]) { background: var(--qb-row-hover); }
+    html #planning-district-summary .pd-foot > :is(th, td) { border-top: 2px solid var(--qb-line-strong); border-bottom: 0; background: var(--qb-primary-soft); color: var(--qb-primary-ink); font-weight: 800; }
+
+    /* ---------- Comparaison avec le stock ---------- */
+    html #planning-district-summary .planning-stock-comparison { padding: 0 1.4rem 1.3rem; }
+    html #planning-district-summary .planning-stock-comparison > div:first-child { padding-top: 1.1rem; border-top: 1px solid var(--qb-line); }
+    html #planning-district-summary .planning-stock-comparison h4 { color: var(--qb-text); font-size: .8rem; font-weight: 800; }
+    html #planning-district-summary .planning-stock-comparison > .overflow-x-auto { border: 1px solid var(--qb-line); border-radius: 14px; }
+    html #planning-district-summary .planning-stock-comparison table :is(th, td) { padding: .55rem .75rem; }
+    html #planning-district-summary .planning-stock-comparison thead tr { background: var(--qb-surface-2); }
+    html #planning-district-summary .planning-stock-comparison tfoot tr { background: var(--qb-primary-soft); }
+
+    @media (max-width: 900px) {
+        html #planning-district-summary .pd-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 640px) {
+        html #planning-district-summary .pd-hero { padding: 1rem; }
+        html #planning-district-summary .pd-print { width: 100%; justify-content: center; }
+        html #planning-district-summary .pd-kpis { padding: 1rem 1rem 0; }
+        html #planning-district-summary .pd-cards { padding: 1rem; }
+        html #planning-district-summary .pd-matrix { margin: 0 1rem 1rem; }
+        html #planning-district-summary .planning-stock-comparison { padding: 0 1rem 1rem; }
+    }
+}

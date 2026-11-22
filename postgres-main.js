@@ -1393,31 +1393,32 @@
 
     // Tableau croisé intrant × district, utilisé à l'écran et à l'impression.
     function planningDistrictMatrix(data, screen) {
+        // À l'écran : classes pd-* (modern-theme.css) et intensité de 1 à 4 selon la part de l'intrant dans chaque district.
         const cls = screen ? {
-            table: 'w-full text-left border-collapse text-xs', th: 'py-2 px-2 text-[10px] uppercase font-semibold text-slate-500 whitespace-nowrap',
-            num: 'py-2 px-2 text-right font-mono text-slate-700 whitespace-nowrap', name: 'py-2 px-2 font-semibold text-slate-800',
-            total: 'py-2 px-2 text-right font-mono font-bold text-slate-900 whitespace-nowrap bg-slate-50', foot: 'border-t-2 border-slate-200 bg-slate-50'
+            table: 'pd-table', th: 'pd-th', num: 'pd-num', name: 'pd-name', total: 'pd-num pd-total', foot: 'pd-foot'
         } : {};
         const table = document.createElement('table');
         if (cls.table) table.className = cls.table;
         const head = document.createElement('thead');
         const header = document.createElement('tr');
-        if (screen) header.className = 'border-b border-slate-200';
         header.append(planningCell('th', 'Intrant', cls.th));
-        for (const district of data.districts) header.append(planningCell('th', district.name, cls.th ? `${cls.th} text-right` : ''));
-        header.append(planningCell('th', 'Total', cls.th ? `${cls.th} text-right` : ''));
+        for (const district of data.districts) header.append(planningCell('th', district.name, cls.th ? `${cls.th} pd-right` : ''));
+        header.append(planningCell('th', 'Total', cls.th ? `${cls.th} pd-right pd-total` : ''));
         head.append(header);
         const body = document.createElement('tbody');
-        if (screen) body.className = 'divide-y divide-slate-100';
         for (const product of data.products) {
             const row = document.createElement('tr');
-            if (screen) row.className = 'hover:bg-slate-50';
             const name = planningCell('th', product.name, cls.name);
             name.scope = 'row';
             row.append(name);
             for (const district of data.districts) {
                 const value = district.products.get(product.key);
-                row.append(planningCell('td', value ? number(value) : '—', value || !screen ? cls.num : `${cls.num} text-slate-300`));
+                const cell = planningCell('td', value ? number(value) : '—', value || !screen ? cls.num : `${cls.num} pd-empty`);
+                if (screen && value && product.total) {
+                    cell.dataset.heat = String(Math.min(4, Math.max(1, Math.ceil(Number(value * 4000n / product.total) / 1000))));
+                    cell.title = `${district.name} : ${planningShare(value, product.total)} de ${product.name}`;
+                }
+                row.append(cell);
             }
             row.append(planningCell('td', number(product.total), cls.total));
             body.append(row);
@@ -1437,46 +1438,96 @@
 
     function renderPlanningDistrictSummary(plan, data, view) {
         const section = $('planning-district-summary');
-        const header = document.createElement('div');
-        header.className = 'p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3';
-        const heading = document.createElement('div');
-        const title = planningCell('h3', 'Répartition des intrants planifiés par district', 'font-bold text-slate-900 text-sm');
+        const icon = name => {
+            const element = document.createElement('i');
+            element.className = `ph ${name}`;
+            element.setAttribute('aria-hidden', 'true');
+            return element;
+        };
+        // Bandeau : titre, campagne, orientation globale et impression.
+        const header = planningCell('div', '', 'pd-hero');
+        const badge = planningCell('span', '', 'pd-hero-icon');
+        badge.append(icon('ph-map-trifold'));
+        const heading = planningCell('div', '', 'pd-hero-text');
+        const title = planningCell('h3', 'Répartition des intrants planifiés par district', 'pd-title');
         title.id = 'planning-district-title';
-        heading.append(title, planningCell('p', `${plan.code} · Campagne du ${plan.start_date} au ${plan.end_date} · ${data.districts.length} district(s) · ${number(data.total)} unité(s) planifiée(s)`, 'text-xs text-slate-500'));
+        const meta = planningCell('div', '', 'pd-hero-meta');
+        meta.append(planningCell('span', `Campagne ${plan.code}`, 'pd-chip'),
+            planningCell('span', `Du ${plan.start_date} au ${plan.end_date}`, 'pd-hero-period'));
+        if (data.stock) meta.append(planningStatusBadge(planningGlobalVerdict(data.stock).status, 'pd-hero-status'));
+        heading.append(title, meta);
         const print = document.createElement('button');
         print.type = 'button';
-        print.className = 'px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shrink-0';
+        print.className = 'pd-print';
         print.textContent = 'Imprimer la répartition';
         print.addEventListener('click', () => openPlanningPrint(view, plan.id, null));
-        header.append(heading, print);
-        const cards = document.createElement('div');
-        cards.className = 'p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3';
-        for (const district of data.districts) {
-            const card = document.createElement('div');
-            card.className = 'planning-district-card p-3 rounded-xl border border-slate-200 bg-white';
-            const top = document.createElement('div');
-            top.className = 'flex items-start justify-between gap-2';
-            top.append(planningCell('span', district.name, 'text-xs font-bold text-slate-800'),
-                planningCell('span', `${district.csbs.size} CSB`, 'shrink-0 px-1.5 py-0.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600'));
-            const value = planningCell('div', `${number(district.total)} un.`, 'mt-2 text-lg font-bold font-mono text-slate-900');
-            const track = document.createElement('div');
-            track.className = 'mt-2 w-full bg-slate-100 rounded-full h-1.5 overflow-hidden';
-            const fill = document.createElement('div');
-            fill.className = 'bg-sky-500 h-1.5';
+        header.append(badge, heading, print);
+
+        // Indicateurs clés.
+        const csbCount = data.districts.reduce((sum, district) => sum + district.csbs.size, 0);
+        const kpis = planningCell('div', '', 'pd-kpis');
+        for (const [name, label, value, tone] of [
+            ['ph-package', 'Unités planifiées', number(data.total), 'primary'],
+            ['ph-map-pin-area', 'Districts', number(data.districts.length), 'teal'],
+            ['ph-first-aid-kit', 'CSB concernés', number(csbCount), 'accent'],
+            ['ph-pill', 'Intrants', number(data.products.length), 'violet']
+        ]) {
+            const kpi = planningCell('div', '', `pd-kpi pd-tone-${tone}`);
+            const kpiIcon = planningCell('span', '', 'pd-kpi-icon');
+            kpiIcon.append(icon(name));
+            const kpiText = planningCell('div', '', 'pd-kpi-text');
+            kpiText.append(planningCell('span', label, 'pd-kpi-label'), planningCell('strong', value, 'pd-kpi-value'));
+            kpi.append(kpiIcon, kpiText);
+            kpis.append(kpi);
+        }
+
+        // Une carte par district : volume, part du total et intrant principal.
+        const cards = planningCell('div', '', 'pd-cards');
+        data.districts.forEach((district, index) => {
+            const card = planningCell('div', '', 'planning-district-card pd-card');
+            card.dataset.tone = district.name === NO_DISTRICT ? 'none' : String(index % 6);
+            const top = planningCell('div', '', 'pd-card-top');
+            top.append(planningCell('span', district.name, 'pd-card-name'), planningCell('span', `${district.csbs.size} CSB`, 'pd-pill'));
+            const value = planningCell('div', '', 'pd-card-value');
+            value.append(planningCell('strong', `${number(district.total)} un.`), planningCell('span', planningShare(district.total, data.total), 'pd-card-share'));
+            const track = planningCell('div', '', 'pd-track');
+            const fill = planningCell('div', '', 'pd-fill');
             fill.style.width = data.total ? `${Number(district.total * 100n / data.total)}%` : '0%';
             track.append(fill);
-            card.append(top, value, track, planningCell('div', `${planningShare(district.total, data.total)} du total`, 'mt-1 text-[10px] text-slate-500'));
+            card.append(top, value, track);
+            let main = null;
+            for (const product of data.products) {
+                const planned = district.products.get(product.key) || 0n;
+                if (planned && (!main || planned > main.planned)) main = {name: product.name, planned};
+            }
+            if (main) {
+                const lead = planningCell('div', '', 'pd-card-lead');
+                lead.append(icon('ph-star'), planningCell('span', `Principal : ${main.name} (${number(main.planned)})`));
+                card.append(lead);
+            }
             cards.append(card);
+        });
+
+        // Tableau croisé intrant × district.
+        const matrix = planningCell('div', '', 'pd-matrix');
+        const matrixHead = planningCell('div', '', 'pd-matrix-head');
+        const matrixTitle = planningCell('h4', '', 'pd-subtitle');
+        matrixTitle.append(icon('ph-grid-four'), planningCell('span', 'Détail par intrant et par district'));
+        const legend = planningCell('div', '', 'pd-legend');
+        legend.append(planningCell('span', 'Part de l’intrant'));
+        for (const level of ['1', '2', '3', '4']) {
+            const swatch = planningCell('span', '', 'pd-swatch');
+            swatch.dataset.heat = level;
+            legend.append(swatch);
         }
-        const scroll = document.createElement('div');
-        scroll.className = 'px-5 pb-5 overflow-x-auto';
+        legend.append(planningCell('span', '100 %'));
+        matrixHead.append(matrixTitle, legend);
+        const scroll = planningCell('div', '', 'pd-scroll');
         scroll.append(planningDistrictMatrix(data, true));
-        section.replaceChildren(header, cards, scroll);
-        if (data.stock) {
-            // Badge global à côté du titre pour lire l'orientation sans descendre jusqu'au tableau.
-            heading.append(planningStatusBadge(planningGlobalVerdict(data.stock).status, 'mt-1.5'));
-            section.append(planningStockSection(data.stock, true));
-        }
+        matrix.append(matrixHead, scroll);
+
+        section.replaceChildren(header, kpis, cards, matrix);
+        if (data.stock) section.append(planningStockSection(data.stock, true));
         section.hidden = false;
     }
 
