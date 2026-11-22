@@ -5964,6 +5964,45 @@
             for (const id of ['plan-validation-submit', 'plan-validation-return', 'plan-validation-cancel']) $(id).disabled = false;
         }
     }
+
+    // Tuile du tableau de bord (drone port) : planning en attente de validation, pour le Chef Unité SR
+    // et l'administrateur. Chargée en arrière-plan ; sans effet si rien n'attend.
+    // (Les coordinateurs voient l'état et le motif d'un renvoi sur la carte du planning.)
+    function clearDashboardValidation() {
+        $('dashboard-validation').replaceChildren();
+        $('dashboard-validation').hidden = true;
+    }
+
+    async function loadDashboardValidation(port, sequence, requestGeneration) {
+        const current = () => sequence === requestSequence && activeView === 'dashboard' && port === portSelect.value && sessionGeneration === requestGeneration;
+        if (isStorage() || !hasRole(['admin', 'rh_chief'])) return;
+        let plans;
+        try { plans = await api('/rest/v1/rpc/qbox_list_plannings', {selected_port: port}, true); } catch { return; }
+        if (!current()) return;
+        const plan = plans.find(item => item.status === 'En cours' && planningValidationState(item) === 'submitted');
+        if (!plan) return;
+        const state = 'submitted', tone = 'pending';
+        const title = `Planning ${plan.code} en attente de votre validation`;
+        const text = `Soumis par ${plan.submitted_by_name || 'nom non renseigné'}${plan.submitted_at ? ` le ${localDateTime(plan.submitted_at)}` : ''} · ${
+            new Set(plan.items.map(item => item.csb_id)).size} CSB · ${plan.items.length} ligne(s) de besoin.`;
+        const action = ['Ouvrir la validation', () => { selectView('planning'); openPlanningValidation(plan.id); }];
+        const box = $('dashboard-validation');
+        box.className = `dv-banner dv-${tone}`;
+        const icon = planningCell('span', '', 'dv-icon');
+        icon.append(planningIcon(PLANNING_VALIDATION[state].icon));
+        const body = planningCell('div', '', 'dv-body');
+        body.append(planningCell('strong', title, 'dv-title'), planningCell('span', text, 'dv-text'));
+        box.replaceChildren(icon, body);
+        if (action) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'dv-action';
+            button.textContent = action[0];
+            button.addEventListener('click', action[1]);
+            box.append(button);
+        }
+        box.hidden = false;
+    }
     async function refreshNativeView(view) {
         const port = portSelect.value;
         const seq = ++requestSequence;
@@ -6876,6 +6915,7 @@
         const seq = ++requestSequence;
         const requestGeneration = sessionGeneration;
         clearDashboard();
+        clearDashboardValidation();
         setText('active-port-badge', portSelect.selectedOptions[0]?.textContent || 'Aucun port');
         $('postgres-dashboard-status').textContent = port ? 'Chargement du tableau de bord…' : 'Aucun port disponible.';
         if (!port) return;
@@ -6883,6 +6923,8 @@
             const result = await api('/rest/v1/rpc/qbox_dashboard_details', { selected_port: port }, true);
             if (seq !== requestSequence || activeView !== 'dashboard' || port !== portSelect.value || sessionGeneration !== requestGeneration || !token) return;
             renderDashboard(result);
+            // Circuit de validation des plannings : tuile en arrière-plan (10-planning-validation.js).
+            loadDashboardValidation(port, seq, requestGeneration);
             try {
                 const stocks = await api('/rest/v1/rpc/qbox_dashboard_stock_chart_exact', {selected_port:port}, true);
                 if (seq !== requestSequence || activeView !== 'dashboard' || port !== portSelect.value || sessionGeneration !== requestGeneration || !token) return;

@@ -2111,7 +2111,11 @@ html .report-csb h4 { color: #1a4fb5; }
     html #modal-planning-validation .pv-csb { border: 1px solid var(--qb-line); border-radius: 14px; background: var(--qb-surface); overflow: hidden; }
     html #modal-planning-validation .pv-csb-name { margin: 0; padding: .55rem .85rem; border-bottom: 1px solid var(--qb-line); background: var(--qb-surface-2); color: var(--qb-text); font-size: .76rem; font-weight: 800; }
     html #modal-planning-validation .pv-scroll { overflow-x: auto; }
-    html #modal-planning-validation .pv-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: .72rem; }
+    /* Colonnes de même largeur d'un CSB à l'autre. */
+    html #modal-planning-validation .pv-table { width: 100%; min-width: 640px; border-collapse: collapse; table-layout: fixed; font-size: .72rem; }
+    html #modal-planning-validation .pv-table th:first-child { width: 24%; }
+    html #modal-planning-validation .pv-table th:nth-child(6) { width: 17%; }
+    html #modal-planning-validation .pv-table th:last-child { width: 9%; }
     html #modal-planning-validation .pv-table :is(th, td) { padding: .45rem .7rem; border-bottom: 1px solid var(--qb-line-soft); vertical-align: middle; white-space: nowrap; }
     html #modal-planning-validation .pv-table tbody tr:last-child > * { border-bottom: 0; }
     html #modal-planning-validation .pv-th { color: var(--qb-muted); font-size: .6rem; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: .05em; }
@@ -2147,4 +2151,41 @@ html .report-csb h4 { color: #1a4fb5; }
     @media (max-width: 640px) {
         html #modal-planning-validation .pv-totals { width: 100%; margin-bottom: .25rem; }
     }
+
+    /* ---------- Tuile du tableau de bord ---------- */
+    html #view-dashboard .dv-banner {
+        --tone: var(--qb-primary);
+        display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1rem;
+        padding: .9rem 1.1rem;
+        border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
+        border-left: 4px solid var(--tone);
+        border-radius: 16px;
+        background: color-mix(in srgb, var(--tone) 7%, var(--qb-surface));
+        box-shadow: var(--qb-shadow-xs);
+    }
+    html #view-dashboard .dv-pending { --tone: var(--qb-accent); }
+    html #view-dashboard .dv-returned { --tone: var(--qb-danger); }
+    html #view-dashboard .dv-waiting { --tone: var(--qb-primary); }
+    html #view-dashboard .dv-draft { --tone: var(--qb-muted); }
+    html #view-dashboard .dv-icon { display: grid; place-items: center; flex: none; width: 2.4rem; height: 2.4rem; border-radius: 12px; background: color-mix(in srgb, var(--tone) 15%, transparent); color: var(--tone); font-size: 1.25rem; }
+    html #view-dashboard .dv-body { display: flex; flex: 1 1 18rem; flex-direction: column; gap: .15rem; min-width: 0; }
+    html #view-dashboard .dv-title { color: var(--qb-text); font-size: .84rem; font-weight: 800; }
+    html #view-dashboard .dv-text { color: var(--qb-muted); font-size: .72rem; line-height: 1.45; }
+    html #view-dashboard .dv-action {
+        flex: none;
+        padding: .55rem .95rem;
+        border: 1px solid var(--tone);
+        border-radius: 11px;
+        background: var(--tone);
+        color: #fff;
+        font-size: .74rem;
+        font-weight: 800;
+        cursor: pointer;
+    }
+    html #view-dashboard .dv-action:hover { filter: brightness(1.07); }
+    html #view-dashboard .dv-action:focus-visible { outline: none; box-shadow: var(--qb-ring); }
+    html #view-dashboard .dv-pending .dv-action { color: var(--qb-on-accent); }
+
+    /* L'attribut hidden (piloté par le JS : recherches, tuiles) l'emporte sur les display des composants ci-dessus. */
+    html :is(#view-dashboard, #view-planning, #view-archives, #view-drones, #modal-planning, #modal-planning-validation) [hidden] { display: none !important; }
 }
