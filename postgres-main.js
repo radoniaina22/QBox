@@ -2429,6 +2429,8 @@
         const message = $(`postgres-${view}-status`);
         container.replaceChildren();
         if (view === 'drones') { $('drones-summary').replaceChildren(); droneFilterState = null; }
+        // Historique : statistiques de livraison et sorties d'avant Q.box (05-statistiques-livraison.js).
+        if (view === 'history') { refreshDeliveryStats(); refreshLegacyDeliveries(true); }
         message.textContent = port ? 'Chargement…' : 'Aucun port disponible.';
         if (!port) return;
         try {
@@ -3408,6 +3410,513 @@
                 controls.forEach(control => { control.disabled = false; });
             }
         }
+    }
+
+    // ---------- Statistiques de livraison et sorties d'avant Q.box (écran Historique) — style : delivery-stats.css ----------
+    // Données : qbox_delivery_statistics (vols et expéditions clôturés + sorties historiques importées) et
+    // qbox_legacy_deliveries (registre des sorties d'avant Q.box, hors stock, par BL).
+    // Couleurs des origines : 3 premières teintes de la palette catégorielle validée (daltonisme), fixes par origine.
+    const DS_SOURCES = [
+        { key: 'drone', label: 'Vols drone', icon: 'ph-drone' },
+        { key: 'road', label: 'Expéditions terrestres', icon: 'ph-truck' },
+        { key: 'legacy', label: 'Avant Q.box (Excel)', icon: 'ph-file-xls' }
+    ];
+    const DS_MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+    const DS_MONTHS_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    const LEGACY_PAGE_SIZE = 50;
+    let deliveryStatsSequence = 0;
+    let deliveryStatsSource = 'all';
+    let legacySequence = 0;
+    let legacyState = null;
+    let legacyProductsLoaded = false;
+
+    function dsElement(tag, className = '', text = '') {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text !== '') element.textContent = text;
+        return element;
+    }
+
+    function dsIcon(name) {
+        const icon = dsElement('i', `ph ${name}`);
+        icon.setAttribute('aria-hidden', 'true');
+        return icon;
+    }
+
+    function dsNumber(value) {
+        try { return BigInt(value ?? 0).toLocaleString('fr-FR'); } catch { return String(value ?? '—'); }
+    }
+
+    function dsPercent(part, total) {
+        const value = total > 0 ? Number(part) * 100 / total : 0;
+        if (value > 0 && value < 0.1) return '< 0,1 %';
+        return `${value.toLocaleString('fr-FR', { maximumFractionDigits: value >= 10 ? 0 : 1 })} %`;
+    }
+
+    function dsDate(iso) {
+        if (!iso) return '—';
+        const [year, month, day] = String(iso).slice(0, 10).split('-');
+        return `${day}/${month}/${year}`;
+    }
+
+    function dsMonth(month, long = false) {
+        const [year, index] = String(month).split('-').map(Number);
+        return long ? `${DS_MONTHS_LONG[index - 1]} ${year}` : DS_MONTHS[index - 1];
+    }
+
+    // Nom court d'un intrant pour les étiquettes serrées (nom complet en infobulle).
+    function dsShortName(name) {
+        const text = String(name || '').replace(/\s+/g, ' ').trim();
+        return text.length > 30 ? `${text.slice(0, 28).trim()}…` : text;
+    }
+
+    function dsPeriod(value) {
+        const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Indian/Antananarivo' }).format(new Date());
+        const [year, month, day] = today.split('-').map(Number);
+        const back = months => new Date(Date.UTC(year, month - 1 - months, day + 1)).toISOString().slice(0, 10);
+        if (value === '12m') return { from: back(12), to: today, label: '12 derniers mois' };
+        if (value === '3m') return { from: back(3), to: today, label: '3 derniers mois' };
+        if (value === 'year') return { from: `${year}-01-01`, to: today, label: `Année ${year}` };
+        return { from: null, to: null, label: 'Tout l’historique' };
+    }
+
+    function dsReducedMotion() {
+        return Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
+    }
+
+    // Compteur animé du grand total (valeur finale exacte, BigInt, à la fin).
+    function dsCountUp(element, target) {
+        const final = dsNumber(target), value = Number(target);
+        const token = String(Math.random());
+        element.dataset.count = token;
+        if (dsReducedMotion() || typeof window.requestAnimationFrame !== 'function' || typeof performance === 'undefined' || !(value > 0)) {
+            element.textContent = final;
+            return;
+        }
+        const start = performance.now(), duration = 1200;
+        const step = now => {
+            if (element.dataset.count !== token) return;
+            const t = Math.min(1, (now - start) / duration);
+            element.textContent = t < 1 ? Math.round(value * (1 - Math.pow(1 - t, 3))).toLocaleString('fr-FR') : final;
+            if (t < 1) window.requestAnimationFrame(step);
+        };
+        window.requestAnimationFrame(step);
+    }
+
+    function dsLater(callback) {
+        if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(() => window.requestAnimationFrame(callback));
+        else callback();
+    }
+
+    function setDeliveryStatsSource(source) {
+        deliveryStatsSource = source;
+        for (const key of ['all', 'app', 'legacy']) $(`delivery-stats-source-${key}`).setAttribute('aria-pressed', String(key === source));
+        refreshDeliveryStats();
+    }
+
+    function clearDeliveryStats() {
+        for (const id of ['delivery-stats-kpis', 'delivery-stats-mix', 'delivery-stats-legend', 'delivery-stats-months',
+            'delivery-stats-products', 'delivery-stats-districts', 'delivery-stats-matrix']) $(id).replaceChildren();
+        $('delivery-stats-total').dataset.count = '';
+        $('delivery-stats-total').textContent = '—';
+        $('delivery-stats-total-hint').textContent = 'unités, tous intrants confondus';
+        $('delivery-stats-export').disabled = true;
+    }
+
+    async function refreshDeliveryStats() {
+        const port = portSelect.value, sequence = ++deliveryStatsSequence, requestGeneration = sessionGeneration;
+        const status = $('delivery-stats-status');
+        clearDeliveryStats();
+        if (!port) { status.textContent = 'Aucun site disponible.'; return; }
+        const period = dsPeriod($('delivery-stats-period').value);
+        status.textContent = 'Calcul des statistiques…';
+        try {
+            const data = await api('/rest/v1/rpc/qbox_delivery_statistics', {
+                selected_port: port, from_date: period.from, to_date: period.to, source_filter: deliveryStatsSource
+            }, true);
+            if (sequence !== deliveryStatsSequence || activeView !== 'history' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
+            renderDeliveryStats(data);
+            status.textContent = `${period.label} · Actualisé le ${localDateTime(new Date())} (heure de Madagascar).`;
+        } catch (error) {
+            if (sequence === deliveryStatsSequence && activeView === 'history' && sessionGeneration === requestGeneration)
+                status.textContent = `Statistiques indisponibles : ${error.message}`;
+        }
+    }
+
+    function renderDeliveryStats(data) {
+        const totals = data.totals || {};
+        const total = Number(totals.quantity || 0);
+        dsCountUp($('delivery-stats-total'), totals.quantity || '0');
+        $('delivery-stats-total-hint').textContent = totals.first_date
+            ? `unités, tous intrants confondus · du ${dsDate(totals.first_date)} au ${dsDate(totals.last_date)}`
+            : 'aucune livraison sur cette période';
+        renderDeliveryStatsKpis(data, total);
+        renderDeliveryStatsMix(data, total);
+        renderDeliveryStatsMonths(data);
+        renderDeliveryStatsProducts(data, total);
+        renderDeliveryStatsDistricts(data, total);
+        renderDeliveryStatsMatrix(data);
+        $('delivery-stats-export').disabled = !(data.products || []).length;
+    }
+
+    function renderDeliveryStatsKpis(data, total) {
+        const totals = data.totals || {};
+        const deliveries = Number(totals.deliveries || 0);
+        const months = (data.months || []).length;
+        const best = (data.months || []).reduce((top, month) => !top || Number(month.quantity) > Number(top.quantity) ? month : top, null);
+        const kpis = $('delivery-stats-kpis');
+        for (const [label, icon, value, hint] of [
+            ['Livraisons (BL)', 'ph-package', dsNumber(deliveries), `${dsNumber(totals.lines || 0)} lignes d’intrants`],
+            ['Destinataires servis', 'ph-users-three', dsNumber(totals.destinations || 0), `${totals.districts || 0} district(s)`],
+            ['Intrants différents', 'ph-first-aid-kit', dsNumber(totals.products || 0), 'références livrées'],
+            ['Moyenne par livraison', 'ph-stack', deliveries ? Math.round(total / deliveries).toLocaleString('fr-FR') : '—', 'unités par BL'],
+            ['Mois record', 'ph-trophy', best ? dsMonth(best.month, true) : '—',
+                best ? `${dsNumber(best.quantity)} unités · ${months} mois actifs` : 'aucun mois']
+        ]) {
+            const tile = dsElement('div', 'ds-kpi');
+            const head = dsElement('span', 'ds-kpi-label');
+            head.append(dsIcon(icon), dsElement('span', '', label));
+            tile.append(head, dsElement('span', 'ds-kpi-value', value), dsElement('span', 'ds-kpi-hint', hint));
+            kpis.append(tile);
+        }
+    }
+
+    function dsSourceTotals(data) {
+        const map = new Map((data.sources || []).map(source => [source.source, source]));
+        return DS_SOURCES.map(source => ({ ...source, quantity: Number(map.get(source.key)?.quantity || 0),
+            deliveries: Number(map.get(source.key)?.deliveries || 0) })).filter(source => source.quantity > 0);
+    }
+
+    // Répartition par origine : barre segmentée + légende chiffrée (identité jamais portée par la seule couleur).
+    function renderDeliveryStatsMix(data, total) {
+        const sources = dsSourceTotals(data);
+        const mix = $('delivery-stats-mix'), legend = $('delivery-stats-legend');
+        if (!sources.length) return;
+        const bar = dsElement('div', 'ds-mix-bar');
+        bar.setAttribute('role', 'img');
+        bar.setAttribute('aria-label', sources.map(source => `${source.label} : ${dsPercent(source.quantity, total)}`).join(', '));
+        const keys = dsElement('ul', 'ds-mix-keys');
+        for (const source of sources) {
+            const segment = dsElement('span', `ds-seg ds-src-${source.key}`);
+            segment.style.flexGrow = String(source.quantity);
+            segment.title = `${source.label} : ${dsNumber(source.quantity)} unités (${dsPercent(source.quantity, total)})`;
+            bar.append(segment);
+            const key = dsElement('li', `ds-key ds-src-${source.key}`);
+            const text = dsElement('span');
+            text.append(dsElement('b', '', source.label),
+                dsElement('span', '', `${dsNumber(source.quantity)} unités · ${dsNumber(source.deliveries)} BL · ${dsPercent(source.quantity, total)}`));
+            key.append(dsIcon(source.icon), text);
+            keys.append(key);
+            const chip = dsElement('span', `ds-legend-item ds-src-${source.key}`);
+            chip.append(dsElement('i', 'ds-swatch'), dsElement('span', '', source.label));
+            legend.append(chip);
+        }
+        mix.append(bar, keys);
+    }
+
+    function dsNiceMax(value) {
+        if (!(value > 0)) return 1;
+        const power = Math.pow(10, Math.floor(Math.log10(value)));
+        const step = [1, 2, 2.5, 5, 10].find(factor => factor * power >= value) || 10;
+        return step * power;
+    }
+
+    // Mois consécutifs du premier au dernier : un mois sans livraison reste visible (colonne vide), l'axe du temps n'est pas compressé.
+    function dsContinuousMonths(months) {
+        if (!months.length) return [];
+        const byMonth = new Map(months.map(month => [month.month, month]));
+        const [firstYear, firstMonth] = months[0].month.split('-').map(Number);
+        const [lastYear, lastMonth] = months[months.length - 1].month.split('-').map(Number);
+        const result = [];
+        for (let year = firstYear, month = firstMonth; year < lastYear || (year === lastYear && month <= lastMonth);) {
+            const key = `${year}-${String(month).padStart(2, '0')}`;
+            result.push(byMonth.get(key) || { month: key, quantity: '0', deliveries: 0, drone: '0', road: '0', legacy: '0' });
+            if (++month > 12) { month = 1; year++; }
+        }
+        return result;
+    }
+
+    // Colonnes empilées par mois (ordre fixe des origines), grille légère, infobulle au survol et au clavier.
+    function renderDeliveryStatsMonths(data) {
+        const container = $('delivery-stats-months');
+        const months = dsContinuousMonths(data.months || []);
+        if (!months.length) { container.append(dsElement('p', 'ds-empty', 'Aucune livraison sur cette période.')); return; }
+        const max = dsNiceMax(Math.max(...months.map(month => Number(month.quantity))));
+        const record = months.reduce((top, month) => Number(month.quantity) > Number(top.quantity) ? month : top, months[0]);
+        const chart = dsElement('div', 'ds-chart');
+        const axis = dsElement('div', 'ds-axis');
+        axis.setAttribute('aria-hidden', 'true');
+        for (const fraction of [1, 0.5, 0]) {
+            const tick = dsElement('span', 'ds-tick', Math.round(max * fraction).toLocaleString('fr-FR'));
+            tick.style.bottom = `${fraction * 100}%`;
+            axis.append(tick);
+        }
+        const plot = dsElement('div', 'ds-plot');
+        plot.style.setProperty?.('--n', String(months.length));
+        const tip = dsElement('div', 'ds-tip');
+        tip.hidden = true;
+        const show = (column, month) => {
+            tip.replaceChildren(dsElement('strong', '', dsMonth(month.month, true)),
+                dsElement('span', 'ds-tip-total', `${dsNumber(month.quantity)} unités · ${dsNumber(month.deliveries)} BL`));
+            for (const source of DS_SOURCES) {
+                if (!Number(month[source.key])) continue;
+                const line = dsElement('span', `ds-tip-line ds-src-${source.key}`);
+                line.append(dsElement('i', 'ds-swatch'), dsElement('span', '', source.label), dsElement('b', '', dsNumber(month[source.key])));
+                tip.append(line);
+            }
+            tip.hidden = false;
+            const left = (column.offsetLeft || 0) + (column.offsetWidth || 0) / 2;
+            const width = plot.scrollWidth || plot.clientWidth || 0;
+            tip.style.left = `${Math.max(90, Math.min(width - 90, left))}px`;
+        };
+        for (const [index, month] of months.entries()) {
+            const column = dsElement('div', 'ds-col');
+            column.tabIndex = 0;
+            column.style.setProperty?.('--i', String(index));
+            column.setAttribute('aria-label', `${dsMonth(month.month, true)} : ${dsNumber(month.quantity)} unités, ${dsNumber(month.deliveries)} livraisons`);
+            if (month === record) column.classList.add('ds-record');
+            const stack = dsElement('div', 'ds-stack');
+            const height = Number(month.quantity) * 100 / max;
+            stack.style.height = '0%';
+            dsLater(() => { stack.style.height = `${height}%`; });
+            for (const source of DS_SOURCES) {
+                const value = Number(month[source.key] || 0);
+                if (!value) continue;
+                const part = dsElement('span', `ds-part ds-src-${source.key}`);
+                part.style.flexGrow = String(value);
+                stack.append(part);
+            }
+            if (month === record) stack.append(dsElement('em', 'ds-record-flag', 'Record'));
+            const [year, number] = month.month.split('-');
+            const label = dsElement('span', 'ds-col-label', dsMonth(month.month));
+            if (index === 0 || number === '01') label.append(dsElement('b', '', year));
+            column.append(stack, label);
+            column.addEventListener('mouseenter', () => show(column, month));
+            column.addEventListener('focus', () => show(column, month));
+            column.addEventListener('mouseleave', () => { tip.hidden = true; });
+            column.addEventListener('blur', () => { tip.hidden = true; });
+            plot.append(column);
+        }
+        plot.append(tip);
+        chart.append(axis, plot);
+        container.append(chart);
+    }
+
+    // Classement des intrants : barre proportionnelle au plus livré, segmentée par origine.
+    function renderDeliveryStatsProducts(data, total) {
+        const list = $('delivery-stats-products');
+        const products = data.products || [];
+        if (!products.length) { list.append(dsElement('li', 'ds-empty', 'Aucun intrant livré sur cette période.')); return; }
+        const max = Number(products[0].quantity) || 1;
+        for (const [index, product] of products.entries()) {
+            const item = dsElement('li', 'ds-product');
+            item.style.setProperty?.('--i', String(index));
+            const rank = dsElement('span', `ds-rank${index < 3 ? ' ds-rank-top' : ''}`, String(index + 1));
+            const body = dsElement('div', 'ds-product-body');
+            const head = dsElement('div', 'ds-product-head');
+            const name = dsElement('span', 'ds-product-name', product.name);
+            name.title = product.name;
+            const figure = dsElement('span', 'ds-product-figure');
+            figure.append(dsElement('b', '', dsNumber(product.quantity)), dsElement('span', '', dsPercent(product.quantity, total)));
+            head.append(name, figure);
+            const track = dsElement('div', 'ds-track');
+            const fill = dsElement('div', 'ds-fill');
+            fill.style.width = '0%';
+            dsLater(() => { fill.style.width = `${Math.max(1.5, Number(product.quantity) * 100 / max)}%`; });
+            for (const source of DS_SOURCES) {
+                const value = Number(product[source.key] || 0);
+                if (!value) continue;
+                const part = dsElement('span', `ds-part ds-src-${source.key}`);
+                part.style.flexGrow = String(value);
+                part.title = `${source.label} : ${dsNumber(value)}`;
+                fill.append(part);
+            }
+            track.append(fill);
+            const meta = dsElement('span', 'ds-product-meta',
+                `${product.unit || 'Unité'} · ${dsNumber(product.deliveries)} livraison(s) · ${dsNumber(product.destinations)} destinataire(s)`);
+            body.append(head, track, meta);
+            item.append(rank, body);
+            list.append(item);
+        }
+    }
+
+    function renderDeliveryStatsDistricts(data, total) {
+        const container = $('delivery-stats-districts');
+        const districts = data.districts || [];
+        if (!districts.length) { container.append(dsElement('p', 'ds-empty', 'Aucun district livré sur cette période.')); return; }
+        const names = new Map((data.products || []).map(product => [product.product_id, product.name]));
+        for (const [index, district] of districts.entries()) {
+            const card = dsElement('article', 'ds-district');
+            card.style.setProperty?.('--i', String(index));
+            const share = total > 0 ? Number(district.quantity) * 100 / total : 0;
+            const head = dsElement('div', 'ds-district-head');
+            const ring = dsElement('span', 'ds-ring');
+            ring.setAttribute('role', 'img');
+            ring.setAttribute('aria-label', `${dsPercent(district.quantity, total)} du grand total`);
+            ring.dataset.label = dsPercent(district.quantity, total);
+            ring.style.setProperty?.('--p', '0');
+            dsLater(() => ring.style.setProperty?.('--p', String(share)));
+            const title = dsElement('div', 'ds-district-title');
+            title.append(dsElement('strong', '', district.district),
+                dsElement('span', '', `${dsNumber(district.deliveries)} BL · ${dsNumber(district.destinations)} destinataire(s)`));
+            head.append(ring, title);
+            const figure = dsElement('div', 'ds-district-figure');
+            figure.append(dsElement('b', '', dsNumber(district.quantity)), dsElement('span', '', 'unités livrées'));
+            const top = dsElement('ol', 'ds-top');
+            const best = Number(district.top?.[0]?.quantity || 0) || 1;
+            for (const csb of district.top || []) {
+                const row = dsElement('li');
+                const label = dsElement('span', 'ds-top-name', csb.name);
+                const bar = dsElement('span', 'ds-top-bar');
+                const fill = dsElement('i');
+                fill.style.width = `${Number(csb.quantity) * 100 / best}%`;
+                bar.append(fill);
+                row.append(label, bar, dsElement('b', '', dsNumber(csb.quantity)));
+                top.append(row);
+            }
+            const chips = dsElement('div', 'ds-chips');
+            for (const product of (district.products || []).slice(0, 3)) {
+                const chip = dsElement('span', 'ds-chip', dsShortName(names.get(product.product_id)));
+                chip.title = `${names.get(product.product_id) || ''} : ${dsNumber(product.quantity)}`;
+                chips.append(chip);
+            }
+            card.append(head, figure, dsElement('span', 'ds-subtitle', 'Principaux destinataires'), top,
+                dsElement('span', 'ds-subtitle', 'Intrants les plus livrés'), chips);
+            container.append(card);
+        }
+    }
+
+    // Tableau croisé intrants × districts : vue tabulaire des mêmes données (accessibilité, export CSV).
+    function renderDeliveryStatsMatrix(data) {
+        const table = $('delivery-stats-matrix');
+        const products = data.products || [], districts = data.districts || [];
+        if (!products.length) return;
+        const cells = new Map();
+        let max = 0;
+        for (const district of districts) for (const product of district.products || []) {
+            const value = Number(product.quantity);
+            cells.set(`${product.product_id}|${district.district}`, product.quantity);
+            if (value > max) max = value;
+        }
+        const thead = dsElement('thead'), headRow = dsElement('tr');
+        headRow.append(dsElement('th', 'ds-sticky', 'Intrant'));
+        for (const district of districts) headRow.append(dsElement('th', 'ds-num', district.district));
+        headRow.append(dsElement('th', 'ds-num ds-total-col', 'Total'));
+        thead.append(headRow);
+        const tbody = dsElement('tbody');
+        for (const product of products) {
+            const row = dsElement('tr');
+            const name = dsElement('th', 'ds-sticky', product.name);
+            name.scope = 'row';
+            row.append(name);
+            for (const district of districts) {
+                const value = cells.get(`${product.product_id}|${district.district}`);
+                const cell = dsElement('td', 'ds-num ds-heat', value ? dsNumber(value) : '—');
+                const level = value && max ? Number(value) / max : 0;
+                cell.style.setProperty?.('--a', `${Math.round(Math.sqrt(level) * 70)}%`);
+                if (level > 0.45) cell.classList.add('ds-heat-strong');
+                if (!value) cell.classList.add('ds-heat-none');
+                row.append(cell);
+            }
+            row.append(dsElement('td', 'ds-num ds-total-col', dsNumber(product.quantity)));
+            tbody.append(row);
+        }
+        const totalRow = dsElement('tr', 'ds-total-row');
+        totalRow.append(dsElement('th', 'ds-sticky', 'Total'));
+        for (const district of districts) totalRow.append(dsElement('td', 'ds-num', dsNumber(district.quantity)));
+        totalRow.append(dsElement('td', 'ds-num ds-total-col ds-grand', dsNumber(data.totals?.quantity || 0)));
+        tbody.append(totalRow);
+        table.append(thead, tbody);
+    }
+
+    function exportDeliveryStats() {
+        downloadTableCsv($('delivery-stats-matrix'), tableCsvFileName('statistiques-livraison', portSelect.selectedOptions?.[0]?.textContent || ''));
+    }
+
+    // ---------- Registre des sorties d'avant Q.box ----------
+    function legacyFilter() {
+        return {
+            from: $('legacy-deliveries-from').value || null,
+            to: $('legacy-deliveries-to').value || null,
+            product: $('legacy-deliveries-product').value || null,
+            search: String($('legacy-deliveries-search').value ?? '').trim() || null
+        };
+    }
+
+    async function loadLegacyProducts() {
+        if (legacyProductsLoaded) return;
+        try {
+            const products = await api('/rest/v1/rpc/qbox_list_products', {}, true);
+            const select = $('legacy-deliveries-product');
+            for (const product of [...(products || [])].sort((a, b) => String(a.name).localeCompare(String(b.name), 'fr'))) {
+                const option = document.createElement('option');
+                option.value = product.id;
+                option.textContent = product.name;
+                select.append(option);
+            }
+            legacyProductsLoaded = true;
+        } catch { /* filtre par intrant indisponible : le registre reste consultable */ }
+    }
+
+    async function refreshLegacyDeliveries(reset = true) {
+        const port = portSelect.value, status = $('legacy-deliveries-status'), body = $('legacy-deliveries-body'), more = $('legacy-deliveries-more');
+        if (reset || !legacyState || legacyState.port !== port) {
+            legacyState = { port, filter: legacyFilter(), offset: 0 };
+            body.replaceChildren();
+            $('legacy-deliveries-export').disabled = true;
+        }
+        more.hidden = true;
+        if (!port) { status.textContent = 'Aucun site disponible.'; return; }
+        const state = legacyState, sequence = ++legacySequence, requestGeneration = sessionGeneration;
+        status.textContent = 'Chargement des sorties d’avant Q.box…';
+        loadLegacyProducts();
+        try {
+            const data = await api('/rest/v1/rpc/qbox_legacy_deliveries', {
+                selected_port: port, from_date: state.filter.from, to_date: state.filter.to, product_filter: state.filter.product,
+                search_text: state.filter.search, page_limit: LEGACY_PAGE_SIZE, page_offset: state.offset
+            }, true);
+            if (sequence !== legacySequence || state !== legacyState || activeView !== 'history' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
+            const rows = data.rows || [];
+            for (const entry of rows) body.append(legacyRow(entry));
+            state.offset += rows.length;
+            const filtered = Object.values(state.filter).some(Boolean);
+            if (!Number(data.imported)) {
+                body.replaceChildren(emptyTableRow('Aucune sortie d’avant Q.box n’a été importée pour ce site.', 6));
+                status.textContent = '';
+            } else if (!state.offset) {
+                body.replaceChildren(emptyTableRow('Aucun BL ne correspond aux filtres.', 6));
+                status.textContent = `0 BL sur ${dsNumber(data.imported)} lignes importées.`;
+            } else {
+                status.textContent = `${dsNumber(state.offset)} BL affiché(s) sur ${dsNumber(data.total)}${filtered ? ' correspondant aux filtres' : ''} · ${dsNumber(data.imported)} lignes importées pour ce site.`;
+            }
+            more.hidden = state.offset >= Number(data.total || 0);
+            $('legacy-deliveries-export').disabled = !state.offset;
+        } catch (error) {
+            if (sequence === legacySequence && activeView === 'history' && sessionGeneration === requestGeneration)
+                status.textContent = `Lecture indisponible : ${error.message}`;
+        }
+    }
+
+    function legacyRow(entry) {
+        const row = dsElement('tr');
+        row.append(dsElement('td', 'ds-mono', entry.bl || '—'), dsElement('td', 'ds-nowrap', dsDate(entry.delivered_on)),
+            dsElement('td', 'ds-strong', entry.destination), dsElement('td', 'ds-nowrap', entry.district));
+        const items = dsElement('td');
+        const list = dsElement('ul', 'ds-items');
+        for (const item of entry.items || []) {
+            const line = dsElement('li');
+            line.append(dsElement('span', '', item.product), dsElement('span', 'ds-lot', item.lot ? `lot ${item.lot}` : 'lot non renseigné'),
+                dsElement('b', '', dsNumber(item.quantity)));
+            line.title = `${item.product} — ${dsNumber(item.quantity)} ${item.unit || ''}${item.expiry_date ? ` — péremption ${dsDate(item.expiry_date)}` : ''}`;
+            list.append(line);
+        }
+        items.append(list);
+        row.append(items, dsElement('td', 'ds-num ds-strong', dsNumber(entry.quantity)));
+        return row;
+    }
+
+    function exportLegacyDeliveries() {
+        downloadTableCsv($('legacy-deliveries-table'), tableCsvFileName('sorties-avant-qbox', portSelect.selectedOptions?.[0]?.textContent || ''));
     }
 
     function stockHistoryFilter() {
@@ -7720,6 +8229,13 @@
         $('national-filter-all').addEventListener('click', () => setNationalFilter({ alertsOnly: false }));
         $('national-filter-alerts').addEventListener('click', () => setNationalFilter({ alertsOnly: true }));
         $('indicators-export').addEventListener('click', exportPerformanceIndicators);
+        // Historique : statistiques de livraison et sorties d'avant Q.box.
+        $('delivery-stats-period').addEventListener('change', refreshDeliveryStats);
+        for (const source of ['all', 'app', 'legacy']) $(`delivery-stats-source-${source}`).addEventListener('click', () => setDeliveryStatsSource(source));
+        $('delivery-stats-export').addEventListener('click', exportDeliveryStats);
+        $('legacy-deliveries-filters').addEventListener('submit', event => { event.preventDefault(); refreshLegacyDeliveries(true); });
+        $('legacy-deliveries-more').addEventListener('click', () => refreshLegacyDeliveries(false));
+        $('legacy-deliveries-export').addEventListener('click', exportLegacyDeliveries);
         $('product-gtin-scan').addEventListener('click', scanProductGtin);
         for (const id of ['salama-scan', 'salama-scan-mobile']) $(id).addEventListener('click', scanReceipt);
         $('inventory-scan').addEventListener('click', scanInventory);

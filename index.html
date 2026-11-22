@@ -33,8 +33,9 @@
     <link rel="stylesheet" href="motion.css?v=1251c2b346">
     <link rel="stylesheet" href="national-view.css?v=6c99d6819e">
     <link rel="stylesheet" href="logistics-report.css?v=2e0cfd87ed">
+    <link rel="stylesheet" href="delivery-stats.css?v=c242a759b3">
     <!-- Tailwind compilé (npm run build:assets), chargé en dernier comme l'ancien CDN -->
-    <link rel="stylesheet" href="tailwind.css?v=3023cec4ba">
+    <link rel="stylesheet" href="tailwind.css?v=7828e1c15a">
     <script src="theme-toggle.js?v=f439f0b4ec"></script>
     <script src="app-bootstrap.js?v=85d7a116e6"></script>
 </head>
@@ -1053,6 +1054,78 @@
 
                 <!-- ================= VIEW 8: HISTORIQUE VOLS ================= -->
                 <section id="view-history" class="tab-content hidden space-y-4">
+                    <!-- Statistiques de livraison (style : delivery-stats.css, code : 05-statistiques-livraison.js) -->
+                    <div id="delivery-stats" class="ds no-print">
+                        <header class="ds-hero">
+                            <span class="ds-sky" aria-hidden="true"><span class="ds-sky-box">
+                                <svg viewBox="0 0 340 130" focusable="false"><path d="M 8 112 C 70 30, 150 128, 222 58 S 312 18, 334 34"></path><circle cx="8" cy="112" r="4"></circle><circle cx="334" cy="34" r="4"></circle></svg>
+                                <span class="ds-drone"><i class="ph ph-drone"></i></span>
+                            </span></span>
+                            <div class="ds-hero-text">
+                                <span class="ds-eyebrow"><i class="ph ph-chart-bar" aria-hidden="true"></i>Statistiques de livraison</span>
+                                <h3>Ce que le drone port a livré</h3>
+                                <p class="ds-hero-sub">Vols drone et expéditions terrestres clôturés dans Q.box, et sorties enregistrées avant Q.box (fichier Excel, hors stock).</p>
+                                <p id="delivery-stats-status" role="status" aria-live="polite"></p>
+                            </div>
+                            <div class="ds-total">
+                                <span class="ds-total-label"><i class="ph ph-sigma" aria-hidden="true"></i>Grand total livré</span>
+                                <strong id="delivery-stats-total">—</strong>
+                                <span id="delivery-stats-total-hint" class="ds-total-hint">unités, tous intrants confondus</span>
+                            </div>
+                            <div class="ds-controls">
+                                <label class="ds-select"><i class="ph ph-calendar-blank" aria-hidden="true"></i><span class="sr-only">Période</span>
+                                    <select id="delivery-stats-period">
+                                        <option value="all">Tout l’historique</option>
+                                        <option value="12m">12 derniers mois</option>
+                                        <option value="year">Année en cours</option>
+                                        <option value="3m">3 derniers mois</option>
+                                    </select></label>
+                                <div class="ds-toggle" role="group" aria-label="Origine des livraisons">
+                                    <button id="delivery-stats-source-all" type="button" aria-pressed="true">Tout</button>
+                                    <button id="delivery-stats-source-app" type="button" aria-pressed="false">Q.box</button>
+                                    <button id="delivery-stats-source-legacy" type="button" aria-pressed="false">Avant Q.box</button>
+                                </div>
+                            </div>
+                            <div id="delivery-stats-kpis" class="ds-kpis"></div>
+                            <div id="delivery-stats-mix" class="ds-mix"></div>
+                        </header>
+
+                        <section class="ds-panel" aria-labelledby="delivery-stats-months-title">
+                            <div class="ds-panel-head">
+                                <div class="ds-panel-title"><i class="ph ph-clock-counter-clockwise" aria-hidden="true"></i>
+                                    <div><h4 id="delivery-stats-months-title">Évolution mensuelle</h4><p>Quantités livrées chaque mois, par origine. Survolez un mois pour le détail.</p></div></div>
+                                <div id="delivery-stats-legend" class="ds-legend"></div>
+                            </div>
+                            <div id="delivery-stats-months" class="ds-months"></div>
+                        </section>
+
+                        <div class="ds-grid">
+                            <section class="ds-panel" aria-labelledby="delivery-stats-products-title">
+                                <div class="ds-panel-head">
+                                    <div class="ds-panel-title"><i class="ph ph-package" aria-hidden="true"></i>
+                                        <div><h4 id="delivery-stats-products-title">Total livré par intrant</h4><p>Classement des intrants, part du grand total et nombre de livraisons.</p></div></div>
+                                </div>
+                                <ol id="delivery-stats-products" class="ds-products"></ol>
+                            </section>
+                            <section class="ds-panel" aria-labelledby="delivery-stats-districts-title">
+                                <div class="ds-panel-head">
+                                    <div class="ds-panel-title"><i class="ph ph-map-pin-area" aria-hidden="true"></i>
+                                        <div><h4 id="delivery-stats-districts-title">Quantités livrées par district</h4><p>Part du grand total, CSB desservis et principaux destinataires.</p></div></div>
+                                </div>
+                                <div id="delivery-stats-districts" class="ds-districts"></div>
+                            </section>
+                        </div>
+
+                        <section class="ds-panel" aria-labelledby="delivery-stats-matrix-title">
+                            <div class="ds-panel-head">
+                                <div class="ds-panel-title"><i class="ph ph-map-trifold" aria-hidden="true"></i>
+                                    <div><h4 id="delivery-stats-matrix-title">Intrants × districts</h4><p>Quantités livrées ; plus la case est foncée, plus la quantité est élevée. Totaux en bas et à droite.</p></div></div>
+                                <button id="delivery-stats-export" type="button" class="ds-button" disabled><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter CSV</button>
+                            </div>
+                            <div class="ds-matrix-scroll"><table id="delivery-stats-matrix" class="ds-matrix"></table></div>
+                        </section>
+                    </div>
+
                     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                         <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div>
@@ -1083,6 +1156,31 @@
                             </table>
                         </div>
                     </div>
+
+                    <!-- Sorties d'avant Q.box (qbox.legacy_deliveries) : consultation seule, hors stock -->
+                    <section id="legacy-deliveries" class="ds ds-panel ds-legacy no-print" aria-labelledby="legacy-deliveries-title">
+                        <div class="ds-panel-head">
+                            <div class="ds-panel-title"><i class="ph ph-file-xls" aria-hidden="true"></i>
+                                <div><h4 id="legacy-deliveries-title">Sorties avant Q.box <span class="ds-badge">Hors stock</span></h4>
+                                    <p>Livraisons importées du fichier Excel du drone port, regroupées par BL. Consultation seule : elles ne modifient aucun stock.</p></div></div>
+                            <button id="legacy-deliveries-export" type="button" class="ds-button" disabled><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter CSV</button>
+                        </div>
+                        <form id="legacy-deliveries-filters" class="ds-filters">
+                            <label><span>Du</span><input id="legacy-deliveries-from" type="date"></label>
+                            <label><span>Au</span><input id="legacy-deliveries-to" type="date"></label>
+                            <label><span>Intrant</span><select id="legacy-deliveries-product"><option value="">Tous les intrants</option></select></label>
+                            <label class="ds-filter-search"><span>Recherche</span><input id="legacy-deliveries-search" type="search" placeholder="BL, CSB, district, lot…" autocomplete="off"></label>
+                            <button type="submit" class="ds-button ds-button-primary"><i class="ph ph-funnel" aria-hidden="true"></i>Filtrer</button>
+                        </form>
+                        <p id="legacy-deliveries-status" class="ds-status" role="status" aria-live="polite"></p>
+                        <div class="ds-table-scroll">
+                            <table id="legacy-deliveries-table" class="ds-table">
+                                <thead><tr><th>N° BL</th><th>Date</th><th>Destinataire</th><th>District</th><th>Intrants livrés (lot)</th><th class="ds-num">Quantité</th></tr></thead>
+                                <tbody id="legacy-deliveries-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="ds-more"><button id="legacy-deliveries-more" type="button" class="ds-button" hidden>Afficher plus de BL</button></div>
+                    </section>
                 </section>
 
                 <section id="view-transfers" class="tab-content hidden space-y-4">
@@ -1850,6 +1948,6 @@
     <script src="dashboard-notice.js?v=1bdc6e1598"></script>
     <script src="layout-nav.js?v=40b93e2a36"></script>
     <script src="motion.js?v=7bd162fd50"></script>
-    <script src="app-entry.js?v=f5613e018c"></script>
+    <script src="app-entry.js?v=0e40655ab5"></script>
 </body>
 </html>
