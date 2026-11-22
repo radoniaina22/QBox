@@ -3,7 +3,7 @@
 
 (() => {
     const $ = id => document.getElementById(id);
-    const roles = { admin: 'Admin', pilot: 'Pilote', pilot_rd: 'Pilote RD', logistics: 'Coordinateur logistique', unfpa: 'UNFPA' };
+    const roles = { admin: 'Admin', pilot: 'Pilote', pilot_rd: 'Pilote RD', logistics: 'Coordinateur logistique', unfpa: 'UNFPA', rh_chief: 'Chef Unité SR' };
     let config;
     let token = null;
     // A credential rotation keeps the session identity; login and logout replace it.
@@ -1196,10 +1196,10 @@
 
     function appendPlanningHistory(card, view, id, port) {
         const section = document.createElement('div');
-        section.className = 'p-4 border-t border-slate-100 text-xs text-slate-700';
+        section.className = 'pc-history';
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'font-bold text-sky-700';
+        button.className = 'pc-link pc-link-history';
         button.textContent = 'Afficher l’historique des modifications';
         const content = document.createElement('div');
         content.setAttribute('aria-live', 'polite');
@@ -1221,6 +1221,273 @@
         card.append(section);
     }
 
+    // --- Cartes de campagne (Besoins prévisionnels et archives) ---
+    // Statut d'un CSB : livré (tout reçu), expédié (plus rien à prévoir mais des colis en route), en cours, non commencé.
+    const PLANNING_CSB_STATUS = {
+        todo:     'Non commencé',
+        progress: 'En cours',
+        shipped:  'Expédié',
+        done:     'Livré'
+    };
+    const PLANNING_CSB_ORDER = {todo: 0, progress: 0, shipped: 1, done: 2};
+    // CSB dépliés, conservés entre deux actualisations de la liste.
+    const planningOpenCsbs = new Set();
+
+    function planningCsbStatus(group) {
+        const effective = group.delivered + group.in_flight + group.in_transit;
+        if (group.planned > 0n && group.delivered >= group.planned) return 'done';
+        if (effective > 0n && group.remaining <= 0n) return 'shipped';
+        if (effective > 0n) return 'progress';
+        return group.planned > 0n ? 'todo' : 'done';
+    }
+
+    // Compare l'avancement de la campagne au temps écoulé (dates de Madagascar, bornes incluses).
+    function planningPace(plan, percent, today = planningTodayIso()) {
+        const day = iso => Date.parse(`${iso}T00:00:00Z`) / 86400000;
+        const start = day(plan.start_date), end = day(plan.end_date), now = day(today);
+        if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(now) || end < start) return null;
+        const total = end - start + 1;
+        if (now < start) return {timePercent: 0, status: 'upcoming', label: 'À venir', text: `Début le ${plan.start_date} · ${total} jour(s) de campagne`};
+        const elapsed = Math.min(total, now - start + 1);
+        const timePercent = Math.round(elapsed * 100 / total);
+        const progress = percent === null ? null : Number(percent);
+        let status, label;
+        if (progress === null) [status, label] = ['neutral', 'Sans besoin chiffré'];
+        else if (progress >= 100) [status, label] = ['done', 'Besoin couvert'];
+        else if (now > end) [status, label] = ['late', 'Échéance dépassée'];
+        else if (progress - timePercent >= 5) [status, label] = ['ahead', 'En avance'];
+        else if (progress - timePercent >= -5) [status, label] = ['ontrack', 'Dans les temps'];
+        else [status, label] = ['late', 'En retard'];
+        const text = now > end ? `Campagne terminée le ${plan.end_date}`
+            : `Jour ${elapsed} sur ${total} · ${timePercent} % du temps écoulé${progress === null ? '' : ` · ${progress} % couvert`}`;
+        return {timePercent, status, label, text};
+    }
+
+    function planningItemsTable(group, view, plan) {
+        const table = planningCell('table', '', 'pc-table');
+        const head = document.createElement('thead');
+        const headers = document.createElement('tr');
+        for (const [text, right] of [['Intrant médical', false], ['Prévu', true], ['Livré', true], ['En vol', true], ['Transit terrestre', true], ['Restant à prévoir', true], ['Progression', false]])
+            headers.append(planningCell('th', text, right ? 'pc-th pc-right' : 'pc-th'));
+        head.append(headers);
+        const body = document.createElement('tbody');
+        for (const item of group.items) {
+            const row = document.createElement('tr');
+            const name = planningCell('th', item.product_name, 'pc-name');
+            name.scope = 'row';
+            row.append(name);
+            for (const key of ['planned', 'delivered', 'in_flight', 'in_transit']) {
+                const value = BigInt(item[key]);
+                row.append(planningCell('td', number(item[key]), value ? 'pc-num' : 'pc-num pc-zero'));
+            }
+            const due = BigInt(item.remaining ?? 0) > 0n;
+            const rest = planningCell('td', '', due ? 'pc-num pc-rest-due' : 'pc-num pc-rest-ok');
+            if (!due) rest.append(planningIcon('ph-check-circle'));
+            rest.append(planningCell('span', number(item.remaining ?? 0)));
+            row.append(rest);
+            const progressCell = planningCell('td', '', 'pc-progress-cell');
+            const itemProgress = planningProgress(item.planned, item.delivered, item.in_flight, item.in_transit, `Avancement de ${item.product_name} pour ${group.name}`);
+            progressCell.append(itemProgress.track, planningCell('span', itemProgress.percent === null ? 'N/A' : `${number(itemProgress.percent)}%`, 'pc-rate'));
+            row.append(progressCell);
+            body.append(row);
+        }
+        table.append(head, body);
+        const scroll = planningCell('div', '', 'pc-scroll');
+        scroll.append(table);
+        return scroll;
+    }
+
+    function renderPlanCard(plan, view, port, districtOf = null) {
+        const card = planningCell('article', '', 'pc-card');
+        const grouped = new Map();
+        const totals = {planned: 0n, delivered: 0n, in_flight: 0n, in_transit: 0n, remaining: 0n};
+        for (const item of plan.items) {
+            if (!grouped.has(item.csb_id)) grouped.set(item.csb_id, {id: item.csb_id, name: item.csb_name, items: [],
+                planned: 0n, delivered: 0n, in_flight: 0n, in_transit: 0n, remaining: 0n});
+            const group = grouped.get(item.csb_id);
+            group.items.push(item);
+            for (const key of ['planned', 'delivered', 'in_flight', 'in_transit']) {
+                const value = BigInt(item[key]);
+                group[key] += value;
+                totals[key] += value;
+            }
+            const rest = BigInt(item.remaining ?? 0);
+            if (rest > 0n) { group.remaining += rest; totals.remaining += rest; }
+        }
+        const progress = planningProgress(totals.planned, totals.delivered, totals.in_flight, totals.in_transit, `Avancement de ${plan.code}`);
+        const percentText = progress.percent === null ? 'N/A' : `${number(progress.percent)}%`;
+        const pace = view === 'planning' ? planningPace(plan, progress.percent) : null;
+
+        // En-tête : période, code, CSB, orientation et modification.
+        const header = planningCell('div', '', 'pc-head');
+        const heading = planningCell('div', '', 'pc-heading');
+        const meta = planningCell('div', '', 'pc-meta');
+        meta.append(planningCell('span', plan.code, 'pc-chip'), planningCell('span', `${grouped.size} CSB concerné(s)`, 'pc-meta-item'));
+        if (plan.folder) meta.append(planningCell('span', plan.folder, 'pc-meta-item'));
+        heading.append(planningCell('h3', `Campagne du ${plan.start_date} au ${plan.end_date}`, 'pc-title'), meta);
+        const actions = planningCell('div', '', 'pc-actions');
+        if (pace) {
+            const badge = planningCell('span', pace.label, `pc-pace pc-pace-${pace.status}`);
+            badge.title = pace.text;
+            actions.append(badge);
+        }
+        // Circuit de validation (10-planning-validation.js) : badge, mention, Soumettre / Valider.
+        const review = appendPlanningValidation(plan, view, meta, actions);
+        // Pendant la validation, seul le Chef Unité SR peut changer les quantités.
+        if (view === 'planning' && hasRole(['admin', 'logistics']) && planningValidationState(plan) !== 'submitted') {
+            const edit = document.createElement('button');
+            edit.type = 'button';
+            edit.className = 'pc-button pc-button-edit';
+            edit.textContent = 'Modifier la campagne';
+            edit.addEventListener('click', () => openPlanning(plan.id));
+            actions.append(edit);
+        }
+        header.append(heading, actions);
+
+        // Indicateurs : avancement global puis quantités, tous intrants confondus.
+        const kpis = planningCell('div', '', 'pc-kpis');
+        const main = planningCell('div', '', 'pc-kpi pc-kpi-main');
+        main.append(planningCell('span', 'Avancement', 'pc-kpi-label'), planningCell('strong', percentText, 'pc-kpi-value'),
+            planningCell('span', `${number(progress.effective)} / ${number(totals.planned)} un. (${percentText})`, 'pc-kpi-hint'));
+        kpis.append(main);
+        for (const [label, value, hint, tone] of [
+            ['Prévu', totals.planned, `${plan.items.length} ligne(s) de besoin`, 'planned'],
+            ['Livré', totals.delivered, 'Reçu par les CSB', 'delivered'],
+            ['En route', totals.in_flight + totals.in_transit, `En vol ${number(totals.in_flight)} · terrestre ${number(totals.in_transit)}`, 'flight'],
+            ['Restant à prévoir', totals.remaining, totals.remaining > 0n ? 'À planifier en vol ou expédition' : 'Tout est couvert', totals.remaining > 0n ? 'due' : 'ok']
+        ]) {
+            const kpi = planningCell('div', '', `pc-kpi pc-kpi-${tone}`);
+            kpi.append(planningCell('span', label, 'pc-kpi-label'), planningCell('strong', number(value), 'pc-kpi-value'), planningCell('span', hint, 'pc-kpi-hint'));
+            kpis.append(kpi);
+        }
+
+        // Barre d'avancement, légende et temps écoulé.
+        const progressArea = planningCell('div', '', 'pc-progress');
+        const legend = planningCell('div', '', 'pc-legend');
+        for (const [tone, text] of [['delivered', `Livré : ${number(totals.delivered)}`], ['flight', `En vol : ${number(totals.in_flight)}`],
+            ['transit', `Transit terrestre : ${number(totals.in_transit)}`]]) {
+            const chip = planningCell('span', '', `pc-legend-item pc-dot-${tone}`);
+            chip.append(planningCell('span', text));
+            legend.append(chip);
+        }
+        legend.append(planningCell('span', 'Totaux tous intrants confondus', 'pc-legend-note'));
+        progressArea.append(progress.track, legend);
+        if (pace) {
+            const time = planningCell('div', '', 'pc-time');
+            const label = planningCell('span', '', 'pc-time-label');
+            label.append(planningIcon('ph-clock-countdown'), planningCell('span', pace.text));
+            const track = planningCell('div', '', 'pc-time-track');
+            track.setAttribute('aria-hidden', 'true');
+            const fill = planningCell('div', '', 'pc-time-fill');
+            fill.style.width = `${pace.timePercent}%`;
+            track.append(fill);
+            time.append(label, track);
+            progressArea.append(time);
+        }
+        card.append(header);
+        if (review) card.append(review);
+        card.append(kpis, progressArea);
+
+        // Liste des CSB : une ligne compacte par CSB, détail des intrants au clic.
+        // Classées par district (ordre alphabétique, district non renseigné en dernier), puis par statut et restant.
+        const groups = [...grouped.values()].map(group => ({...group, status: planningCsbStatus(group),
+            district: districtOf ? districtOf.get(group.id) || NO_DISTRICT : null}));
+        const byDistrict = (a, b) => a.district === b.district ? 0 : a.district === NO_DISTRICT ? 1 : b.district === NO_DISTRICT ? -1
+            : String(a.district).localeCompare(String(b.district), 'fr');
+        groups.sort((a, b) => byDistrict(a, b) || PLANNING_CSB_ORDER[a.status] - PLANNING_CSB_ORDER[b.status]
+            || (b.remaining > a.remaining ? 1 : b.remaining < a.remaining ? -1 : 0)
+            || String(a.name).localeCompare(String(b.name), 'fr'));
+        const list = planningCell('div', '', 'pc-csbs');
+        const listHead = planningCell('div', '', 'pc-csbs-head');
+        const listTitle = planningCell('div', '', 'pc-csbs-title');
+        const count = status => groups.filter(group => group.status === status).length;
+        const pending = count('todo') + count('progress');
+        listTitle.append(planningCell('h4', 'Besoins par CSB', 'pc-section-title'),
+            planningCell('span', `${pending} à compléter · ${count('shipped')} expédié(s) · ${count('done')} livré(s)`, 'pc-csbs-count'));
+        listHead.append(listTitle);
+        const entries = [];
+        const setOpen = (entry, open) => {
+            entry.panel.hidden = !open;
+            entry.toggle.setAttribute('aria-expanded', String(open));
+            if (open) planningOpenCsbs.add(entry.key); else planningOpenCsbs.delete(entry.key);
+        };
+        if (groups.length > 1) {
+            const all = document.createElement('button');
+            all.type = 'button';
+            all.className = 'pc-link';
+            const label = () => { all.textContent = entries.every(entry => !entry.panel.hidden) ? 'Tout replier' : 'Tout déplier'; };
+            all.addEventListener('click', () => {
+                const open = entries.some(entry => entry.panel.hidden);
+                for (const entry of entries) setOpen(entry, open);
+                label();
+            });
+            listHead.append(all);
+            entries.refreshLabel = label;
+        }
+        list.append(listHead);
+        const districts = new Map();
+        if (districtOf) for (const group of groups) {
+            if (!districts.has(group.district)) districts.set(group.district, {count: 0, planned: 0n, effective: 0n, remaining: 0n});
+            const total = districts.get(group.district);
+            total.count += 1;
+            total.planned += group.planned;
+            total.effective += group.delivered + group.in_flight + group.in_transit;
+            total.remaining += group.remaining;
+        }
+        let currentDistrict;
+        for (const group of groups) {
+            if (districtOf && group.district !== currentDistrict) {
+                currentDistrict = group.district;
+                const total = districts.get(currentDistrict);
+                const percent = roundedProgress(total.effective, total.planned);
+                const head = planningCell('div', '', group.district === NO_DISTRICT ? 'pc-district pc-district-none' : 'pc-district');
+                const name = planningCell('h5', '', 'pc-district-name');
+                name.append(planningIcon('ph-map-pin-area'), planningCell('span', currentDistrict));
+                head.append(name, planningCell('span', `${total.count} CSB`, 'pc-district-count'),
+                    planningCell('span', total.remaining > 0n ? `Reste ${number(total.remaining)}` : 'Couvert', total.remaining > 0n ? 'pc-district-rest pc-rest-due' : 'pc-district-rest pc-rest-ok'),
+                    planningCell('span', percent === null ? '—' : `${number(percent)} %`, 'pc-district-rate'));
+                list.append(head);
+            }
+            const key = `${view}:${plan.id}:${group.id}`;
+            const row = planningCell('div', '', `pc-csb pc-csb-${group.status}`);
+            const line = planningCell('div', '', 'pc-csb-line');
+            const panel = planningCell('div', '', 'pc-csb-panel');
+            panel.id = `planning-csb-${view}-${plan.id}-${group.id}`;
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'pc-csb-toggle';
+            toggle.setAttribute('aria-controls', panel.id);
+            const mini = planningProgress(group.planned, group.delivered, group.in_flight, group.in_transit, `Avancement de ${group.name}`);
+            mini.track.className = 'pc-mini flex';
+            mini.track.setAttribute('aria-hidden', 'true');
+            const bar = planningCell('span', '', 'pc-csb-bar');
+            bar.append(mini.track, planningCell('span', mini.percent === null ? '—' : `${number(mini.percent)} %`, 'pc-csb-rate'));
+            toggle.append(planningCell('span', group.name, 'pc-csb-name'), planningCell('span', PLANNING_CSB_STATUS[group.status], `pc-status pc-status-${group.status}`),
+                bar, planningCell('span', group.remaining > 0n ? `Reste ${number(group.remaining)}` : 'Couvert', group.remaining > 0n ? 'pc-csb-rest pc-rest-due' : 'pc-csb-rest pc-rest-ok'));
+            const print = document.createElement('button');
+            print.type = 'button';
+            print.className = 'pc-button pc-button-small pc-button-preview';
+            print.textContent = 'Aperçu des besoins';
+            print.addEventListener('click', () => openPlanningPrint(view, plan.id, group.id));
+            line.append(toggle, print);
+            panel.append(planningItemsTable(group, view, plan));
+            const entry = {key, panel, toggle};
+            entries.push(entry);
+            setOpen(entry, planningOpenCsbs.has(key));
+            toggle.addEventListener('click', () => {
+                setOpen(entry, panel.hidden);
+                entries.refreshLabel?.();
+            });
+            row.append(line, panel);
+            list.append(row);
+        }
+        entries.refreshLabel?.();
+        if (groups.length) card.append(list);
+        else card.append(planningCell('p', 'Aucun besoin saisi pour cette campagne.', 'pc-empty'));
+        appendPlanningHistory(card, view, plan.id, port);
+        return card;
+    }
+
     async function refreshPlanCards(view) {
             const port = portSelect.value;
             const seq = ++requestSequence;
@@ -1232,8 +1499,13 @@
             notice.textContent = port ? 'Chargement…' : 'Aucun port disponible.';
             if (!port) return;
             try {
-                const result = await api('/rest/v1/rpc/qbox_list_plannings', { selected_port: port }, true);
+                // Les CSB donnent le district de chaque ligne ; sans eux, les cartes s'affichent sans regroupement.
+                const [result, csbs] = await Promise.all([
+                    api('/rest/v1/rpc/qbox_list_plannings', { selected_port: port }, true),
+                    api('/rest/v1/rpc/qbox_list_csbs', { selected_port: port }, true).catch(() => null)
+                ]);
                 if (seq !== requestSequence || activeView !== view || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
+                const districtOf = csbs ? new Map(csbs.map(csb => [csb.id, csb.district || NO_DISTRICT])) : null;
                 const plans = result.filter(plan => plan.status === (view === 'planning' ? 'En cours' : 'Archivé'));
                 if (!plans.length) {
                     const empty = document.createElement('div');
@@ -1241,115 +1513,11 @@
                     empty.textContent = view === 'planning' ? 'Aucun planning prévisionnel actif pour ce drone port.' : 'Aucun planning archivé.';
                     container.append(empty);
                 }
-                for (const plan of plans) {
-                    const card = document.createElement('article');
-                    card.className = 'border border-slate-200 rounded-2xl bg-white overflow-hidden shadow-sm hover:border-slate-300 transition-all';
-                    const grouped = new Map();
-                    const totals = {planned: 0n, delivered: 0n, in_flight: 0n, in_transit: 0n};
-                    for (const item of plan.items) {
-                        if (!grouped.has(item.csb_id)) grouped.set(item.csb_id, { name: item.csb_name, items: [] });
-                        grouped.get(item.csb_id).items.push(item);
-                        for (const key of Object.keys(totals)) totals[key] += BigInt(item[key]);
-                    }
-                    const progress = planningProgress(totals.planned, totals.delivered, totals.in_flight, totals.in_transit, `Avancement de ${plan.code}`);
-                    const header = document.createElement('div');
-                    header.className = 'p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3';
-                    const heading = document.createElement('div');
-                    heading.className = 'space-y-1';
-                    const title = document.createElement('h3');
-                    title.className = 'font-bold text-slate-900 text-sm';
-                    title.textContent = `Campagne du ${plan.start_date} au ${plan.end_date}`;
-                    const subtitle = document.createElement('p');
-                    subtitle.className = 'text-xs text-slate-500';
-                    subtitle.textContent = `${plan.code} · ${grouped.size} CSB concerné(s)${plan.folder ? ` · ${plan.folder}` : ''}`;
-                    heading.append(title, subtitle);
-                    const summary = document.createElement('div');
-                    summary.className = 'flex flex-wrap items-center gap-3';
-                    const ratio = document.createElement('div');
-                    ratio.className = 'text-xs font-mono font-bold text-slate-800';
-                    ratio.textContent = `${number(progress.effective)} / ${number(totals.planned)} un. (${progress.percent === null ? 'N/A' : `${number(progress.percent)}%`})`;
-                    summary.append(ratio);
-                    if (view === 'planning' && hasRole(['admin', 'logistics'])) {
-                        const edit = document.createElement('button');
-                        edit.type = 'button';
-                        edit.className = 'px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700';
-                        edit.textContent = 'Modifier la campagne';
-                        edit.addEventListener('click', () => openPlanning(plan.id));
-                        summary.append(edit);
-                    }
-                    header.append(heading, summary);
-                    card.append(header);
-                    const progressArea = document.createElement('div');
-                    progressArea.className = 'px-4 py-3 bg-white border-b border-slate-100';
-                    const legend = document.createElement('p');
-                    legend.className = 'mt-2 text-[10px] text-slate-500';
-                    legend.textContent = `Livré : ${number(totals.delivered)} · En vol : ${number(totals.in_flight)} · Transit terrestre : ${number(totals.in_transit)} · Totaux tous intrants confondus`;
-                    progressArea.append(progress.track, legend);
-                    card.append(progressArea);
-                    for (const [csbId, group] of grouped) {
-                        const section = document.createElement('div');
-                        section.className = 'p-4 bg-slate-50/30 border-t border-slate-100';
-                        const groupHeader = document.createElement('div');
-                        groupHeader.className = 'flex flex-wrap items-center justify-between gap-2 mb-2';
-                        const title = document.createElement('h4');
-                        title.className = 'text-xs font-bold text-slate-800';
-                        title.textContent = group.name;
-                        const print = document.createElement('button');
-                        print.type = 'button';
-                        print.className = 'px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-[10px] font-bold rounded shadow-sm';
-                        print.textContent = 'Aperçu des besoins';
-                        print.addEventListener('click', () => openPlanningPrint(view, plan.id, csbId));
-                        groupHeader.append(title, print);
-                        const scroll = document.createElement('div');
-                        scroll.className = 'overflow-x-auto';
-                        const table = document.createElement('table');
-                        table.className = 'w-full text-left border-collapse text-xs';
-                        const head = document.createElement('thead');
-                        const headers = document.createElement('tr');
-                        headers.className = 'text-slate-400 text-[10px] uppercase border-b border-slate-100';
-                        for (const text of ['Intrant médical', 'Besoin prévu', 'Livré et en transit', 'Restant à prévoir', 'Progression globale']) {
-                            const th = document.createElement('th');
-                            th.scope = 'col';
-                            th.className = 'py-1.5 px-2 font-semibold';
-                            th.textContent = text;
-                            headers.append(th);
-                        }
-                        head.append(headers);
-                        const body = document.createElement('tbody');
-                        body.className = 'divide-y divide-slate-100';
-                        for (const item of group.items) {
-                            const row = document.createElement('tr');
-                            row.className = 'hover:bg-slate-100/50';
-                            for (const text of [item.product_name, number(item.planned),
-                                `Livré : ${number(item.delivered)} · En vol : ${number(item.in_flight)} · Transit terrestre : ${number(item.in_transit)}`,
-                                number(item.remaining)]) {
-                                const cell = document.createElement('td');
-                                cell.className = 'py-2 px-2 text-slate-700';
-                                cell.textContent = text;
-                                row.append(cell);
-                            }
-                            const progressCell = document.createElement('td');
-                            progressCell.className = 'py-2 px-2 min-w-[150px]';
-                            const itemProgress = planningProgress(item.planned, item.delivered, item.in_flight, item.in_transit, `Avancement de ${item.product_name} pour ${group.name}`);
-                            const rate = document.createElement('span');
-                            rate.className = 'text-[10px] font-mono text-slate-500';
-                            rate.textContent = itemProgress.percent === null ? 'N/A' : `${number(itemProgress.percent)}%`;
-                            progressCell.append(itemProgress.track, rate);
-                            row.append(progressCell);
-                            body.append(row);
-                        }
-                        table.append(head, body);
-                        scroll.append(table);
-                        section.append(groupHeader, scroll);
-                        card.append(section);
-                    }
-                    appendPlanningHistory(card, view, plan.id, port);
-                    container.append(card);
-                }
+                for (const plan of plans) container.append(renderPlanCard(plan, view, port, districtOf));
                 notice.textContent = `${plans.length} planning(s) · Actualisé le ${localDateTime(new Date())} (heure de Madagascar).`;
                 const active = view === 'planning' && plans.find(plan => plan.items.length);
                 // Chargée en arrière-plan : les cartes du planning ne dépendent pas de la lecture des stocks.
-                if (active) loadPlanningDistrictSummary(active, view, port, seq, requestGeneration, notice);
+                if (active) loadPlanningDistrictSummary(active, view, port, seq, requestGeneration, notice, csbs);
             } catch (error) {
                 if (seq === requestSequence && activeView === view && port === portSelect.value && sessionGeneration === requestGeneration)
                     notice.textContent = `Lecture indisponible : ${error.message}`;
@@ -1454,6 +1622,7 @@
         const meta = planningCell('div', '', 'pd-hero-meta');
         meta.append(planningCell('span', `Campagne ${plan.code}`, 'pd-chip'),
             planningCell('span', `Du ${plan.start_date} au ${plan.end_date}`, 'pd-hero-period'));
+        meta.append(planningCell('span', `${data.districts.length} district(s) · ${number(data.total)} unité(s)`, 'pd-hero-period'));
         if (data.stock) meta.append(planningStatusBadge(planningGlobalVerdict(data.stock).status, 'pd-hero-status'));
         heading.append(title, meta);
         const print = document.createElement('button');
@@ -1461,7 +1630,27 @@
         print.className = 'pd-print';
         print.textContent = 'Imprimer la répartition';
         print.addEventListener('click', () => openPlanningPrint(view, plan.id, null));
-        header.append(badge, heading, print);
+        // Section repliée par défaut : le planning par CSB reste visible en premier.
+        const content = planningCell('div', '', 'pd-body');
+        content.id = 'planning-district-body';
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'pd-toggle';
+        toggle.setAttribute('aria-controls', content.id);
+        const applyOpen = open => {
+            content.hidden = !open;
+            toggle.setAttribute('aria-expanded', String(open));
+            toggle.textContent = open ? 'Masquer le détail' : 'Voir le détail';
+        };
+        applyOpen(planningDistrictOpen());
+        toggle.addEventListener('click', () => {
+            const open = content.hidden;
+            planningDistrictOpen(open);
+            applyOpen(open);
+        });
+        const actions = planningCell('div', '', 'pd-actions');
+        actions.append(toggle, print);
+        header.append(badge, heading, actions);
 
         // Indicateurs clés.
         const csbCount = data.districts.reduce((sum, district) => sum + district.csbs.size, 0);
@@ -1526,9 +1715,26 @@
         scroll.append(planningDistrictMatrix(data, true));
         matrix.append(matrixHead, scroll);
 
-        section.replaceChildren(header, kpis, cards, matrix);
-        if (data.stock) section.append(planningStockSection(data.stock, true));
+        content.append(kpis, cards, matrix);
+        if (data.stock) content.append(planningStockSection(data.stock, true));
+        section.replaceChildren(header, content);
         section.hidden = false;
+    }
+
+    // État déplié/replié de la répartition par district, mémorisé dans le navigateur (préférence d'affichage seulement).
+    const PLANNING_DISTRICT_OPEN_KEY = 'qbox.planningDistrictOpen';
+    let planningDistrictOpenState = null;
+    function planningDistrictOpen(value) {
+        if (value !== undefined) {
+            planningDistrictOpenState = value;
+            try { if (typeof localStorage !== 'undefined') localStorage.setItem(PLANNING_DISTRICT_OPEN_KEY, value ? '1' : '0'); } catch { /* stockage indisponible */ }
+            return value;
+        }
+        if (planningDistrictOpenState === null) {
+            try { planningDistrictOpenState = typeof localStorage !== 'undefined' && localStorage.getItem(PLANNING_DISTRICT_OPEN_KEY) === '1'; }
+            catch { planningDistrictOpenState = false; }
+        }
+        return planningDistrictOpenState;
     }
 
     // --- Comparaison planifié / stock disponible du port ---
@@ -1684,11 +1890,11 @@
         return wrapper;
     }
 
-    async function loadPlanningDistrictSummary(plan, view, port, seq, requestGeneration, notice) {
+    async function loadPlanningDistrictSummary(plan, view, port, seq, requestGeneration, notice, knownCsbs = null) {
         const current = () => seq === requestSequence && activeView === view && port === portSelect.value && sessionGeneration === requestGeneration;
         try {
             const [csbs, stocks] = await Promise.all([
-                api('/rest/v1/rpc/qbox_list_csbs', {selected_port: port}, true),
+                knownCsbs || api('/rest/v1/rpc/qbox_list_csbs', {selected_port: port}, true),
                 api('/rest/v1/rpc/qbox_list_stocks', {selected_port: port}, true)
             ]);
             if (!current()) return;
@@ -1738,6 +1944,13 @@
         meta.append(planningCell('strong', kind), planningCell('span', `${port.name}${port.region ? ` · ${port.region}` : ''}`),
             planningCell('span', plan ? `Campagne ${plan.code} · ${plan.start_date} au ${plan.end_date}` : detail),
             planningCell('span', `Édité le ${localDateTime(new Date())} (Madagascar)`));
+        // État de validation du planning (Chef Unité SR) sur tout document de campagne.
+        if (plan) {
+            const state = planningValidationState(plan);
+            meta.append(planningCell('span', state === 'validated'
+                ? (plan.validated_at ? `Validé par ${plan.validated_by_name || 'le Chef Unité SR'} le ${localDateTime(plan.validated_at)}` : 'Planning validé')
+                : state === 'submitted' ? 'Planning en attente de validation par le Chef Unité SR' : 'Planning non validé (en préparation)'));
+        }
         header.append(identity, meta);
         return header;
     }
@@ -2029,111 +2242,206 @@
         container.append(button, history);
     }
 
+    // Classes partagées des actions de livraison (vols, expéditions terrestres, historique).
+    // L'icône d'un bouton dépend de data-icon (modern-theme.css), pas de sa classe.
+    const DELIVERY_BUTTON = {
+        primary: 'dl-btn dl-btn-primary',
+        danger: 'dl-btn dl-btn-danger',
+        secondary: 'dl-btn dl-btn-secondary',
+        neutral: 'dl-btn dl-btn-neutral'
+    };
+
+    function deliveryButton(label, tone, icon, onClick) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = DELIVERY_BUTTON[tone];
+        if (icon) button.dataset.icon = icon;
+        button.textContent = label;
+        button.addEventListener('click', onClick);
+        return button;
+    }
+
+    function deliveryStatusBadge(status) {
+        const text = String(status || '');
+        const tone = /annul/i.test(text) ? 'cancelled' : /clôtur|livr/i.test(text) ? 'done' : /en vol|en cours/i.test(text) ? 'flight' : 'neutral';
+        const badge = document.createElement('span');
+        badge.className = `dl-status dl-status-${tone}`;
+        badge.textContent = text;
+        return badge;
+    }
+
+    function deliveryElement(tag, className = '', text = '') {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text) element.textContent = text;
+        return element;
+    }
+
+    // Vols en cours affichés, pour la recherche sans relire le serveur.
+    let droneFilterState = null;
+
+    // Vols en cours : indicateurs, puis vols regroupés par district et par CSB (colisage, BL, actions).
+    // csbs === null (lecture impossible) : regroupement par CSB seulement.
+    function renderDroneFlights(container, rows, csbs, view) {
+        const csbInfo = new Map((csbs || []).map(csb => [csb.id, csb]));
+        const itemUnits = flight => flight.items.reduce((sum, item) => sum + BigInt(item.quantity ?? 0), 0n);
+        const units = rows.reduce((sum, flight) => sum + itemUnits(flight), 0n);
+        const products = new Set(rows.flatMap(flight => flight.items.map(item => item.product_name || item.name)));
+        const kpis = [];
+        for (const [label, value, hint, tone, icon] of [
+            ['Colis en vol', number(rows.length), 'Vols à clôturer à réception', 'primary', 'ph-paper-plane-tilt'],
+            ['CSB desservis', number(new Set(rows.map(flight => flight.csb_id)).size), 'Destinations en cours', 'teal', 'ph-first-aid-kit'],
+            ['Unités transportées', number(units), 'Tous intrants confondus', 'accent', 'ph-package'],
+            ['Intrants distincts', number(products.size), 'Dans les colis en vol', 'violet', 'ph-pill']
+        ]) {
+            const kpi = deliveryElement('div', `dl-kpi dl-tone-${tone}`);
+            const badge = deliveryElement('span', 'dl-kpi-icon');
+            const glyph = deliveryElement('i', `ph ${icon}`);
+            glyph.setAttribute('aria-hidden', 'true');
+            badge.append(glyph);
+            const text = deliveryElement('div', 'dl-kpi-text');
+            text.append(deliveryElement('span', 'dl-kpi-label', label), deliveryElement('strong', 'dl-kpi-value', value), deliveryElement('span', 'dl-kpi-hint', hint));
+            kpi.append(badge, text);
+            kpis.push(kpi);
+        }
+        $('drones-summary').replaceChildren(...kpis);
+        droneFilterState = {flights: [], csbs: [], districts: [], empty: null};
+        if (!rows.length) {
+            const empty = deliveryElement('div', 'dl-empty');
+            const glyph = deliveryElement('i', 'ph ph-paper-plane-tilt');
+            glyph.setAttribute('aria-hidden', 'true');
+            empty.append(glyph, deliveryElement('strong', '', 'Aucune rotation drone en cours.'),
+                deliveryElement('span', '', 'Les colis apparaissent ici dès qu’une mission est lancée, jusqu’à leur clôture à réception.'));
+            container.append(empty);
+            return;
+        }
+        // District → CSB → vols ; districts par ordre alphabétique (non renseigné en dernier), vols du plus ancien au plus récent.
+        const districts = new Map();
+        for (const flight of rows) {
+            const csb = csbInfo.get(flight.csb_id);
+            const district = csbs ? csb?.district || NO_DISTRICT : '';
+            if (!districts.has(district)) districts.set(district, new Map());
+            const groups = districts.get(district);
+            if (!groups.has(flight.csb_id)) groups.set(flight.csb_id, {name: flight.csb_name, csb, flights: []});
+            groups.get(flight.csb_id).flights.push(flight);
+        }
+        const districtOrder = [...districts.keys()].sort((a, b) => a === NO_DISTRICT ? 1 : b === NO_DISTRICT ? -1 : a.localeCompare(b, 'fr'));
+        for (const district of districtOrder) {
+            const groups = [...districts.get(district).values()].sort((a, b) => String(a.name).localeCompare(String(b.name), 'fr'));
+            const districtBox = deliveryElement('section', district === NO_DISTRICT ? 'dl-district dl-district-none' : 'dl-district');
+            const districtState = {element: districtBox, csbs: []};
+            if (csbs) {
+                const head = deliveryElement('div', 'dl-district-head');
+                const name = deliveryElement('h3', 'dl-district-name');
+                const glyph = deliveryElement('i', 'ph ph-map-pin-area');
+                glyph.setAttribute('aria-hidden', 'true');
+                name.append(glyph, deliveryElement('span', '', district));
+                const parcels = groups.reduce((sum, group) => sum + group.flights.length, 0);
+                head.append(name, deliveryElement('span', 'dl-district-count', `${groups.length} CSB · ${parcels} colis`));
+                districtBox.append(head);
+            }
+            for (const group of groups) {
+                const section = deliveryElement('article', 'dl-csb');
+                const csbState = {element: section, flights: []};
+                const header = deliveryElement('div', 'dl-csb-head');
+                const heading = deliveryElement('div', 'dl-csb-heading');
+                heading.append(deliveryElement(csbs ? 'h4' : 'h3', 'dl-csb-name', group.name));
+                const distance = Number(group.csb?.distance_km);
+                if (group.csb && Number.isFinite(distance) && distance > 0)
+                    heading.append(deliveryElement('span', 'dl-csb-meta', `${distance.toLocaleString('fr-FR')} km`));
+                const badges = deliveryElement('div', 'dl-csb-badges');
+                for (const code of new Set(group.flights.map(flight => flight.planning_code).filter(Boolean)))
+                    badges.append(deliveryElement('span', 'dl-chip', `Planning ${code}`));
+                badges.append(deliveryElement('span', 'dl-count', `${group.flights.length} colis`));
+                header.append(heading, badges);
+                section.append(header);
+                const flights = [...group.flights].sort((a, b) => String(a.departed_at || '').localeCompare(String(b.departed_at || '')) || String(a.bl).localeCompare(String(b.bl)));
+                for (const flight of flights) {
+                    const card = deliveryElement('div', 'dl-flight');
+                    const reference = deliveryElement('div', 'dl-ref');
+                    reference.append(deliveryElement('span', 'dl-ref-label', 'N° BL'), deliveryElement('span', 'dl-ref-value', flight.bl),
+                        deliveryElement('span', 'dl-ref-date', `Départ : ${localDateTime(flight.departed_at)} (Madagascar)`), deliveryStatusBadge('En cours de livraison'));
+                    const cargo = deliveryElement('div', 'dl-cargo');
+                    const chips = deliveryElement('div', 'dl-items');
+                    for (const item of flight.items) {
+                        const chip = deliveryElement('span', 'dl-item');
+                        chip.append(deliveryElement('strong', '', number(item.quantity)), deliveryElement('span', '', `${item.product_name || item.name} · Lot ${item.lot}`));
+                        chips.append(chip);
+                    }
+                    if (!flight.items.length) chips.append(deliveryElement('span', 'dl-items-empty', 'Aucun détail'));
+                    cargo.append(chips);
+                    if (flight.items.length) cargo.append(deliveryElement('span', 'dl-cargo-total', `Total : ${number(itemUnits(flight))} unité(s) · ${flight.items.length} ligne(s)`));
+                    const actions = deliveryElement('div', 'dl-actions');
+                    if (hasRole(['admin', 'pilot'])) {
+                        actions.append(deliveryButton('Clôturer ce vol', 'primary', 'check', () => openDeliveryClose('drones', flight.id)),
+                            deliveryButton('Modifier ce vol', 'secondary', 'edit', () => openDeliveryEdit('drones', flight.id)));
+                    }
+                    actions.append(deliveryButton('Aperçu du BL', 'neutral', 'print', () => openDeliveryPrint('drones', flight.id)));
+                    if (hasRole(['admin', 'pilot'])) actions.append(deliveryButton('Annuler ce vol', 'danger', 'cancel', () => openDeliveryClose('drones', flight.id, 'cancel')));
+                    const footer = deliveryElement('div', 'dl-flight-history');
+                    appendDeliveryHistory(footer, view, flight.id, 'dl-link');
+                    card.append(reference, cargo, actions, footer);
+                    section.append(card);
+                    csbState.flights.push({element: card, search: [flight.bl, flight.csb_name, district, flight.planning_code,
+                        ...flight.items.flatMap(item => [item.product_name || item.name, item.lot])].filter(Boolean).join(' ').toLocaleLowerCase('fr-FR')});
+                }
+                districtBox.append(section);
+                districtState.csbs.push(csbState);
+            }
+            container.append(districtBox);
+            droneFilterState.districts.push(districtState);
+        }
+        droneFilterState.container = container;
+        filterDroneFlights();
+    }
+
+    // Recherche par BL, CSB, district, planning, intrant ou lot ; masque les CSB et districts sans vol visible.
+    function filterDroneFlights() {
+        if (!droneFilterState) return;
+        const query = String($('drones-search').value ?? '').trim().toLocaleLowerCase('fr-FR');
+        let shown = 0;
+        for (const district of droneFilterState.districts) {
+            let districtShown = 0;
+            for (const csb of district.csbs) {
+                let csbShown = 0;
+                for (const flight of csb.flights) {
+                    flight.element.hidden = Boolean(query) && !flight.search.includes(query);
+                    if (!flight.element.hidden) csbShown += 1;
+                }
+                csb.element.hidden = csbShown === 0;
+                districtShown += csbShown;
+            }
+            district.element.hidden = districtShown === 0;
+            shown += districtShown;
+        }
+        // Message « aucun résultat » ajouté seulement quand une recherche ne trouve rien.
+        const noMatch = shown === 0 && droneFilterState.districts.length > 0;
+        if (noMatch && !droneFilterState.empty && droneFilterState.container) {
+            droneFilterState.empty = deliveryElement('p', 'dl-no-match', 'Aucun vol ne correspond à la recherche.');
+            droneFilterState.container.append(droneFilterState.empty);
+        }
+        if (droneFilterState.empty) droneFilterState.empty.hidden = !noMatch;
+    }
+
     async function refreshDeliveries(view) {
         const port = portSelect.value, sequence = ++requestSequence, requestGeneration = sessionGeneration;
         const container = $(view === 'drones' ? 'drones-groups' : view === 'history' ? 'history-table-body' : 'sorties-table-body');
         const message = $(`postgres-${view}-status`);
         container.replaceChildren();
+        if (view === 'drones') { $('drones-summary').replaceChildren(); droneFilterState = null; }
         message.textContent = port ? 'Chargement…' : 'Aucun port disponible.';
         if (!port) return;
         try {
             const name = view === 'sorties' ? 'qbox_list_shipments' : 'qbox_list_flights';
-            const data = await api(`/rest/v1/rpc/${name}`, { selected_port: port }, true);
+            // Vols en cours : les CSB donnent le district et la distance ; sans eux, regroupement par CSB seulement.
+            const [data, csbs] = await Promise.all([
+                api(`/rest/v1/rpc/${name}`, { selected_port: port }, true),
+                view === 'drones' ? api('/rest/v1/rpc/qbox_list_csbs', { selected_port: port }, true).catch(() => null) : null
+            ]);
             if (sequence !== requestSequence || activeView !== view || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
             const rows = view === 'sorties' ? data : data.filter(flight => view === 'drones' ? flight.status === 'En vol' : flight.status !== 'En vol');
             if (view === 'drones') {
-                if (!rows.length) {
-                    const empty = document.createElement('div');
-                    empty.className = 'p-6 text-center text-slate-400 italic text-xs';
-                    empty.textContent = 'Aucune rotation drone en cours.';
-                    container.append(empty);
-                }
-                const groups = new Map();
-                for (const flight of rows) {
-                    if (!groups.has(flight.csb_id)) groups.set(flight.csb_id, { name: flight.csb_name, flights: [] });
-                    groups.get(flight.csb_id).flights.push(flight);
-                }
-                for (const group of groups.values()) {
-                    const section = document.createElement('article');
-                    section.className = 'border border-slate-200 rounded-2xl overflow-hidden bg-white';
-                    const header = document.createElement('div');
-                    header.className = 'px-4 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2';
-                    const title = document.createElement('h3');
-                    title.className = 'text-sm font-bold text-slate-900';
-                    title.textContent = group.name;
-                    const badges = document.createElement('div');
-                    badges.className = 'flex flex-wrap items-center gap-2 text-[10px] font-bold';
-                    for (const code of new Set(group.flights.map(flight => flight.planning_code).filter(Boolean))) {
-                        const badge = document.createElement('span');
-                        badge.className = 'px-2 py-0.5 bg-sky-100 text-sky-800 rounded-full';
-                        badge.textContent = `Planning ${code}`;
-                        badges.append(badge);
-                    }
-                    const count = document.createElement('span');
-                    count.className = 'px-2 py-0.5 bg-slate-900 text-white rounded-full';
-                    count.textContent = `${group.flights.length} colis`;
-                    badges.append(count);
-                    header.append(title, badges);
-                    section.append(header);
-                    for (const flight of group.flights) {
-                        const card = document.createElement('div');
-                        card.className = 'flex flex-col md:flex-row md:items-center gap-3 px-4 py-3 border-t border-slate-100';
-                        const reference = document.createElement('div');
-                        reference.className = 'md:w-40 shrink-0';
-                        const refLabel = document.createElement('div');
-                        refLabel.className = 'text-[10px] uppercase tracking-wider text-slate-400 font-semibold';
-                        refLabel.textContent = 'N° BL';
-                        const refValue = document.createElement('div');
-                        refValue.className = 'font-mono font-bold text-slate-900 text-xs';
-                        refValue.textContent = flight.bl;
-                        const departed = document.createElement('div');
-                        departed.className = 'text-[10px] text-slate-500 mt-1';
-                        departed.textContent = `Départ : ${localDateTime(flight.departed_at)} (Madagascar)`;
-                        reference.append(refLabel, refValue, departed);
-                        const payload = document.createElement('div');
-                        payload.className = 'flex-1 font-mono text-slate-700 text-xs space-y-0.5';
-                        for (const item of flight.items) addLine(payload, `${number(item.quantity)} · ${item.product_name || item.name} (Lot : ${item.lot})`);
-                        if (!flight.items.length) addLine(payload, 'Aucun détail');
-                        const state = document.createElement('span');
-                        state.className = 'px-2.5 py-1 bg-cyan-100 text-cyan-800 rounded-full text-[10px] font-bold w-max shrink-0';
-                        state.textContent = 'En cours de livraison';
-                        const actions = document.createElement('div');
-                        actions.className = 'flex flex-wrap items-center gap-2 shrink-0';
-                        if (hasRole(['admin', 'pilot'])) {
-                            const close = document.createElement('button');
-                            close.type = 'button';
-                            close.className = 'px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold';
-                            close.textContent = 'Clôturer ce vol';
-                            close.addEventListener('click', () => openDeliveryClose('drones', flight.id));
-                            actions.append(close);
-                            const cancel = document.createElement('button');
-                            cancel.type = 'button';
-                            cancel.className = 'px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-bold';
-                            cancel.textContent = 'Annuler ce vol';
-                            cancel.addEventListener('click', () => openDeliveryClose('drones', flight.id, 'cancel'));
-                            actions.append(cancel);
-                            const edit = document.createElement('button');
-                            edit.type = 'button';
-                            edit.className = 'px-3 py-1.5 bg-white hover:bg-sky-50 border border-slate-200 text-sky-700 rounded-lg text-xs font-bold';
-                            edit.textContent = 'Modifier ce vol';
-                            edit.addEventListener('click', () => openDeliveryEdit('drones', flight.id));
-                            actions.append(edit);
-                        }
-                        const print = document.createElement('button');
-                        print.type = 'button';
-                        print.className = 'px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold';
-                        print.textContent = 'Aperçu du BL';
-                        print.addEventListener('click', () => openDeliveryPrint('drones', flight.id));
-                        actions.append(print);
-                        const history = document.createElement('div');
-                        history.className = 'px-4 pb-3 text-xs text-slate-600';
-                        appendDeliveryHistory(history, view, flight.id);
-                        card.append(reference, payload, state, actions);
-                        section.append(card);
-                        section.append(history);
-                    }
-                    container.append(section);
-                }
+                renderDroneFlights(container, rows, csbs, view);
             } else {
                 for (const entry of rows) {
                     const tr = document.createElement('tr');
@@ -2141,12 +2449,13 @@
                     const values = view === 'history'
                         ? [entry.bl, entry.closed_date || 'Non renseignée', entry.csb_name, cargo(entry.items), entry.status]
                         : [entry.reference, localDateTime(entry.dispatched_at), entry.csb_name, entry.transport, cargo(entry.items), entry.status];
-                    for (const value of values) {
+                    const statusIndex = values.length - 1;
+                    values.forEach((value, index) => {
                         const cell = document.createElement('td');
                         cell.className = 'py-3 px-4 text-slate-700';
-                        cell.textContent = value;
+                        if (index === statusIndex) cell.append(deliveryStatusBadge(value)); else cell.textContent = value;
                         tr.append(cell);
-                    }
+                    });
                     tr.children[0].className += ' font-mono font-bold';
                     tr.children[2].className += ' font-bold text-slate-900';
                     const cell = document.createElement('td');
@@ -2156,19 +2465,22 @@
                     if (view === 'sorties' && entry.status === 'En cours' && hasRole(['admin', 'logistics'])) {
                         const close = document.createElement('button');
                         close.type = 'button';
-                        close.className = 'px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold';
+                        close.className = DELIVERY_BUTTON.primary;
+                        close.dataset.icon = 'check';
                         close.textContent = 'Clôturer';
                         close.addEventListener('click', () => openDeliveryClose('sorties', entry.id));
                         actions.append(close);
                         const cancel = document.createElement('button');
                         cancel.type = 'button';
-                        cancel.className = 'px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-bold';
+                        cancel.className = DELIVERY_BUTTON.danger;
+                        cancel.dataset.icon = 'cancel';
                         cancel.textContent = 'Annuler';
                         cancel.addEventListener('click', () => openDeliveryClose('sorties', entry.id, 'cancel'));
                         actions.append(cancel);
                         const edit = document.createElement('button');
                         edit.type = 'button';
-                        edit.className = 'px-3 py-1.5 bg-white hover:bg-sky-50 border border-slate-200 text-sky-700 rounded-lg text-xs font-bold';
+                        edit.className = DELIVERY_BUTTON.secondary;
+                        edit.dataset.icon = 'edit';
                         edit.textContent = 'Modifier';
                         edit.addEventListener('click', () => openDeliveryEdit('sorties', entry.id));
                         actions.append(edit);
@@ -2176,7 +2488,8 @@
                     if (entry.status !== 'Annulé') {
                         const print = document.createElement('button');
                         print.type = 'button';
-                        print.className = 'px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold';
+                        print.className = DELIVERY_BUTTON.neutral;
+                        print.dataset.icon = 'print';
                         print.textContent = 'Aperçu du BL';
                         print.addEventListener('click', () => openDeliveryPrint(view, entry.id));
                         actions.append(print);
@@ -2184,7 +2497,7 @@
                     if (!['history', 'sorties'].includes(view) || userRole === 'admin') {
                         const button = document.createElement('button');
                         button.type = 'button';
-                        button.className = 'px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold';
+                        button.className = DELIVERY_BUTTON.neutral;
                         button.textContent = 'Opérations / BL';
                         button.addEventListener('click', () => openOperations(operationSections[view]));
                         actions.append(button);
@@ -2192,7 +2505,7 @@
                     cell.append(actions);
                     const history = document.createElement('div');
                     history.className = 'mt-2 text-right';
-                    appendDeliveryHistory(history, view, entry.id, 'px-3 py-1.5 bg-white hover:bg-sky-50 border border-slate-200 text-sky-700 rounded-lg text-xs font-bold');
+                    appendDeliveryHistory(history, view, entry.id, DELIVERY_BUTTON.secondary);
                     cell.append(history);
                     tr.append(cell);
                     container.append(tr);
@@ -2865,6 +3178,7 @@
         $('drone-target').replaceChildren();
         for (const [id, name] of targets) $('drone-target').add(new Option(name, id));
         $('drone-target').disabled = !targets.size;
+        showPlanningValidationWarning('drone-validation-warning', plan);
         flightDraft.plan = $('drone-plan').value;
         flightDraft.target = $('drone-target').value;
         resetFlightParcels();
@@ -3002,6 +3316,7 @@
         const targets = new Map((plan?.items || []).map(item => [item.csb_id, item.csb_name]));
         $('sortie-target').replaceChildren();
         for (const [id, name] of targets) $('sortie-target').add(new Option(name, id));
+        showPlanningValidationWarning('sortie-validation-warning', plan);
         shipmentDraft.plan = $('sortie-plan').value;
         shipmentDraft.target = $('sortie-target').value;
         $('sortie-items').replaceChildren();
@@ -4204,11 +4519,56 @@
     const planningFilled = entry => [...entry.rows.values()]
         .filter(row => String(row.input.value ?? '').trim() !== '' || row.computed === 0).length;
 
+    // CSB regroupés par district : ordre alphabétique, district non renseigné en dernier,
+    // ordre du référentiel conservé à l'intérieur de chaque district.
+    const planningDistrictOf = csb => csb.district || NO_DISTRICT;
+    function planningCsbsByDistrict(csbs) {
+        const districts = new Map();
+        for (const csb of csbs) {
+            const name = planningDistrictOf(csb);
+            if (!districts.has(name)) districts.set(name, []);
+            districts.get(name).push(csb);
+        }
+        return [...districts].sort(([a], [b]) => a === NO_DISTRICT ? 1 : b === NO_DISTRICT ? -1 : a.localeCompare(b, 'fr'));
+    }
+    // District → case « tout le district » du sélecteur / en-tête de district des blocs de saisie.
+    const planningPickerDistricts = new Map();
+    const planningBlockDistricts = new Map();
+
     function resetPlanningForm() {
         planningEntries.clear();
         planningOptions.clear();
+        planningPickerDistricts.clear();
+        planningBlockDistricts.clear();
         $('plan-csb-blocks').replaceChildren();
         $('plan-csb-options').replaceChildren();
+        updatePlanningSummary();
+    }
+
+    // Avancement de la saisie par district, puis récapitulatif en pied de formulaire.
+    function updatePlanningDistrictStats() {
+        for (const {stats, entries} of planningBlockDistricts.values()) {
+            const total = entries.reduce((sum, entry) => sum + entry.rows.size, 0);
+            const filled = entries.reduce((sum, entry) => sum + planningFilled(entry), 0);
+            stats.textContent = `${filled} / ${total} ligne(s) renseignée(s)`;
+            stats.className = `plan-district-stats${total && filled === total ? ' is-complete' : filled ? ' is-partial' : ''}`;
+        }
+        updatePlanningSummary();
+    }
+
+    function updatePlanningSummary() {
+        let lines = 0, filled = 0, total = 0n;
+        for (const entry of planningEntries.values()) {
+            lines += entry.rows.size;
+            filled += planningFilled(entry);
+            for (const row of entry.rows.values()) {
+                const value = planningWhole(row.input);
+                if (typeof value === 'number' && !Number.isNaN(value)) total += BigInt(value);
+            }
+        }
+        $('plan-form-summary').textContent = planningEntries.size
+            ? `${planningEntries.size} CSB · ${filled} / ${lines} ligne(s) renseignée(s) · besoin total : ${number(total)}`
+            : 'Aucun CSB sélectionné';
     }
 
     function updatePlanningBlock(entry) {
@@ -4233,6 +4593,7 @@
         entry.select.value = '';
         entry.select.disabled = !missing.length;
         entry.add.disabled = !missing.length;
+        updatePlanningDistrictStats();
     }
 
     // Besoin proposé = CMM × 4 − état de stock (jamais négatif), ajustable par l'utilisateur.
@@ -4342,12 +4703,29 @@
         return row;
     }
 
-    // Réaffiche les blocs dans l'ordre du référentiel CSB, ou une invite si aucun CSB n'est coché.
+    // Réaffiche les blocs regroupés par district, ou une invite si aucun CSB n'est coché.
     function renderPlanningBlocks() {
-        const blocks = planningCsbs.filter(csb => planningEntries.has(csb.id)).map(csb => planningEntries.get(csb.id).block);
-        $('plan-csb-blocks').replaceChildren(...(blocks.length ? blocks : [planningElement('div',
-            'p-6 text-center text-xs text-slate-500 italic border border-dashed border-slate-300 rounded-xl',
+        planningBlockDistricts.clear();
+        const sections = [];
+        for (const [district, csbs] of planningCsbsByDistrict(planningCsbs)) {
+            const entries = csbs.filter(csb => planningEntries.has(csb.id)).map(csb => planningEntries.get(csb.id));
+            if (!entries.length) continue;
+            const section = planningElement('section', district === NO_DISTRICT ? 'plan-district plan-district-none' : 'plan-district');
+            section.dataset.district = district;
+            const head = planningElement('div', 'plan-district-head');
+            const name = planningElement('h5', 'plan-district-name');
+            name.append(planningIcon('ph-map-pin-area'), planningElement('span', '', district));
+            const stats = planningElement('span', 'plan-district-stats');
+            head.append(name, planningElement('span', 'plan-district-count', `${entries.length} CSB`), stats);
+            const list = planningElement('div', 'plan-district-blocks');
+            list.append(...entries.map(entry => entry.block));
+            section.append(head, list);
+            planningBlockDistricts.set(district, {stats, entries});
+            sections.push(section);
+        }
+        $('plan-csb-blocks').replaceChildren(...(sections.length ? sections : [planningElement('div', 'plan-blocks-empty',
             'Cochez un ou plusieurs CSB ci-dessus : leurs lignes d’intrants seront créées à partir du référentiel.')]));
+        updatePlanningDistrictStats();
         syncPlanningPicker();
     }
 
@@ -4366,7 +4744,7 @@
             planningElement('span', 'text-xs font-bold text-slate-900 truncate', csb.name),
             status,
             planningElement('span', 'font-mono text-[10px] text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded', csb.code),
-            planningElement('span', 'hidden sm:inline text-[10px] text-slate-500 truncate', [csb.district, csb.region].filter(Boolean).join(' · ')));
+            planningElement('span', 'hidden sm:inline text-[10px] text-slate-500 truncate', csb.region || ''));
         const actions = planningElement('div', 'flex items-center gap-2');
         const badge = planningElement('span');
         const remove = planningElement('button', 'inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50 rounded-lg transition-colors');
@@ -4426,27 +4804,46 @@
         return true;
     }
 
+    // Sélecteur des CSB par district, avec une case « tout le district » (agit sur les CSB visibles du district).
     function renderPlanningPicker() {
         planningOptions.clear();
+        planningPickerDistricts.clear();
         $('plan-csb-search').value = '';
-        const labels = planningCsbs.map(csb => {
-            const label = planningElement('label', 'flex items-start gap-2 px-2.5 py-2 rounded-lg border cursor-pointer transition-colors');
-            const input = planningElement('input', 'mt-0.5 accent-sky-600');
-            input.type = 'checkbox';
-            input.value = csb.id;
-            input.addEventListener('change', () => {
-                if (input.checked) addPlanningCsb(csb.id)?.scrollIntoView?.({block: 'nearest', behavior: 'smooth'});
-                else removePlanningCsb(csb.id);
+        const groups = planningCsbsByDistrict(planningCsbs).map(([district, csbs]) => {
+            const section = planningElement('div', district === NO_DISTRICT ? 'plan-picker-district plan-picker-district-none' : 'plan-picker-district');
+            const head = planningElement('label', 'plan-picker-head');
+            const all = planningElement('input', 'accent-sky-600');
+            all.type = 'checkbox';
+            all.setAttribute('aria-label', `Tous les CSB du district ${district}`);
+            const count = planningElement('span', 'plan-picker-count');
+            const name = planningElement('span', 'plan-picker-name');
+            name.append(planningIcon('ph-map-pin-area'), planningElement('span', '', district));
+            head.append(all, name, count);
+            const grid = planningElement('div', 'plan-picker-grid');
+            const ids = csbs.map(csb => {
+                const label = planningElement('label', 'plan-picker-option');
+                const input = planningElement('input', 'accent-sky-600');
+                input.type = 'checkbox';
+                input.value = csb.id;
+                input.addEventListener('change', () => {
+                    if (input.checked) addPlanningCsb(csb.id)?.scrollIntoView?.({block: 'nearest', behavior: 'smooth'});
+                    else removePlanningCsb(csb.id);
+                });
+                const text = planningElement('span', 'plan-picker-text');
+                text.append(planningElement('span', 'plan-picker-option-name', csb.name),
+                    planningElement('span', 'plan-picker-option-meta', [csb.code, csb.region].filter(Boolean).join(' · ')));
+                label.append(input, text);
+                planningOptions.set(csb.id, {label, input,
+                    search: [csb.name, csb.code, csb.district, csb.region].filter(Boolean).join(' ').toLocaleLowerCase('fr-FR')});
+                grid.append(label);
+                return csb.id;
             });
-            const text = planningElement('span', 'min-w-0');
-            text.append(planningElement('span', 'block text-xs font-semibold text-slate-800 truncate', csb.name),
-                planningElement('span', 'block text-[10px] text-slate-500 truncate', [csb.code, csb.district].filter(Boolean).join(' · ')));
-            label.append(input, text);
-            planningOptions.set(csb.id, {label, input,
-                search: [csb.name, csb.code, csb.district, csb.region].filter(Boolean).join(' ').toLocaleLowerCase('fr-FR')});
-            return label;
+            all.addEventListener('change', () => setPlanningCsbs(ids.filter(id => !planningOptions.get(id).label.hidden), all.checked, `du district ${district}`));
+            section.append(head, grid);
+            planningPickerDistricts.set(district, {section, input: all, count, ids});
+            return section;
         });
-        $('plan-csb-options').replaceChildren(...labels);
+        $('plan-csb-options').replaceChildren(...groups);
     }
 
     const visiblePlanningOptions = () => [...planningOptions.entries()].filter(([, option]) => !option.label.hidden);
@@ -4455,8 +4852,15 @@
         for (const [id, option] of planningOptions) {
             const checked = planningEntries.has(id);
             option.input.checked = checked;
-            option.label.className = `flex items-start gap-2 px-2.5 py-2 rounded-lg border cursor-pointer transition-colors ${
-                checked ? 'border-sky-300 bg-sky-50' : 'border-slate-200 hover:bg-slate-50'}`;
+            option.label.className = checked ? 'plan-picker-option is-checked' : 'plan-picker-option';
+        }
+        for (const {section, input, count, ids} of planningPickerDistricts.values()) {
+            const visible = ids.filter(id => !planningOptions.get(id).label.hidden);
+            const checkedVisible = visible.filter(id => planningEntries.has(id)).length;
+            section.hidden = visible.length === 0;
+            input.checked = visible.length > 0 && checkedVisible === visible.length;
+            input.indeterminate = checkedVisible > 0 && checkedVisible < visible.length;
+            count.textContent = `${ids.filter(id => planningEntries.has(id)).length} / ${ids.length}`;
         }
         const visible = visiblePlanningOptions();
         const checkedVisible = visible.filter(([id]) => planningEntries.has(id)).length;
@@ -4479,15 +4883,19 @@
 
     // « Tous les CSB » agit sur les CSB visibles (tous, sauf si une recherche filtre la liste).
     function toggleAllPlanningCsbs() {
-        const ids = visiblePlanningOptions().map(([id]) => id);
-        if ($('plan-csb-all').checked) {
+        setPlanningCsbs(visiblePlanningOptions().map(([id]) => id), $('plan-csb-all').checked);
+    }
+
+    // Ajoute ou retire un ensemble de CSB (tous, ou ceux d'un district) ; confirmation si des quantités seraient perdues.
+    function setPlanningCsbs(ids, checked, scope = '') {
+        if (checked) {
             ids.forEach(id => addPlanningCsb(id, null, false));
             renderPlanningBlocks();
             return;
         }
         const selected = ids.filter(id => planningEntries.has(id));
         const filled = selected.reduce((sum, id) => sum + planningFilled(planningEntries.get(id)), 0);
-        if (filled && !confirm(`Retirer ces ${selected.length} CSB de la campagne ? ${filled} quantité(s) saisie(s) seront perdues.`)) {
+        if (filled && !confirm(`Retirer ces ${selected.length} CSB${scope ? ` ${scope}` : ''} de la campagne ? ${filled} quantité(s) saisie(s) seront perdues.`)) {
             syncPlanningPicker();
             return;
         }
@@ -4615,10 +5023,10 @@
     }
 
     function analysisSelect(label, options, value, onChange) {
-        const wrapper = planningCell('label', '', 'flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500');
-        wrapper.append(planningCell('span', label));
+        const wrapper = planningCell('label', '', 'sa-field');
+        wrapper.append(planningCell('span', label, 'sa-field-label'));
         const select = document.createElement('select');
-        select.className = 'text-xs normal-case tracking-normal font-semibold text-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-amber-400';
+        select.className = 'sa-select';
         for (const [optionValue, text] of options) select.add(new Option(text, optionValue));
         select.value = value;
         select.addEventListener('change', () => onChange(select.value));
@@ -4626,19 +5034,75 @@
         return wrapper;
     }
 
-    function analysisKpi(label, value, hint = '', tone = '') {
-        const tile = planningCell('div', '', `planning-analysis-kpi p-3 rounded-xl border ${tone || 'border-slate-200 bg-white'}`);
-        tile.append(planningCell('div', label, 'text-[10px] font-bold uppercase tracking-wider text-slate-500'),
-            planningCell('div', value, 'mt-1 text-lg font-bold font-mono text-slate-900'));
-        if (hint) tile.append(planningCell('div', hint, 'text-[10px] text-slate-500'));
+    // tone : primary, teal, accent, violet ou une clé d'ANALYSIS_STATUS (couleur du statut).
+    function analysisKpi(label, value, hint = '', tone = 'primary', icon = '') {
+        const tile = planningCell('div', '', `planning-analysis-kpi sa-kpi sa-tone-${tone}`);
+        if (icon) {
+            const badge = planningCell('span', '', 'sa-kpi-icon');
+            const glyph = planningCell('i', '', `ph ${icon}`);
+            glyph.setAttribute('aria-hidden', 'true');
+            badge.append(glyph);
+            tile.append(badge);
+        }
+        const text = planningCell('div', '', 'sa-kpi-text');
+        text.append(planningCell('div', label, 'sa-kpi-label'), planningCell('div', value, 'sa-kpi-value'));
+        if (hint) text.append(planningCell('div', hint, 'sa-kpi-hint'));
+        tile.append(text);
         return tile;
     }
 
+    // Répartition des CSB par statut au dernier relevé (barre empilée + légende chiffrée).
+    function analysisDistribution(groups) {
+        const box = planningCell('div', '', 'sa-card sa-distribution');
+        const head = planningCell('div', '', 'sa-card-head');
+        head.append(planningCell('h4', 'Répartition des CSB par statut', 'sa-card-title'), planningCell('span', `${groups.length} CSB évalué(s)`, 'sa-card-note'));
+        const bar = planningCell('div', '', 'sa-bar');
+        bar.setAttribute('aria-hidden', 'true');
+        const legend = planningCell('div', '', 'sa-bar-legend');
+        for (const key of ['rupture', 'under', 'ok', 'over', 'nocmm']) {
+            const count = groups.filter(group => group.status === key).length;
+            if (!count) continue;
+            const segment = planningCell('span', '', `sa-bar-segment sa-status-${key}`);
+            segment.style.width = `${count * 100 / groups.length}%`;
+            segment.title = `${ANALYSIS_STATUS[key].label} : ${count} CSB`;
+            bar.append(segment);
+            const item = planningCell('span', '', `sa-legend-item sa-status-${key}`);
+            item.append(planningCell('strong', String(count)), planningCell('span', ANALYSIS_STATUS[key].label));
+            legend.append(item);
+        }
+        box.append(head, bar, legend);
+        return box;
+    }
+
+    // Jauge des mois de stock : échelle de 0 à cible + 2 mois, repères au minimum et à la cible.
+    function analysisGauge(months, status) {
+        const scale = PLANNING_CMM_MONTHS + 2;
+        const gauge = planningCell('span', '', `sa-gauge sa-status-${status}`);
+        gauge.setAttribute('aria-hidden', 'true');
+        const fill = planningCell('span', '', 'sa-gauge-fill');
+        fill.style.width = `${months === null ? 0 : Math.min(1, months / scale) * 100}%`;
+        gauge.append(fill);
+        for (const mark of [ANALYSIS_MIN_MONTHS, PLANNING_CMM_MONTHS]) {
+            const tick = planningCell('span', '', 'sa-gauge-mark');
+            tick.style.left = `${mark * 100 / scale}%`;
+            gauge.append(tick);
+        }
+        return gauge;
+    }
+
+    // Couleurs des axes lues dans le thème (clair ou sombre), avec des valeurs de secours.
+    function analysisChartTheme() {
+        let style = null;
+        try { style = typeof getComputedStyle === 'function' ? getComputedStyle(document.documentElement) : null; } catch { style = null; }
+        const read = (name, fallback) => (style?.getPropertyValue?.(name) || '').trim() || fallback;
+        return {text: read('--qb-muted', '#475569'), grid: read('--qb-line-soft', '#e2e8f0')};
+    }
+
     function analysisChartBox(title, height, description) {
-        const box = planningCell('div', '', 'p-4 rounded-xl border border-slate-200 bg-white min-w-0');
-        box.append(planningCell('h5', title, 'text-xs font-bold text-slate-800'));
-        if (description) box.append(planningCell('p', description, 'text-[10px] text-slate-500 mt-0.5'));
-        const holder = planningCell('div', '', 'relative mt-3');
+        const box = planningCell('div', '', 'sa-card sa-chart');
+        box.append(planningCell('h5', title, 'sa-card-title'));
+        if (description) box.append(planningCell('p', description, 'sa-card-note'));
+        const holder = planningCell('div', '', 'sa-chart-holder');
         holder.style.height = `${height}px`;
         const canvas = document.createElement('canvas');
         canvas.setAttribute('role', 'img');
@@ -4678,9 +5142,10 @@
     function renderAnalysisCharts({snapshots, series, totals, statusSeries, maxMonths}, boxes) {
         destroyAnalysisCharts();
         if (typeof window.Chart !== 'function') return false;
-        const axis = {ticks: {color: '#475569', font: {size: 10}}, grid: {color: '#e2e8f0'}};
+        const theme = analysisChartTheme();
+        const axis = {ticks: {color: theme.text, font: {size: 10}}, grid: {color: theme.grid}};
         const labels = snapshots.map(snapshot => snapshot.label);
-        const legend = {position: 'bottom', labels: {color: '#475569', boxWidth: 12, font: {size: 10}}};
+        const legend = {position: 'bottom', labels: {color: theme.text, boxWidth: 12, font: {size: 10}}};
         try {
             analysisCharts.push(new window.Chart(boxes.months.canvas, {
                 type: 'line',
@@ -4698,7 +5163,7 @@
                         return `${line.label} : ${formatMonths(value)} mois · ${ANALYSIS_STATUS[line.statuses[item.dataIndex]]?.label || ''}`;
                     }}}},
                     scales: {x: {...axis, ticks: {...axis.ticks, maxRotation: 45}}, y: {...axis, min: 0, max: maxMonths,
-                        title: {display: true, text: 'Mois de stock', color: '#475569'}}}},
+                        title: {display: true, text: 'Mois de stock', color: theme.text}}}},
                 plugins: [analysisThresholdPlugin]
             }));
             analysisCharts.push(new window.Chart(boxes.quantities.canvas, {
@@ -4719,7 +5184,7 @@
                     backgroundColor: ANALYSIS_STATUS[key].color, borderRadius: 3, maxBarThickness: 32}))},
                 options: {responsive: true, maintainAspectRatio: false, animation: false, plugins: {legend},
                     scales: {x: {...axis, stacked: true, ticks: {...axis.ticks, maxRotation: 45}}, y: {...axis, stacked: true, beginAtZero: true,
-                        ticks: {...axis.ticks, precision: 0}, title: {display: true, text: 'Nombre de CSB', color: '#475569'}}}}
+                        ticks: {...axis.ticks, precision: 0}, title: {display: true, text: 'Nombre de CSB', color: theme.text}}}}
             }));
             return true;
         } catch (error) {
@@ -4736,34 +5201,34 @@
     }
 
     function analysisDetailTable(groups, level, previous, ruptureCounts) {
-        const table = planningCell('table', '', 'w-full text-left border-collapse text-xs');
+        const table = planningCell('table', '', 'sa-table');
         const head = document.createElement('thead');
-        const header = planningCell('tr', '', 'border-b border-slate-200');
+        const header = document.createElement('tr');
         const columns = [ANALYSIS_LEVELS[level], level === 'csb' ? 'District' : 'CSB', 'État de stock', 'CMM', 'Mois de stock', 'Évolution',
             `Besoin (${PLANNING_CMM_MONTHS} × CMM − stock)`, 'Statut actuel'];
-        columns.forEach((text, index) => header.append(planningCell('th', text,
-            `py-2 px-2 text-[10px] uppercase font-semibold text-slate-500 whitespace-nowrap${[2, 3, 4, 6].includes(index) ? ' text-right' : ''}`)));
+        columns.forEach((text, index) => header.append(planningCell('th', text, [2, 3, 6].includes(index) ? 'sa-th sa-right' : 'sa-th')));
         head.append(header);
-        const body = planningCell('tbody', '', 'divide-y divide-slate-100');
-        const num = 'py-2 px-2 text-right font-mono text-slate-700 whitespace-nowrap';
+        const body = document.createElement('tbody');
         for (const group of groups) {
-            const row = planningCell('tr', '', group.status === 'rupture' ? 'bg-red-50/60' : 'hover:bg-slate-50');
-            const name = planningCell('th', group.label, 'py-2 px-2 font-semibold text-slate-800');
+            const row = planningCell('tr', '', `sa-row sa-status-${group.status}`);
+            const name = planningCell('th', group.label, 'sa-name');
             name.scope = 'row';
-            const trend = planningCell('td', '', 'py-2 px-2 whitespace-nowrap');
+            const trend = planningCell('td', '', 'sa-cell');
             trend.append(analysisTrend(group.months, previous.get(group.key)?.months));
-            const status = planningCell('td', '', 'py-2 px-2 space-x-1 whitespace-nowrap');
+            const status = planningCell('td', '', 'sa-cell sa-badges');
             status.append(analysisBadge(group.status));
             if (level !== 'csb' && group.ruptures.size) status.append(analysisBadge('rupture', `${group.ruptures.size} CSB en rupture`));
             const past = ruptureCounts.get(group.key) || 0;
             if (past > (group.status === 'rupture' ? 1 : 0)) status.append(analysisBadge('rupture', `${past} relevé(s) en rupture`));
-            row.append(name, planningCell('td', level === 'csb' ? (group.district || '—') : String(group.csbs.size), level === 'csb' ? 'py-2 px-2 text-slate-600' : num),
-                planningCell('td', number(group.stock), num), planningCell('td', number(group.cmm), num),
-                planningCell('td', formatMonths(group.months), `${num} font-bold`), trend, planningCell('td', number(group.need), num), status);
+            const months = planningCell('td', '', 'sa-cell sa-months');
+            months.append(planningCell('span', formatMonths(group.months), 'sa-months-value'), analysisGauge(group.months, group.status));
+            row.append(name, planningCell('td', level === 'csb' ? (group.district || '—') : String(group.csbs.size), level === 'csb' ? 'sa-cell sa-muted' : 'sa-num'),
+                planningCell('td', number(group.stock), 'sa-num'), planningCell('td', number(group.cmm), 'sa-num'),
+                months, trend, planningCell('td', number(group.need), group.need > 0n ? 'sa-num sa-need' : 'sa-num'), status);
             body.append(row);
         }
         table.append(head, body);
-        const scroll = planningCell('div', '', 'overflow-x-auto');
+        const scroll = planningCell('div', '', 'sa-scroll');
         scroll.append(table);
         return scroll;
     }
@@ -4774,24 +5239,24 @@
         const byProduct = new Map(products.map(([id]) => [id, new Map(analysisGroups(rows, level, id).map(group => [group.key, group]))]));
         const groups = [...new Map(rows.map(row => { const key = analysisGroupKey(row, level); return [key.key, key.label]; })).entries()]
             .sort((a, b) => a[1].localeCompare(b[1], 'fr'));
-        const table = planningCell('table', '', 'planning-analysis-matrix w-full border-collapse text-xs');
+        const table = planningCell('table', '', 'planning-analysis-matrix sa-matrix');
         const head = document.createElement('thead');
-        const header = planningCell('tr', '', 'border-b border-slate-200');
-        header.append(planningCell('th', ANALYSIS_LEVELS[level], 'py-2 px-2 text-left text-[10px] uppercase font-semibold text-slate-500'));
-        for (const [, name] of products) header.append(planningCell('th', name, 'py-2 px-2 text-center text-[10px] uppercase font-semibold text-slate-500 whitespace-nowrap'));
+        const header = document.createElement('tr');
+        header.append(planningCell('th', ANALYSIS_LEVELS[level], 'sa-th sa-sticky'));
+        for (const [, name] of products) header.append(planningCell('th', name, 'sa-th sa-center'));
         head.append(header);
-        const body = planningCell('tbody', '', 'divide-y divide-slate-100');
+        const body = document.createElement('tbody');
         for (const [key, label] of groups) {
             const row = document.createElement('tr');
-            const name = planningCell('th', label, 'py-1.5 px-2 text-left font-semibold text-slate-800 whitespace-nowrap');
+            const name = planningCell('th', label, 'sa-name sa-sticky');
             name.scope = 'row';
             row.append(name);
             for (const [productId] of products) {
                 const group = byProduct.get(productId).get(key);
-                const cell = planningCell('td', '', 'py-1 px-1 text-center');
+                const cell = planningCell('td', '', 'sa-cell sa-center');
                 if (group) {
                     const chip = planningCell('span', group.status === 'rupture' ? 'Rupture' : group.months === null ? 'CMM 0' : `${formatMonths(group.months)} m`,
-                        `inline-block min-w-[3.5rem] px-1.5 py-1 rounded-md font-mono font-bold text-[11px] ${ANALYSIS_STATUS[group.status].cell}`);
+                        `sa-chip sa-status-${group.status}`);
                     chip.title = `${label} · ${ANALYSIS_STATUS[group.status].label} · stock ${number(group.stock)} / CMM ${number(group.cmm)}`;
                     cell.append(chip);
                 }
@@ -4800,31 +5265,45 @@
             body.append(row);
         }
         table.append(head, body);
-        const scroll = planningCell('div', '', 'overflow-x-auto');
+        const scroll = planningCell('div', '', 'sa-scroll');
         scroll.append(table);
         return scroll;
     }
 
-    // Bandeau des ruptures du dernier relevé, tous intrants confondus.
+    // Bandeau des ruptures du dernier relevé, tous intrants confondus, regroupées par district.
     function analysisRuptureAlert(latest) {
         const ruptures = latest.rows.filter(row => analysisStatus(BigInt(row.stock_level ?? 0), BigInt(row.cmm ?? 0)) === 'rupture');
-        const box = planningCell('div', '', `planning-analysis-ruptures p-4 rounded-xl border ${ruptures.length ? 'border-red-200 bg-red-50/70' : 'border-emerald-200 bg-emerald-50/60'}`);
-        const title = planningCell('div', '', 'flex flex-wrap items-center gap-2');
-        const icon = planningCell('i', '', `ph ${ruptures.length ? 'ph-warning-octagon text-red-600' : 'ph-check-circle text-emerald-600'} text-base`);
+        const box = planningCell('div', '', `planning-analysis-ruptures sa-alert ${ruptures.length ? 'sa-alert-danger' : 'sa-alert-ok'}`);
+        const badge = planningCell('span', '', 'sa-alert-icon');
+        const icon = planningCell('i', '', `ph ${ruptures.length ? 'ph-warning-octagon' : 'ph-check-circle'}`);
         icon.setAttribute('aria-hidden', 'true');
-        title.append(icon, planningCell('strong', ruptures.length
+        badge.append(icon);
+        const body = planningCell('div', '', 'sa-alert-body');
+        body.append(planningCell('strong', ruptures.length
             ? `${ruptures.length} rupture(s) au dernier relevé (${latest.label})`
-            : `Aucune rupture au dernier relevé (${latest.label})`, `text-xs ${ruptures.length ? 'text-red-800' : 'text-emerald-800'}`));
-        box.append(title);
+            : `Aucune rupture au dernier relevé (${latest.label})`, 'sa-alert-title'),
+            planningCell('span', ruptures.length ? 'Stock nul avec une consommation : à réapprovisionner en priorité.' : 'Tous les CSB évalués ont du stock pour leurs intrants consommés.', 'sa-alert-text'));
         if (ruptures.length) {
-            const list = planningCell('div', '', 'mt-2 flex flex-wrap gap-1.5');
+            const districts = new Map();
             for (const row of ruptures) {
-                const badge = analysisBadge('rupture', `${row.csb_name} · ${row.product_name}`);
-                badge.title = `${row.district || 'District non renseigné'} · ${row.region || 'Région non renseignée'} · CMM ${number(row.cmm ?? 0)} ${row.unit || ''}`;
-                list.append(badge);
+                const district = row.district || NO_DISTRICT;
+                if (!districts.has(district)) districts.set(district, []);
+                districts.get(district).push(row);
             }
-            box.append(list);
+            const list = planningCell('div', '', 'sa-alert-groups');
+            for (const district of [...districts.keys()].sort((a, b) => a === NO_DISTRICT ? 1 : b === NO_DISTRICT ? -1 : a.localeCompare(b, 'fr'))) {
+                const group = planningCell('div', '', 'sa-alert-group');
+                group.append(planningCell('span', district, 'sa-alert-district'));
+                for (const row of districts.get(district)) {
+                    const chip = analysisBadge('rupture', `${row.csb_name} · ${row.product_name}`);
+                    chip.title = `${district} · ${row.region || 'Région non renseignée'} · CMM ${number(row.cmm ?? 0)} ${row.unit || ''}`;
+                    group.append(chip);
+                }
+                list.append(group);
+            }
+            body.append(list);
         }
+        box.append(badge, body);
         return box;
     }
 
@@ -4835,7 +5314,7 @@
         const latest = state.snapshots.at(-1);
         if (!latest) {
             container.replaceChildren(planningCell('p', 'Aucun état de stock ni CMM enregistré pour ce magasin. Renseignez-les dans le formulaire d’une campagne (Besoins prévisionnels) : chaque enregistrement ajoute un relevé à cet historique.',
-                'p-8 text-center text-xs text-slate-500 italic bg-white rounded-2xl border border-slate-200'));
+                'sa-empty'));
             return;
         }
         const allRows = state.snapshots.flatMap(snapshot => snapshot.rows);
@@ -4845,23 +5324,31 @@
         for (const row of latest.rows) if (analysisStatus(BigInt(row.stock_level ?? 0), BigInt(row.cmm ?? 0)) === 'rupture')
             currentRuptures.set(row.product_id, (currentRuptures.get(row.product_id) || 0) + 1);
         // Réglages
-        const controls = planningCell('div', '', 'flex flex-wrap items-end gap-3 p-4 bg-white rounded-2xl border border-slate-200 shadow-sm');
-        controls.append(analysisSelect('Intrant', products.map(([id, name]) => [id, currentRuptures.get(id) ? `${name} · ⚠ ${currentRuptures.get(id)} rupture(s)` : name]), state.product,
+        const controls = planningCell('div', '', 'sa-card sa-toolbar');
+        const fields = planningCell('div', '', 'sa-fields');
+        fields.append(analysisSelect('Intrant', products.map(([id, name]) => [id, currentRuptures.get(id) ? `${name} · ⚠ ${currentRuptures.get(id)} rupture(s)` : name]), state.product,
             value => { state.product = analysisPrefs.product = value; renderStockAnalysis(); }));
-        const levels = planningCell('div', '', 'flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500');
-        levels.append(planningCell('span', 'Niveau'));
-        const toggle = planningCell('div', '', 'inline-flex rounded-lg border border-slate-200 overflow-hidden');
+        const levels = planningCell('div', '', 'sa-field');
+        levels.append(planningCell('span', 'Niveau', 'sa-field-label'));
+        const toggle = planningCell('div', '', 'sa-segmented');
         toggle.setAttribute('role', 'group');
+        toggle.setAttribute('aria-label', 'Niveau d’analyse');
         for (const [key, label] of Object.entries(ANALYSIS_LEVELS)) {
-            const button = planningCell('button', label, `px-3 py-1.5 text-xs font-bold normal-case tracking-normal ${state.level === key ? 'bg-sky-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'}`);
+            const button = planningCell('button', label, state.level === key ? 'sa-segment is-active' : 'sa-segment');
             button.type = 'button';
             button.setAttribute('aria-pressed', String(state.level === key));
             button.addEventListener('click', () => { state.level = analysisPrefs.level = key; renderStockAnalysis(); });
             toggle.append(button);
         }
         levels.append(toggle);
-        controls.append(levels, planningCell('p', `Mois de stock = état de stock ÷ CMM · sous-stock < ${ANALYSIS_MIN_MONTHS} mois, cible ${PLANNING_CMM_MONTHS} mois, surstock au-delà · ${state.snapshots.length} relevé(s) du ${analysisDate(state.snapshots[0].recordedAt)} au ${analysisDate(latest.recordedAt)}`,
-            'text-[10px] text-slate-500 ml-auto max-w-md'));
+        fields.append(levels);
+        // Légende des statuts (seuils en mois de stock) et période couverte.
+        const info = planningCell('div', '', 'sa-toolbar-info');
+        const legend = planningCell('div', '', 'sa-legend');
+        for (const key of ['rupture', 'under', 'ok', 'over', 'nocmm'])
+            legend.append(planningCell('span', ANALYSIS_STATUS[key].label, `sa-legend-item sa-status-${key}`));
+        info.append(legend, planningCell('p', `Mois de stock = état de stock ÷ CMM · ${state.snapshots.length} relevé(s) du ${analysisDate(state.snapshots[0].recordedAt)} au ${analysisDate(latest.recordedAt)}`, 'sa-card-note'));
+        controls.append(fields, info);
         // Situation au dernier relevé pour l'intrant choisi
         const productName = products.find(([id]) => id === state.product)[1];
         const unit = allRows.find(row => row.product_id === state.product)?.unit || 'unités';
@@ -4869,13 +5356,14 @@
         const totals = latestCsbs.reduce((sum, group) => ({stock: sum.stock + group.stock, cmm: sum.cmm + group.cmm, need: sum.need + group.need}), {stock: 0n, cmm: 0n, need: 0n});
         const months = analysisMonths(totals.stock, totals.cmm);
         const ruptureCount = latestCsbs.filter(group => group.status === 'rupture').length;
-        const kpis = planningCell('div', '', 'grid grid-cols-2 lg:grid-cols-5 gap-3');
-        kpis.append(analysisKpi('CSB évalués', String(latestCsbs.length), `${productName} · ${latest.label}`),
+        const totalStatus = analysisStatus(totals.stock, totals.cmm);
+        const kpis = planningCell('div', '', 'sa-kpis');
+        kpis.append(analysisKpi('CSB évalués', String(latestCsbs.length), `${productName} · ${latest.label}`, 'primary', 'ph-first-aid-kit'),
             analysisKpi('CSB en rupture', String(ruptureCount), ruptureCount ? 'Stock nul avec une consommation' : 'Aucune rupture',
-                ruptureCount ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'),
-            analysisKpi('État de stock total', number(totals.stock), unit),
-            analysisKpi('Mois de stock', formatMonths(months), months === null ? 'CMM nulle' : ANALYSIS_STATUS[analysisStatus(totals.stock, totals.cmm)].label),
-            analysisKpi(`Besoin ${PLANNING_CMM_MONTHS} mois`, number(totals.need), `${unit} à couvrir`));
+                ruptureCount ? 'rupture' : 'ok', ruptureCount ? 'ph-warning-octagon' : 'ph-check-circle'),
+            analysisKpi('État de stock total', number(totals.stock), unit, 'teal', 'ph-package'),
+            analysisKpi('Mois de stock', formatMonths(months), months === null ? 'CMM nulle' : ANALYSIS_STATUS[totalStatus].label, totalStatus, 'ph-calendar-blank'),
+            analysisKpi(`Besoin ${PLANNING_CMM_MONTHS} mois`, number(totals.need), `${unit} à couvrir`, 'accent', 'ph-shopping-cart'));
         // Séries dans le temps
         const perSnapshot = state.snapshots.map(snapshot => new Map(analysisGroups(snapshot.rows, state.level, state.product).map(group => [group.key, group])));
         const latestGroups = analysisGroups(latest.rows, state.level, state.product);
@@ -4901,23 +5389,23 @@
             quantities: analysisChartBox(`État de stock et CMM dans le temps · ${productName}`, 260, `Totaux du magasin en ${unit}.`),
             statuses: analysisChartBox(`CSB par statut dans le temps · ${productName}`, 260, 'Les ruptures apparaissent en rouge.')
         };
-        const chartsMessage = planningCell('p', 'Graphiques indisponibles (Chart.js non chargé) : les tableaux ci-dessous restent complets.', 'planning-analysis-charts-message text-[11px] text-amber-700');
+        const chartsMessage = planningCell('p', 'Graphiques indisponibles (Chart.js non chargé) : les tableaux ci-dessous restent complets.', 'planning-analysis-charts-message sa-charts-message');
         chartsMessage.hidden = true;
-        const lower = planningCell('div', '', 'grid grid-cols-1 lg:grid-cols-2 gap-3');
+        const lower = planningCell('div', '', 'sa-chart-pair');
         lower.append(boxes.quantities.box, boxes.statuses.box);
         // Tableaux : situation actuelle avec évolution depuis le relevé précédent, puis matrice.
         const previous = perSnapshot.length > 1 ? perSnapshot.at(-2) : new Map();
         const ruptureCounts = new Map();
         for (const groups of perSnapshot) for (const group of groups.values()) if (group.status === 'rupture') ruptureCounts.set(group.key, (ruptureCounts.get(group.key) || 0) + 1);
-        const detail = planningCell('div', '', 'p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-2');
-        detail.append(planningCell('h4', `Situation au dernier relevé par ${levelLabel} · ${productName}`, 'text-xs font-bold text-slate-800'),
-            planningCell('p', 'Évolution : écart de mois de stock avec le relevé précédent.', 'text-[10px] text-slate-500'),
+        const detail = planningCell('div', '', 'sa-card sa-section');
+        detail.append(planningCell('h4', `Situation au dernier relevé par ${levelLabel} · ${productName}`, 'sa-card-title'),
+            planningCell('p', `Du plus critique au mieux couvert. Jauge : repères à ${ANALYSIS_MIN_MONTHS} mois (minimum) et ${PLANNING_CMM_MONTHS} mois (cible). Évolution : écart avec le relevé précédent.`, 'sa-card-note'),
             analysisDetailTable(latestGroups, state.level, previous, ruptureCounts));
-        const matrix = planningCell('div', '', 'p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-2');
-        matrix.append(planningCell('h4', `Mois de stock par ${levelLabel} et par intrant · ${latest.label}`, 'text-xs font-bold text-slate-800'),
-            planningCell('p', 'Chaque intrant est comparé à sa propre CMM : la matrice compare les intrants entre eux.', 'text-[10px] text-slate-500'),
+        const matrix = planningCell('div', '', 'sa-card sa-section');
+        matrix.append(planningCell('h4', `Mois de stock par ${levelLabel} et par intrant · ${latest.label}`, 'sa-card-title'),
+            planningCell('p', 'Chaque intrant est comparé à sa propre CMM : la matrice compare les intrants entre eux.', 'sa-card-note'),
             analysisMatrix(latest.rows, state.level));
-        container.replaceChildren(analysisRuptureAlert(latest), controls, kpis, chartsMessage, boxes.months.box, lower, detail, matrix);
+        container.replaceChildren(analysisRuptureAlert(latest), controls, kpis, analysisDistribution(latestCsbs), chartsMessage, boxes.months.box, lower, detail, matrix);
         // Graphiques créés une fois les canevas dans la page, pour que Chart.js puisse les dimensionner.
         if (!renderAnalysisCharts({snapshots: state.snapshots, series, totals: totalsSeries, statusSeries, maxMonths}, boxes)) {
             for (const box of [boxes.months.box, lower]) box.hidden = true;
@@ -5165,6 +5653,317 @@
         }
     }
 
+    // --- Circuit de validation des plannings (Chef de l'Unité Santé de la Reproduction, rôle rh_chief) ---
+    // Le coordinateur (ou le pilote RD) soumet ; le Chef Unité SR ajuste les quantités puis valide, ou renvoie
+    // avec un motif. Les contrôles de droits, d'état et de quantités sont faits par le serveur.
+    const PLANNING_VALIDATION = {
+        draft:     {label: 'En préparation', icon: 'ph-pencil-simple-line'},
+        submitted: {label: 'En attente de validation', icon: 'ph-hourglass-medium'},
+        validated: {label: 'Validé', icon: 'ph-seal-check'},
+        returned:  {label: 'À revoir', icon: 'ph-arrow-u-up-left'}
+    };
+    // Plannings antérieurs au circuit (ou réponse sans état) : considérés comme validés.
+    const planningValidationState = plan => PLANNING_VALIDATION[plan?.validation_status] ? plan.validation_status : 'validated';
+
+    let validationDraft = null;
+    let validationSaving = false;
+
+    // Avertissement des formulaires de vol et d'expédition : la livraison reste possible (urgences).
+    function planningValidationWarning(plan) {
+        if (!plan) return '';
+        const state = planningValidationState(plan);
+        if (state === 'validated') return '';
+        const reason = state === 'submitted' ? 'est en attente de validation' : state === 'returned' ? 'a été renvoyé pour correction' : 'n’est pas encore validé';
+        return `Le planning ${plan.code} ${reason} par le Chef Unité SR. La livraison reste possible (urgence, rupture d’un CSB), mais les quantités peuvent encore changer.`;
+    }
+
+    function showPlanningValidationWarning(id, plan) {
+        const element = $(id);
+        const text = planningValidationWarning(plan);
+        element.textContent = text;
+        element.hidden = !text;
+    }
+
+    function validationButton(label, className, icon, onClick) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = className;
+        button.dataset.icon = icon;
+        button.textContent = label;
+        button.addEventListener('click', onClick);
+        return button;
+    }
+
+    // Badge, mention et actions du circuit sur la carte d'une campagne. Renvoie le bandeau du motif de renvoi éventuel.
+    function appendPlanningValidation(plan, view, meta, actions) {
+        const state = planningValidationState(plan);
+        const info = PLANNING_VALIDATION[state];
+        const badge = planningCell('span', '', `pc-validation pc-validation-${state}`);
+        badge.append(planningIcon(info.icon), planningCell('span', info.label));
+        actions.append(badge);
+        if (state === 'validated' && plan.validated_at)
+            meta.append(planningCell('span', `Validé par ${plan.validated_by_name || 'le Chef Unité SR'} le ${localDateTime(plan.validated_at)}`, 'pc-meta-item'));
+        else if (state === 'submitted' && plan.submitted_at)
+            meta.append(planningCell('span', `Soumis par ${plan.submitted_by_name || 'nom non renseigné'} le ${localDateTime(plan.submitted_at)}`, 'pc-meta-item'));
+        if (view !== 'planning') return null;
+        if (['draft', 'returned'].includes(state) && hasRole(['admin', 'logistics']))
+            actions.append(validationButton('Soumettre pour validation', 'pc-button pc-button-submit', 'send', () => submitPlanningForValidation(plan)));
+        if (state === 'submitted' && hasRole(['admin', 'rh_chief']))
+            actions.append(validationButton('Valider le planning', 'pc-button pc-button-validate', 'check', () => openPlanningValidation(plan.id)));
+        if (state !== 'returned' || !plan.review_comment) return null;
+        const review = planningCell('div', '', 'pc-review');
+        review.append(planningIcon('ph-arrow-u-up-left'), planningCell('strong', 'Renvoyé pour correction :'), planningCell('span', plan.review_comment));
+        return review;
+    }
+
+    async function submitPlanningForValidation(plan) {
+        if (validationSaving || !portSelect.value || !hasRole(['admin', 'logistics'])) return;
+        if (!confirm(`Soumettre le planning ${plan.code} au Chef Unité SR pour validation ?\n\nIl sera prévenu par e-mail. Le planning ne pourra plus être modifié tant qu’il n’est pas validé ou renvoyé.`)) return;
+        const port = portSelect.value, requestGeneration = sessionGeneration;
+        validationSaving = true;
+        $('postgres-planning-status').textContent = 'Soumission du planning…';
+        try {
+            await api('/rest/v1/rpc/qbox_submit_planning', {selected_port: port, selected_planning: plan.id, expected_version: plan.version}, true);
+            if (requestGeneration !== sessionGeneration) return;
+            validationSaving = false;
+            if (activeView === 'planning' && port === portSelect.value) {
+                await refreshPlanCards('planning');
+                $('postgres-planning-status').textContent = `Planning ${plan.code} soumis pour validation : le Chef Unité SR est prévenu par e-mail.`;
+            }
+        } catch (error) {
+            if (requestGeneration === sessionGeneration) $('postgres-planning-status').textContent = `Soumission impossible : ${error.message}`;
+        } finally {
+            if (requestGeneration === sessionGeneration) validationSaving = false;
+        }
+    }
+
+    async function openPlanningValidation(planId) {
+        if (!hasRole(['admin', 'rh_chief']) || validationDraft || validationSaving || !portSelect.value) return;
+        const port = portSelect.value, requestGeneration = sessionGeneration, sequence = requestSequence;
+        const notice = $('postgres-planning-status');
+        notice.textContent = 'Chargement de la validation…';
+        try {
+            const [plans, csbs, assessments] = await Promise.all([
+                api('/rest/v1/rpc/qbox_list_plannings', {selected_port: port}, true),
+                api('/rest/v1/rpc/qbox_list_csbs', {selected_port: port}, true),
+                api('/rest/v1/rpc/qbox_planning_assessments', {selected_port: port, selected_planning: planId}, true)
+            ]);
+            if (requestGeneration !== sessionGeneration || sequence !== requestSequence || activeView !== 'planning' || port !== portSelect.value) return;
+            const plan = plans.find(item => item.id === planId);
+            if (!plan || plan.status !== 'En cours' || planningValidationState(plan) !== 'submitted')
+                throw new Error('Ce planning n’est plus en attente de validation : actualisez la liste.');
+            validationDraft = {port, plan, rows: [], districts: []};
+            renderPlanningValidation(plan, csbs, assessments);
+            $('plan-validation-notes').value = '';
+            $('plan-validation-status').textContent = '';
+            notice.textContent = '';
+            portSelect.disabled = true;
+            $('modal-backdrop').classList.remove('hidden');
+            $('modal-planning-validation').classList.remove('hidden');
+        } catch (error) {
+            if (requestGeneration === sessionGeneration && sequence === requestSequence) notice.textContent = error.message;
+        }
+    }
+
+    function validationCell(tag, text, className) {
+        const cell = planningCell(tag, text, className);
+        if (tag === 'th' && className.includes('pv-row-name')) cell.scope = 'row';
+        return cell;
+    }
+
+    // Tableau de validation : districts → CSB → intrants (CMM, état de stock, besoin calculé, proposé, retenu, écart).
+    function renderPlanningValidation(plan, csbs, assessments) {
+        const csbInfo = new Map(csbs.map(csb => [csb.id, csb]));
+        const evaluation = new Map(assessments.map(row => [`${row.csb_id}:${row.product_id}`, row]));
+        $('plan-validation-subtitle').textContent = `${plan.code} · Campagne du ${plan.start_date} au ${plan.end_date} · soumis par ${
+            plan.submitted_by_name || 'nom non renseigné'}${plan.submitted_at ? ` le ${localDateTime(plan.submitted_at)}` : ''}`;
+        const districts = new Map();
+        for (const item of plan.items) {
+            const district = csbInfo.get(item.csb_id)?.district || NO_DISTRICT;
+            if (!districts.has(district)) districts.set(district, new Map());
+            const groups = districts.get(district);
+            if (!groups.has(item.csb_id)) groups.set(item.csb_id, {name: item.csb_name, items: []});
+            groups.get(item.csb_id).items.push(item);
+        }
+        const order = [...districts.keys()].sort((a, b) => a === NO_DISTRICT ? 1 : b === NO_DISTRICT ? -1 : a.localeCompare(b, 'fr'));
+        let missing = 0;
+        const sections = [];
+        for (const district of order) {
+            const section = planningCell('section', '', district === NO_DISTRICT ? 'pv-district pv-district-none' : 'pv-district');
+            const head = planningCell('div', '', 'pv-district-head');
+            const name = planningCell('h4', '', 'pv-district-name');
+            name.append(planningIcon('ph-map-pin-area'), planningCell('span', district));
+            const stats = planningCell('span', '', 'pv-district-stats');
+            const groups = [...districts.get(district).values()].sort((a, b) => String(a.name).localeCompare(String(b.name), 'fr'));
+            head.append(name, planningCell('span', `${groups.length} CSB`, 'pv-district-count'), stats);
+            section.append(head);
+            const districtState = {stats, rows: []};
+            for (const group of groups) {
+                const block = planningCell('div', '', 'pv-csb');
+                block.append(planningCell('h5', group.name, 'pv-csb-name'));
+                const table = planningCell('table', '', 'pv-table');
+                const thead = document.createElement('thead');
+                const header = document.createElement('tr');
+                for (const [text, right] of [['Intrant', false], ['CMM', true], ['État de stock', true], ['Besoin calculé', true], ['Proposé', true], ['Retenu', true], ['Écart', true]])
+                    header.append(planningCell('th', text, right ? 'pv-th pv-right' : 'pv-th'));
+                thead.append(header);
+                const body = document.createElement('tbody');
+                for (const item of group.items) {
+                    const assessment = evaluation.get(`${item.csb_id}:${item.product_id}`);
+                    const cmm = assessment?.cmm ?? null, stock = assessment?.stock_level ?? null;
+                    if (cmm === null) missing += 1;
+                    const need = cmm === null ? null : (() => { const value = BigInt(cmm) * BigInt(PLANNING_CMM_MONTHS) - BigInt(stock ?? 0); return value > 0n ? value : 0n; })();
+                    const committed = BigInt(item.delivered ?? 0) + BigInt(item.in_flight ?? 0) + BigInt(item.in_transit ?? 0);
+                    const proposed = BigInt(item.proposed ?? item.planned);
+                    const row = document.createElement('tr');
+                    const input = planningElement('input', 'pv-input');
+                    Object.assign(input, {type: 'number', min: String(committed), max: '9007199254740991', step: '1', value: String(item.planned)});
+                    input.setAttribute('aria-label', `Quantité retenue — ${group.name} · ${item.product_name}`);
+                    const retained = planningCell('td', '', 'pv-cell pv-right');
+                    retained.append(input);
+                    if (committed > 0n) retained.append(planningCell('span', `min. ${number(committed)} (livré ou en route)`, 'pv-hint'));
+                    const gap = planningCell('td', '', 'pv-num pv-gap');
+                    row.append(validationCell('th', item.product_name, 'pv-row-name'),
+                        planningCell('td', cmm === null ? 'Non saisie' : number(cmm), cmm === null ? 'pv-num pv-missing' : 'pv-num'),
+                        planningCell('td', stock === null ? '—' : number(stock), 'pv-num'),
+                        planningCell('td', need === null ? '—' : number(need), 'pv-num pv-need'),
+                        planningCell('td', number(proposed), 'pv-num'), retained, gap);
+                    const state = {item, input, gap, row, committed, proposed, district};
+                    input.addEventListener('input', updatePlanningValidation);
+                    validationDraft.rows.push(state);
+                    districtState.rows.push(state);
+                    body.append(row);
+                }
+                table.append(thead, body);
+                const scroll = planningCell('div', '', 'pv-scroll');
+                scroll.append(table);
+                block.append(scroll);
+                section.append(block);
+            }
+            validationDraft.districts.push(districtState);
+            sections.push(section);
+        }
+        const csbCount = new Set(plan.items.map(item => item.csb_id)).size;
+        const summary = [];
+        for (const [label, value, tone] of [['CSB', String(csbCount), ''], ['Lignes de besoin', String(plan.items.length), ''],
+            ['Lignes sans CMM', String(missing), missing ? 'pv-chip-warn' : 'pv-chip-ok']]) {
+            const chip = planningCell('span', '', `pv-chip ${tone}`.trim());
+            chip.append(planningCell('strong', value), planningCell('span', label));
+            summary.push(chip);
+        }
+        $('plan-validation-summary').replaceChildren(...summary);
+        $('plan-validation-content').replaceChildren(...sections);
+        updatePlanningValidation();
+    }
+
+    // Écarts, totaux par district et récapitulatif ; une saisie invalide est signalée sur sa ligne.
+    function updatePlanningValidation() {
+        if (!validationDraft) return;
+        let proposed = 0n, retained = 0n, adjusted = 0, invalid = 0;
+        const value = state => {
+            const parsed = planningWhole(state.input);
+            return parsed === null || Number.isNaN(parsed) ? null : BigInt(parsed);
+        };
+        for (const state of validationDraft.rows) {
+            const current = value(state);
+            const wrong = current === null || current < state.committed;
+            proposed += state.proposed;
+            if (wrong) {
+                invalid += 1;
+                state.gap.textContent = current === null ? 'Invalide' : `min. ${number(state.committed)}`;
+                state.gap.className = 'pv-num pv-gap pv-gap-invalid';
+                state.row.className = 'pv-row is-invalid';
+                continue;
+            }
+            retained += current;
+            const delta = current - state.proposed;
+            if (delta !== 0n) adjusted += 1;
+            state.gap.textContent = delta === 0n ? '=' : delta > 0n ? `+${number(delta)}` : `−${number(-delta)}`;
+            state.gap.className = `pv-num pv-gap${delta > 0n ? ' pv-gap-up' : delta < 0n ? ' pv-gap-down' : ''}`;
+            state.row.className = delta === 0n ? 'pv-row' : 'pv-row is-adjusted';
+        }
+        for (const district of validationDraft.districts) {
+            let total = 0n, changed = 0;
+            for (const state of district.rows) {
+                const current = value(state);
+                if (current !== null) total += current;
+                if (current !== null && current !== state.proposed) changed += 1;
+            }
+            district.stats.textContent = `Retenu : ${number(total)}${changed ? ` · ${changed} ajustement(s)` : ''}`;
+        }
+        $('plan-validation-totals').textContent = `Proposé : ${number(proposed)} · Retenu : ${number(retained)} · ${adjusted} ligne(s) ajustée(s)${invalid ? ` · ${invalid} à corriger` : ''}`;
+    }
+
+    function closePlanningValidation() {
+        if (validationSaving) return;
+        validationDraft = null;
+        $('plan-validation-content').replaceChildren();
+        $('plan-validation-summary').replaceChildren();
+        $('modal-planning-validation').classList.add('hidden');
+        $('modal-backdrop').classList.add('hidden');
+        portSelect.disabled = activeView === 'operations';
+    }
+
+    // action : 'validate' (quantités retenues) ou 'return' (renvoi avec motif obligatoire).
+    async function submitPlanningValidation(action) {
+        if (!validationDraft || validationSaving) return;
+        const status = $('plan-validation-status');
+        const notes = String($('plan-validation-notes').value ?? '').trim();
+        const {plan, port} = validationDraft;
+        let path, body, message;
+        if (action === 'return') {
+            if (!notes) {
+                status.textContent = 'Indiquez le motif du renvoi dans les observations.';
+                $('plan-validation-notes').focus?.();
+                return;
+            }
+            if (!confirm(`Renvoyer le planning ${plan.code} au coordinateur pour correction ?`)) return;
+            path = 'qbox_return_planning';
+            body = {selected_port: port, selected_planning: plan.id, expected_version: plan.version, reason: notes};
+            message = `Planning ${plan.code} renvoyé pour correction : le coordinateur est prévenu par e-mail.`;
+        } else {
+            const items = [];
+            for (const state of validationDraft.rows) {
+                const parsed = planningWhole(state.input);
+                const label = `${state.item.csb_name} · ${state.item.product_name}`;
+                if (parsed === null || Number.isNaN(parsed)) {
+                    status.textContent = `Quantité retenue invalide : ${label}.`;
+                    state.input.focus?.();
+                    return;
+                }
+                if (BigInt(parsed) < state.committed) {
+                    status.textContent = `${label} : pas moins de ${number(state.committed)} (déjà livré ou en route).`;
+                    state.input.focus?.();
+                    return;
+                }
+                if (BigInt(parsed) !== BigInt(state.item.planned))
+                    items.push({csb_id: state.item.csb_id, product_id: state.item.product_id, quantity: parsed});
+            }
+            if (!confirm(`Valider le planning ${plan.code}${items.length ? ` avec ${items.length} quantité(s) ajustée(s)` : ''} ?\n\nLe coordinateur sera prévenu par e-mail.`)) return;
+            path = 'qbox_validate_planning';
+            body = {selected_port: port, selected_planning: plan.id, expected_version: plan.version, items, observations: notes || null};
+            message = `Planning ${plan.code} validé : le coordinateur est prévenu par e-mail.`;
+        }
+        const requestGeneration = sessionGeneration;
+        validationSaving = true;
+        status.textContent = action === 'return' ? 'Renvoi en cours…' : 'Validation en cours…';
+        for (const id of ['plan-validation-submit', 'plan-validation-return', 'plan-validation-cancel']) $(id).disabled = true;
+        try {
+            await api(`/rest/v1/rpc/${path}`, body, true);
+            if (requestGeneration !== sessionGeneration) return;
+            validationSaving = false;
+            closePlanningValidation();
+            if (activeView === 'planning' && port === portSelect.value) {
+                await refreshPlanCards('planning');
+                $('postgres-planning-status').textContent = message;
+            }
+        } catch (error) {
+            if (requestGeneration === sessionGeneration) status.textContent = error.message;
+        } finally {
+            if (requestGeneration === sessionGeneration) validationSaving = false;
+            for (const id of ['plan-validation-submit', 'plan-validation-return', 'plan-validation-cancel']) $(id).disabled = false;
+        }
+    }
     async function refreshNativeView(view) {
         const port = portSelect.value;
         const seq = ++requestSequence;
@@ -6805,7 +7604,7 @@
     async function openAlerts() {
         const generation = ++alertsGeneration, requestGeneration = sessionGeneration;
         $('alerts-form').reset();
-        for (const id of ['alerts-weekly', 'alerts-stockout', 'alerts-reports', 'alerts-submit']) $(id).disabled = true;
+        for (const id of ['alerts-weekly', 'alerts-stockout', 'alerts-reports', 'alerts-validations', 'alerts-submit']) $(id).disabled = true;
         $('alerts-status').textContent = 'Chargement…';
         $('alerts-dialog').showModal();
         try {
@@ -6814,7 +7613,8 @@
             $('alerts-weekly').checked = !!preferences?.weekly;
             $('alerts-stockout').checked = !!preferences?.stockout;
             $('alerts-reports').checked = !!preferences?.reports;
-            for (const id of ['alerts-weekly', 'alerts-stockout', 'alerts-reports', 'alerts-submit']) $(id).disabled = false;
+            $('alerts-validations').checked = preferences?.validations !== false;
+            for (const id of ['alerts-weekly', 'alerts-stockout', 'alerts-reports', 'alerts-validations', 'alerts-submit']) $(id).disabled = false;
             $('alerts-status').textContent = preferences?.customized ? '' : 'Réglage par défaut selon votre rôle.';
         } catch (error) {
             if (generation === alertsGeneration) $('alerts-status').textContent = `Préférences indisponibles : ${error.message}`;
@@ -6827,7 +7627,7 @@
         $('alerts-submit').disabled = true;
         $('alerts-status').textContent = 'Enregistrement…';
         try {
-            await api('/rest/v1/rpc/qbox_set_alert_preferences', { weekly: $('alerts-weekly').checked, stockout: $('alerts-stockout').checked, reports: $('alerts-reports').checked }, true);
+            await api('/rest/v1/rpc/qbox_set_alert_preferences', { weekly: $('alerts-weekly').checked, stockout: $('alerts-stockout').checked, reports: $('alerts-reports').checked, validations: $('alerts-validations').checked }, true);
             if (generation !== alertsGeneration || requestGeneration !== sessionGeneration) return;
             $('alerts-status').textContent = 'Préférences enregistrées.';
         } catch (error) {
@@ -6973,6 +7773,10 @@
         $('plan-csb-all').addEventListener('change', toggleAllPlanningCsbs);
         $('plan-csb-blocks').addEventListener('toggle', () => syncPlanningPicker(), true);
         $('planning-form-main').addEventListener('submit', submitPlanning);
+        $('drones-search').addEventListener('input', filterDroneFlights);
+        for (const id of ['plan-validation-close', 'plan-validation-cancel']) $(id).addEventListener('click', closePlanningValidation);
+        $('plan-validation-return').addEventListener('click', () => submitPlanningValidation('return'));
+        $('plan-validation-submit').addEventListener('click', () => submitPlanningValidation('validate'));
         $('archive-form-main').addEventListener('submit', submitArchive);
         $('archive-folder-name').maxLength = 150;
         for (const id of ['postgres-planning-status', 'postgres-archives-status', 'postgres-plan-form-status', 'postgres-archive-form-status']) $(id).classList.remove('postgres-hidden');

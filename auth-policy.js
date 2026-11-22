@@ -5,7 +5,9 @@ const QBoxAuthPolicy = (() => {
         PILOT: 'pilot',
         PILOT_RD: 'pilot_rd',
         LOGISTICS: 'logistics',
-        UNFPA: 'unfpa'
+        UNFPA: 'unfpa',
+        // Chef de l'Unité Santé de la Reproduction : lit comme UNFPA, valide les plannings (droit vérifié par le serveur).
+        RH_CHIEF: 'rh_chief'
     });
 
     const sections = Object.freeze([
@@ -16,7 +18,8 @@ const QBoxAuthPolicy = (() => {
 
     function roleMatches(role, allowedRoles) {
         return allowedRoles.includes(role) ||
-            (role === roles.PILOT_RD && (allowedRoles.includes(roles.PILOT) || allowedRoles.includes(roles.LOGISTICS)));
+            (role === roles.PILOT_RD && (allowedRoles.includes(roles.PILOT) || allowedRoles.includes(roles.LOGISTICS))) ||
+            (role === roles.RH_CHIEF && allowedRoles.includes(roles.UNFPA));
     }
 
     function canAccess(user, section, action) {

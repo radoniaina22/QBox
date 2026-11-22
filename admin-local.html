@@ -14,10 +14,10 @@
     <link rel="stylesheet" href="admin-local.css?v=f36ff7576b">
     <link rel="stylesheet" href="signup-theme.css?v=3a248e380c">
     <script defer src="stock-history-csv.js?v=5f7a2bd698"></script>
-    <script defer src="auth-policy.js?v=925d045160"></script>
+    <script defer src="auth-policy.js?v=cd7c4a299b"></script>
     <script defer src="dashboard-report-postgres.js?v=d70c688518"></script>
     <script defer src="inventory-report-postgres.js?v=5d7ae28a79"></script>
-    <script defer src="admin-local.js?v=a98befe4dd"></script>
+    <script defer src="admin-local.js?v=16aee02b12"></script>
 </head>
 <body class="signup-page">
     <main>
@@ -52,7 +52,7 @@
                     <label class="signup-wide">Adresse e-mail <input name="email" type="email" required autocomplete="email" placeholder="vous@exemple.com"></label>
                     <label class="signup-wide">Mot de passe <input name="password" type="password" required minlength="8" autocomplete="new-password" aria-describedby="signup-password-hint" placeholder="Choisissez un mot de passe"><span id="signup-password-hint" class="signup-hint">8 caractères minimum</span></label>
                     <label>Téléphone <input name="phone" type="tel" required maxlength="30" autocomplete="tel" placeholder="+261 ..."></label>
-                    <label>Rôle demandé <select name="role"><option value="pilot">Pilote</option><option value="pilot_rd">Pilote RD</option><option value="logistics">Coordinateur logistique</option><option value="unfpa">UNFPA</option></select></label>
+                    <label>Rôle demandé <select name="role"><option value="pilot">Pilote</option><option value="pilot_rd">Pilote RD</option><option value="logistics">Coordinateur logistique</option><option value="unfpa">UNFPA</option><option value="rh_chief">Chef Unité SR</option></select></label>
                     <button class="signup-wide" type="submit"><span>Envoyer ma demande</span><span aria-hidden="true">→</span></button>
                 </form>
                 <p id="signup-status" role="status" aria-live="polite"></p>

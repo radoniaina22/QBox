@@ -28,13 +28,13 @@
 
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css?v=52d129f76a">
-    <link rel="stylesheet" href="modern-theme.css?v=79c017a219">
+    <link rel="stylesheet" href="modern-theme.css?v=69e06a2f3c">
     <link rel="stylesheet" href="dark-theme.css?v=5c6c497a0a">
     <link rel="stylesheet" href="motion.css?v=1251c2b346">
     <link rel="stylesheet" href="national-view.css?v=6c99d6819e">
     <link rel="stylesheet" href="logistics-report.css?v=2e0cfd87ed">
     <!-- Tailwind compilé (npm run build:assets), chargé en dernier comme l'ancien CDN -->
-    <link rel="stylesheet" href="tailwind.css?v=ca6c0c1d42">
+    <link rel="stylesheet" href="tailwind.css?v=3023cec4ba">
     <script src="theme-toggle.js?v=f439f0b4ec"></script>
     <script src="app-bootstrap.js?v=85d7a116e6"></script>
 </head>
@@ -996,13 +996,20 @@
                                 <h3 class="font-bold text-slate-900 text-sm">Centre de Contrôle & Largages Aériens</h3>
                                 <p class="text-xs text-slate-500">Gestion des vols actifs, impression du BL et clôture des décharges</p>
                             </div>
-                            <button id="drone-new" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center transition-colors">
-                                <i class="ph ph-paper-plane-tilt mr-1.5 text-amber-400"></i> Lancer une Mission
-                            </button>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <div class="dl-search">
+                                    <i class="ph ph-magnifying-glass" aria-hidden="true"></i>
+                                    <input id="drones-search" type="search" placeholder="Rechercher un BL, CSB, district, intrant…" aria-label="Rechercher un vol en cours">
+                                </div>
+                                <button id="drone-new" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center transition-colors">
+                                    <i class="ph ph-paper-plane-tilt mr-1.5 text-amber-400"></i> Lancer une Mission
+                                </button>
+                            </div>
                         </div>
 
                         <p id="postgres-drones-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
-                        <div id="drones-groups" class="p-4 space-y-4">
+                        <div id="drones-summary" class="dl-kpis" aria-label="Synthèse des vols en cours"></div>
+                        <div id="drones-groups" class="dl-groups">
                             <!-- Livraisons regroupées par CSB, rempli en JS -->
                         </div>
                     </div>
@@ -1301,6 +1308,7 @@
                     <select id="drone-plan" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white font-bold text-slate-800">
                         <!-- Rempli en JS -->
                     </select>
+                    <p id="drone-validation-warning" class="plan-validation-warning" role="status" hidden></p>
                 </div>
                 <div>
                     <label for="drone-target" class="block text-xs font-semibold text-slate-700 mb-1">2. Destination (CSB cible)</label>
@@ -1447,6 +1455,7 @@
                 <label for="sortie-plan" class="block text-xs font-semibold text-slate-700 mb-1">Planning actif</label>
                 <select id="sortie-plan" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white"></select>
                 <p class="text-[11px] text-slate-500 mt-1">L'expédition est affectée à ce planning et reste en transit jusqu'à sa clôture.</p>
+                <p id="sortie-validation-warning" class="plan-validation-warning" role="status" hidden></p>
             </div>
             <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Destination (CSB)</label>
@@ -1482,7 +1491,8 @@
             <div class="p-5 space-y-4 overflow-y-auto min-h-0">
             
             <!-- Choix global de l'intervalle de date -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-sky-50/50 border border-sky-100 rounded-xl">
+            <div class="plan-dates grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-sky-50/50 border border-sky-100 rounded-xl">
+                <p class="plan-dates-title sm:col-span-2"><i class="ph ph-calendar-blank" aria-hidden="true"></i> Période de la campagne</p>
                 <div>
                     <label for="plan-start" class="block text-xs font-semibold text-slate-700 mb-1">Date de Début (Globale)</label>
                     <input type="date" id="plan-start" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400">
@@ -1512,7 +1522,7 @@
                         </label>
                     </div>
                 </div>
-                <div id="plan-csb-options" class="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-44 overflow-y-auto"></div>
+                <div id="plan-csb-options" class="plan-picker-list"></div>
             </section>
             <div>
                 <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -1530,12 +1540,44 @@
             </div>
             <div class="p-4 border-t border-slate-100 bg-white shrink-0 space-y-2">
                 <p id="postgres-plan-form-status" class="text-xs text-rose-700 postgres-hidden" role="status" aria-live="polite"></p>
-                <div class="flex flex-wrap justify-end gap-2">
+                <div class="flex flex-wrap items-center justify-end gap-2">
+                <p id="plan-form-summary" class="plan-form-summary" aria-live="polite">Aucun CSB sélectionné</p>
                 <button id="planning-cancel" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
                 <button type="submit" id="plan-submit-btn" class="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold">Enregistrer la Campagne</button>
                 </div>
             </div>
         </form>
+    </div>
+
+    <!-- Modal: Validation du planning par le Chef Unité SR (rempli en JS, 10-planning-validation.js) -->
+    <div id="modal-planning-validation" role="dialog" aria-modal="true" aria-labelledby="plan-validation-title" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-5xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[92vh] flex flex-col overflow-hidden no-print">
+        <div class="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
+            <div class="min-w-0">
+                <h3 id="plan-validation-title" class="font-bold text-slate-900 text-sm flex items-center">
+                    <i class="ph ph-seal-check text-emerald-600 mr-2 text-lg" aria-hidden="true"></i> Validation du planning
+                </h3>
+                <p id="plan-validation-subtitle" class="text-xs text-slate-500 mt-0.5"></p>
+            </div>
+            <button id="plan-validation-close" type="button" aria-label="Fermer la fenêtre de validation" class="text-slate-400 hover:text-slate-600"><i class="ph ph-x text-lg"></i></button>
+        </div>
+        <div class="pv-body p-5 space-y-4 overflow-y-auto min-h-0 flex-1">
+            <p class="pv-help">Ajustez si besoin la colonne <strong>Retenu</strong> (quantité à livrer). La quantité proposée par le coordinateur est conservée dans l’historique. Besoin calculé = 4 × CMM − état de stock.</p>
+            <div id="plan-validation-summary" class="pv-summary"></div>
+            <div id="plan-validation-content" class="pv-content"></div>
+            <div>
+                <label for="plan-validation-notes" class="block text-xs font-semibold text-slate-700 mb-1">Observations — facultatives pour valider, obligatoires pour renvoyer (motif)</label>
+                <textarea id="plan-validation-notes" maxlength="1900" rows="3" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200"></textarea>
+            </div>
+        </div>
+        <div class="p-4 border-t border-slate-100 bg-white shrink-0 space-y-2">
+            <p id="plan-validation-status" class="text-xs text-rose-700" role="status" aria-live="polite"></p>
+            <div class="flex flex-wrap items-center justify-end gap-2">
+                <p id="plan-validation-totals" class="pv-totals" aria-live="polite"></p>
+                <button id="plan-validation-cancel" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                <button id="plan-validation-return" type="button" class="px-4 py-2 bg-white hover:bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold">Renvoyer pour correction</button>
+                <button id="plan-validation-submit" type="button" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold">Valider le planning</button>
+            </div>
+        </div>
     </div>
 
     <!-- Modal: Archivage Dossier -->
@@ -1782,6 +1824,8 @@
                 <span><strong>Rupture le jour même</strong> : un e-mail dès qu'un intrant suivi tombe à zéro sur un site (vérification toutes les heures, de 6 h à 18 h).</span></label>
             <label class="flex items-start gap-2 text-xs"><input id="alerts-reports" type="checkbox" class="mt-0.5 w-4 h-4">
                 <span><strong>Rapports de suivi des plannings</strong> : le rapport du planning en cours de chaque site (lundi, 7 h) et le rapport final dès qu'un planning est livré à 100 %.</span></label>
+            <label class="flex items-start gap-2 text-xs"><input id="alerts-validations" type="checkbox" class="mt-0.5 w-4 h-4">
+                <span><strong>Validation des plannings</strong> : pour le Chef Unité SR, un e-mail dès qu'un planning lui est soumis ; pour les coordinateurs, dès qu'un planning est validé ou renvoyé pour correction.</span></label>
             <p id="alerts-status" role="status" aria-live="polite" class="text-xs text-slate-600"></p>
             <div class="flex justify-end gap-2"><button id="alerts-cancel" type="button" class="px-3 py-2 rounded-lg bg-slate-100 text-xs">Fermer</button><button id="alerts-submit" type="submit" class="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold">Enregistrer</button></div>
         </form>
@@ -1796,13 +1840,13 @@
     <script src="table-csv-export.js?v=59079b0722"></script>
     <script src="barcode-scanner.js?v=fbb4865a77"></script>
     <script src="offline-support.js?v=26f2ea9d90"></script>
-    <script src="auth-policy.js?v=925d045160"></script>
+    <script src="auth-policy.js?v=cd7c4a299b"></script>
     <script src="dashboard-report-postgres.js?v=d70c688518"></script>
     <script src="inventory-report-postgres.js?v=5d7ae28a79"></script>
     <script src="stock-history-chart-style.js?v=f600ec6479"></script>
     <script src="dashboard-notice.js?v=1bdc6e1598"></script>
     <script src="layout-nav.js?v=40b93e2a36"></script>
     <script src="motion.js?v=7bd162fd50"></script>
-    <script src="app-entry.js?v=afe31e1cf3"></script>
+    <script src="app-entry.js?v=89f2659a11"></script>
 </body>
 </html>

@@ -54,7 +54,7 @@ let activePort = '';
 let dashboardRequest = 0;
 let dashboardReportRequest = 0;
 const embedded = new URLSearchParams(location.search).get('embedded') === '1' && window.parent !== window;
-const roles = { admin: 'Admin', pilot: 'Pilote', pilot_rd: 'Pilote RD', logistics: 'Coordinateur logistique', unfpa: 'UNFPA' };
+const roles = { admin: 'Admin', pilot: 'Pilote', pilot_rd: 'Pilote RD', logistics: 'Coordinateur logistique', unfpa: 'UNFPA', rh_chief: 'Chef Unité SR' };
 const statuses = { pending: 'En attente', approved: 'Actif', suspended: 'Suspendu', rejected: 'Refusé' };
 
 function message(text, error = false) {

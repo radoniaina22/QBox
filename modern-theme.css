@@ -1199,7 +1199,31 @@ html .report-csb h4 { color: #1a4fb5; }
     }
     html #planning-district-summary .pd-print::before { content: "\e3dc"; font-family: "Phosphor"; font-size: 1rem; font-weight: 400; }
     html #planning-district-summary .pd-print:hover { transform: translateY(-1px); box-shadow: 0 8px 18px -8px rgba(0, 0, 0, .45); }
-    html #planning-district-summary .pd-print:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(255, 255, 255, .55); }
+    html #planning-district-summary :is(.pd-print, .pd-toggle):focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(255, 255, 255, .55); }
+    html #planning-district-summary .pd-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; flex: none; }
+    html #planning-district-summary .pd-toggle {
+        display: inline-flex; align-items: center; gap: .4rem;
+        padding: .55rem .9rem;
+        border: 1px solid rgba(255, 255, 255, .35);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, .12);
+        color: #fff;
+        font-size: .74rem;
+        font-weight: 800;
+        cursor: pointer;
+        transition: background .15s var(--qb-ease);
+    }
+    html #planning-district-summary .pd-toggle:hover { background: rgba(255, 255, 255, .24); }
+    html #planning-district-summary .pd-toggle::after {
+        content: "\e136"; font-family: "Phosphor"; font-size: .95rem; font-weight: 400;
+        transition: transform .2s var(--qb-ease);
+    }
+    html #planning-district-summary .pd-toggle[aria-expanded="true"]::after { transform: rotate(180deg); }
+    html #planning-district-summary .pd-body:not([hidden]) { animation: pd-reveal .25s var(--qb-ease); }
+    @keyframes pd-reveal { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) {
+        html #planning-district-summary .pd-body:not([hidden]) { animation: none; }
+    }
 
     /* ---------- Indicateurs ---------- */
     html #planning-district-summary .pd-kpis {
@@ -1342,10 +1366,785 @@ html .report-csb h4 { color: #1a4fb5; }
     }
     @media (max-width: 640px) {
         html #planning-district-summary .pd-hero { padding: 1rem; }
-        html #planning-district-summary .pd-print { width: 100%; justify-content: center; }
+        html #planning-district-summary .pd-actions { width: 100%; }
+        html #planning-district-summary :is(.pd-print, .pd-toggle) { flex: 1 1 0; justify-content: center; }
         html #planning-district-summary .pd-kpis { padding: 1rem 1rem 0; }
         html #planning-district-summary .pd-cards { padding: 1rem; }
         html #planning-district-summary .pd-matrix { margin: 0 1rem 1rem; }
         html #planning-district-summary .planning-stock-comparison { padding: 0 1rem 1rem; }
+    }
+}
+
+/* ==========================================================================
+   Besoins prévisionnels et archives — cartes de campagne (classes pc-*,
+   rendu par renderPlanCard dans 04-plannings-affichage.js ; écran uniquement)
+   ========================================================================== */
+@media screen {
+    html .pc-card {
+        border: 1px solid var(--qb-line);
+        border-radius: 18px;
+        background: var(--qb-surface);
+        box-shadow: var(--qb-shadow-sm);
+        overflow: hidden;
+    }
+
+    /* ---------- Boutons communs ---------- */
+    html .pc-card .pc-button {
+        display: inline-flex; align-items: center; gap: .4rem;
+        padding: .5rem .85rem;
+        border: 1px solid var(--qb-line-strong);
+        border-radius: 11px;
+        background: var(--qb-surface);
+        color: var(--qb-text-2);
+        font-size: .72rem;
+        font-weight: 800;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: border-color .15s var(--qb-ease), background .15s var(--qb-ease), color .15s var(--qb-ease);
+    }
+    html .pc-card .pc-button:hover { border-color: var(--qb-primary-line); background: var(--qb-primary-soft); color: var(--qb-primary-ink); }
+    html .pc-card .pc-button::before { font-family: "Phosphor"; font-size: .95rem; font-weight: 400; }
+    html .pc-card .pc-button-edit::before { content: "\e3b4"; }
+    html .pc-card .pc-button-preview::before { content: "\e220"; }
+    html .pc-card .pc-button-small { padding: .35rem .65rem; border-radius: 9px; font-size: .66rem; }
+    html .pc-card :is(.pc-button, .pc-link, .pc-csb-toggle):focus-visible { outline: none; box-shadow: var(--qb-ring); }
+    html .pc-card .pc-link { padding: 0; border: 0; background: none; color: var(--qb-primary-ink); font-size: .7rem; font-weight: 800; cursor: pointer; }
+    html .pc-card .pc-link:hover { text-decoration: underline; }
+    html .pc-card .pc-link:disabled { opacity: .55; cursor: progress; }
+
+    /* ---------- En-tête ---------- */
+    html .pc-card .pc-head {
+        display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1rem;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--qb-line);
+        background: linear-gradient(180deg, var(--qb-surface-2), var(--qb-surface));
+    }
+    html .pc-card .pc-heading { min-width: 0; }
+    html .pc-card .pc-title { margin: 0; color: var(--qb-text); font-family: var(--qb-font-display); font-size: 1rem; font-weight: 800; letter-spacing: -.01em; }
+    html .pc-card .pc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; margin-top: .35rem; color: var(--qb-muted); font-size: .7rem; }
+    html .pc-card .pc-chip {
+        padding: .1rem .5rem;
+        border: 1px solid var(--qb-primary-line);
+        border-radius: 999px;
+        background: var(--qb-primary-soft);
+        color: var(--qb-primary-ink);
+        font-family: var(--qb-font-mono);
+        font-size: .66rem;
+        font-weight: 700;
+    }
+    html .pc-card .pc-meta-item + .pc-meta-item::before, html .pc-card .pc-chip + .pc-meta-item::before { content: '·'; margin-right: .6rem; color: var(--qb-faint); }
+    html .pc-card .pc-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+
+    /* Badge d'orientation (avance / retard). */
+    html .pc-card .pc-pace {
+        --tone: var(--qb-muted);
+        display: inline-flex; align-items: center; gap: .35rem;
+        padding: .25rem .65rem;
+        border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--tone) 12%, transparent);
+        color: var(--tone);
+        font-size: .68rem;
+        font-weight: 800;
+        white-space: nowrap;
+        cursor: help;
+    }
+    html .pc-card .pc-pace::before { content: ''; width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; }
+    html .pc-card .pc-pace-ahead, html .pc-card .pc-pace-done { --tone: var(--qb-success); }
+    html .pc-card .pc-pace-ontrack, html .pc-card .pc-pace-upcoming { --tone: var(--qb-primary); }
+    html .pc-card .pc-pace-late { --tone: var(--qb-danger); }
+
+    /* ---------- Indicateurs ---------- */
+    html .pc-card .pc-kpis {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) repeat(4, minmax(0, 1fr));
+        gap: .65rem;
+        padding: 1rem 1.25rem 0;
+    }
+    html .pc-card .pc-kpi {
+        --tone: var(--qb-primary);
+        display: flex; flex-direction: column; gap: .15rem;
+        min-width: 0;
+        padding: .7rem .85rem;
+        border: 1px solid var(--qb-line);
+        border-top: 3px solid var(--tone);
+        border-radius: 12px;
+        background: var(--qb-surface-2);
+    }
+    html .pc-card .pc-kpi-main { --tone: var(--qb-primary); background: var(--qb-primary-soft); border-color: var(--qb-primary-line); border-top-color: var(--tone); }
+    html .pc-card .pc-kpi-planned { --tone: var(--qb-line-hover); }
+    html .pc-card .pc-kpi-delivered { --tone: #10b981; }
+    html .pc-card .pc-kpi-flight { --tone: #22d3ee; }
+    html .pc-card .pc-kpi-due { --tone: var(--qb-accent); }
+    html .pc-card .pc-kpi-ok { --tone: var(--qb-success); }
+    html .pc-card .pc-kpi-label { color: var(--qb-muted); font-size: .63rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    html .pc-card .pc-kpi-value { color: var(--qb-text); font-family: var(--qb-font-display); font-size: 1.2rem; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    html .pc-card .pc-kpi-main .pc-kpi-value { color: var(--qb-primary-ink); font-size: 1.55rem; }
+    html .pc-card .pc-kpi-hint { overflow: hidden; color: var(--qb-muted); font-size: .64rem; text-overflow: ellipsis; white-space: nowrap; }
+    html .pc-card .pc-kpi-main .pc-kpi-hint { font-family: var(--qb-font-mono); font-weight: 700; }
+
+    /* ---------- Avancement et temps écoulé ---------- */
+    html .pc-card .pc-progress { display: grid; gap: .55rem; padding: .9rem 1.25rem 1rem; }
+    html .pc-card .pc-progress > [role="progressbar"] { height: .6rem; background: var(--qb-surface-3); }
+    html .pc-card .pc-progress > [role="progressbar"] > div { height: 100%; }
+    html .pc-card .pc-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .9rem; color: var(--qb-text-2); font-size: .68rem; font-weight: 600; }
+    html .pc-card .pc-legend-item { display: inline-flex; align-items: center; gap: .35rem; }
+    html .pc-card .pc-legend-item::before { content: ''; width: .55rem; height: .55rem; border-radius: 3px; background: var(--dot); }
+    html .pc-card .pc-dot-delivered { --dot: #10b981; }
+    html .pc-card .pc-dot-flight { --dot: #22d3ee; }
+    html .pc-card .pc-dot-transit { --dot: #0284c7; }
+    html .pc-card .pc-legend-note { margin-left: auto; color: var(--qb-faint); font-size: .62rem; font-style: italic; }
+    html .pc-card .pc-time { display: grid; grid-template-columns: auto minmax(6rem, 1fr); align-items: center; gap: .4rem .9rem; }
+    html .pc-card .pc-time-label { display: inline-flex; align-items: center; gap: .35rem; color: var(--qb-muted); font-size: .68rem; }
+    html .pc-card .pc-time-label i { color: var(--qb-primary); font-size: .9rem; }
+    html .pc-card .pc-time-track { height: .3rem; border-radius: 999px; background: var(--qb-surface-3); overflow: hidden; }
+    html .pc-card .pc-time-fill { height: 100%; border-radius: inherit; background: repeating-linear-gradient(90deg, var(--qb-line-hover) 0 6px, var(--qb-line-strong) 6px 9px); }
+
+    /* ---------- Liste des CSB ---------- */
+    html .pc-card .pc-csbs { border-top: 1px solid var(--qb-line); }
+    html .pc-card .pc-csbs-head {
+        display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem 1rem;
+        padding: .7rem 1.25rem;
+        background: var(--qb-surface-2);
+        border-bottom: 1px solid var(--qb-line);
+    }
+    html .pc-card .pc-csbs-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .75rem; }
+    html .pc-card .pc-section-title { margin: 0; color: var(--qb-text); font-size: .78rem; font-weight: 800; }
+    html .pc-card .pc-csbs-count { color: var(--qb-muted); font-size: .66rem; }
+    /* En-tête de district dans la liste des CSB. */
+    html .pc-card .pc-district {
+        display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .8rem;
+        padding: .5rem 1.25rem .45rem;
+        border-bottom: 1px solid var(--qb-line);
+        background: color-mix(in srgb, var(--qb-primary) 6%, var(--qb-surface));
+    }
+    html .pc-card .pc-csb + .pc-district { margin-top: .5rem; border-top: 1px solid var(--qb-line); }
+    html .pc-card .pc-district-name { display: inline-flex; align-items: center; gap: .35rem; margin: 0 auto 0 0; color: var(--qb-primary-ink); font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    html .pc-card .pc-district-name i { font-size: .95rem; }
+    html .pc-card .pc-district-none { background: var(--qb-surface-2); }
+    html .pc-card .pc-district-none .pc-district-name { color: var(--qb-muted); }
+    html .pc-card .pc-district-count { padding: .05rem .45rem; border-radius: 999px; background: var(--qb-surface); color: var(--qb-text-2); font-size: .62rem; font-weight: 800; }
+    html .pc-card .pc-district-rest { font-size: .66rem; font-weight: 800; }
+    html .pc-card .pc-district-rate { min-width: 2.8rem; color: var(--qb-text-2); font-family: var(--qb-font-mono); font-size: .66rem; font-weight: 700; text-align: right; }
+    html .pc-card .pc-csb { --tone: var(--qb-faint); position: relative; border-bottom: 1px solid var(--qb-line-soft); }
+    html .pc-card .pc-csb::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--tone); }
+    html .pc-card .pc-csb-progress { --tone: var(--qb-accent); }
+    html .pc-card .pc-csb-shipped { --tone: #22d3ee; }
+    html .pc-card .pc-csb-done { --tone: var(--qb-success); }
+    html .pc-card .pc-csb-line { display: flex; align-items: center; gap: .5rem; padding: .3rem 1rem .3rem 0; }
+    html .pc-card .pc-csb-toggle {
+        display: grid;
+        grid-template-columns: 1rem minmax(8rem, 1.4fr) auto minmax(7rem, 1fr) minmax(5.5rem, auto);
+        align-items: center;
+        gap: .4rem .8rem;
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: .55rem .5rem .55rem 1.1rem;
+        border: 0;
+        border-radius: 10px;
+        background: none;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+    }
+    html .pc-card .pc-csb-toggle::before {
+        content: "\e13a"; font-family: "Phosphor";
+        color: var(--qb-muted); font-size: .85rem;
+        transition: transform .2s var(--qb-ease);
+    }
+    html .pc-card .pc-csb-toggle[aria-expanded="true"]::before { transform: rotate(90deg); color: var(--qb-primary); }
+    html .pc-card .pc-csb-toggle:hover { background: var(--qb-row-hover); }
+    html .pc-card .pc-csb-name { overflow: hidden; color: var(--qb-text); font-size: .76rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+    html .pc-card .pc-status {
+        justify-self: start;
+        padding: .1rem .5rem;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--tone) 14%, transparent);
+        color: var(--qb-text-2);
+        font-size: .62rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    html .pc-card .pc-csb-bar { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+    html .pc-card .pc-mini { flex: 1 1 auto; height: .4rem; border-radius: 999px; background: var(--qb-surface-3); overflow: hidden; }
+    html .pc-card .pc-mini > div { height: 100%; }
+    html .pc-card .pc-csb-rate { flex: none; width: 2.8rem; color: var(--qb-text-2); font-family: var(--qb-font-mono); font-size: .66rem; font-weight: 700; text-align: right; }
+    html .pc-card .pc-csb-rest { font-size: .68rem; font-weight: 800; text-align: right; white-space: nowrap; }
+    html .pc-card .pc-rest-due { color: var(--qb-accent-ink); }
+    html .pc-card .pc-rest-ok { color: var(--qb-success); }
+    html .pc-card .pc-csb-panel { padding: .2rem 1.25rem 1rem 2.6rem; }
+    html .pc-card .pc-csb-panel:not([hidden]) { animation: pd-reveal .22s var(--qb-ease); }
+    html .pc-card .pc-empty { margin: 0; padding: 1.25rem; border-top: 1px solid var(--qb-line); color: var(--qb-faint); font-size: .74rem; font-style: italic; text-align: center; }
+
+    /* ---------- Tableau des intrants d'un CSB ---------- */
+    html .pc-card .pc-scroll { overflow-x: auto; border: 1px solid var(--qb-line); border-radius: 12px; background: var(--qb-surface); }
+    html .pc-card .pc-table { width: 100%; border-collapse: collapse; font-size: .72rem; }
+    html .pc-card .pc-table :is(th, td) { padding: .5rem .7rem; border-bottom: 1px solid var(--qb-line-soft); white-space: nowrap; }
+    html .pc-card .pc-table tbody tr:last-child > * { border-bottom: 0; }
+    html .pc-card .pc-table tbody tr:hover > * { background: var(--qb-row-hover); }
+    html .pc-card .pc-th { background: var(--qb-surface-2); color: var(--qb-muted); font-size: .6rem; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: .05em; }
+    html .pc-card .pc-right { text-align: right; }
+    html .pc-card .pc-name { color: var(--qb-text); font-weight: 700; text-align: left; white-space: normal; min-width: 9rem; }
+    html .pc-card .pc-num { color: var(--qb-text-2); font-family: var(--qb-font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+    html .pc-card .pc-zero { color: var(--qb-faint); }
+    html .pc-card .pc-num.pc-rest-due { color: var(--qb-accent-ink); font-weight: 800; }
+    html .pc-card .pc-num.pc-rest-ok { color: var(--qb-success); font-weight: 700; }
+    html .pc-card .pc-num.pc-rest-ok i { margin-right: .25rem; vertical-align: -1px; }
+    html .pc-card .pc-progress-cell { display: flex; align-items: center; gap: .5rem; min-width: 9.5rem; }
+    html .pc-card .pc-progress-cell > [role="progressbar"] { flex: 1 1 auto; height: .4rem; background: var(--qb-surface-3); }
+    html .pc-card .pc-progress-cell > [role="progressbar"] > div { height: 100%; }
+    html .pc-card .pc-rate { flex: none; width: 2.6rem; color: var(--qb-muted); font-family: var(--qb-font-mono); font-size: .64rem; text-align: right; }
+
+    /* ---------- Historique ---------- */
+    html .pc-card .pc-history { padding: .75rem 1.25rem; border-top: 1px solid var(--qb-line); color: var(--qb-text-2); font-size: .72rem; }
+    html .pc-card .pc-link-history::before { content: "\e10a"; margin-right: .35rem; font-family: "Phosphor"; font-weight: 400; }
+
+    @media (prefers-reduced-motion: reduce) {
+        html .pc-card .pc-csb-panel:not([hidden]) { animation: none; }
+    }
+    @media (max-width: 1100px) {
+        html .pc-card .pc-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        html .pc-card .pc-kpi-main { grid-column: span 3; }
+    }
+    @media (max-width: 720px) {
+        html .pc-card .pc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: .9rem 1rem 0; }
+        html .pc-card .pc-kpi-main { grid-column: span 2; }
+        html .pc-card :is(.pc-head, .pc-progress, .pc-csbs-head, .pc-history) { padding-left: 1rem; padding-right: 1rem; }
+        html .pc-card .pc-legend-note { margin-left: 0; width: 100%; }
+        html .pc-card .pc-time { grid-template-columns: 1fr; }
+        html .pc-card .pc-csb-line { flex-wrap: wrap; padding: .35rem 1rem .6rem 0; }
+        html .pc-card .pc-csb-toggle { grid-template-columns: 1rem minmax(0, 1fr) auto; }
+        html .pc-card .pc-csb-bar { grid-column: 2 / 3; }
+        html .pc-card .pc-csb-rest { grid-column: 3 / 4; }
+        html .pc-card .pc-button-preview { margin-left: 1.9rem; }
+        html .pc-card .pc-csb-panel { padding: .2rem 1rem 1rem; }
+    }
+}
+
+/* ==========================================================================
+   Formulaire de campagne (#modal-planning) — CSB regroupés par district
+   (classes plan-*, rendu par 08-planning-formulaire.js ; écran uniquement)
+   ========================================================================== */
+@media screen {
+    html #modal-planning .plan-dates { border-color: var(--qb-primary-line); background: color-mix(in srgb, var(--qb-primary) 5%, var(--qb-surface)); }
+    html #modal-planning .plan-dates-title { display: flex; align-items: center; gap: .4rem; margin: 0; color: var(--qb-text); font-size: .76rem; font-weight: 800; }
+    html #modal-planning .plan-dates-title i { color: var(--qb-primary); font-size: 1rem; }
+
+    /* ---------- 1. Sélecteur de CSB par district ---------- */
+    html #modal-planning .plan-picker-list { display: grid; gap: .65rem; max-height: 17rem; padding: .75rem; overflow-y: auto; background: var(--qb-surface); }
+    html #modal-planning .plan-picker-district { border: 1px solid var(--qb-line); border-radius: 12px; background: var(--qb-surface); }
+    html #modal-planning .plan-picker-head {
+        position: sticky; top: -.75rem; z-index: 1;
+        display: flex; align-items: center; gap: .55rem;
+        padding: .5rem .75rem;
+        border-bottom: 1px solid var(--qb-line);
+        border-radius: 12px 12px 0 0;
+        background: color-mix(in srgb, var(--qb-primary) 7%, var(--qb-surface));
+        cursor: pointer;
+    }
+    html #modal-planning .plan-picker-name { display: inline-flex; align-items: center; gap: .35rem; margin-right: auto; color: var(--qb-primary-ink); font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    html #modal-planning .plan-picker-district-none .plan-picker-head { background: var(--qb-surface-2); }
+    html #modal-planning .plan-picker-district-none .plan-picker-name { color: var(--qb-muted); }
+    html #modal-planning .plan-picker-count { padding: .05rem .5rem; border-radius: 999px; background: var(--qb-surface); color: var(--qb-text-2); font-family: var(--qb-font-mono); font-size: .64rem; font-weight: 700; }
+    html #modal-planning .plan-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr)); gap: .4rem; padding: .55rem; }
+    html #modal-planning .plan-picker-option {
+        display: flex; align-items: flex-start; gap: .5rem;
+        min-width: 0;
+        padding: .45rem .6rem;
+        border: 1px solid var(--qb-line);
+        border-radius: 10px;
+        cursor: pointer;
+        transition: border-color .15s var(--qb-ease), background .15s var(--qb-ease);
+    }
+    html #modal-planning .plan-picker-option:hover { border-color: var(--qb-line-hover); background: var(--qb-row-hover); }
+    html #modal-planning .plan-picker-option.is-checked { border-color: var(--qb-primary-line); background: var(--qb-primary-soft); }
+    html #modal-planning .plan-picker-option input { margin-top: .15rem; }
+    html #modal-planning .plan-picker-text { display: flex; flex-direction: column; min-width: 0; }
+    html #modal-planning .plan-picker-option-name { overflow: hidden; color: var(--qb-text); font-size: .74rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+    html #modal-planning .plan-picker-option-meta { overflow: hidden; color: var(--qb-muted); font-size: .63rem; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ---------- 2. Blocs de saisie par district ---------- */
+    html #modal-planning #plan-csb-blocks { display: grid; gap: 1rem; }
+    html #modal-planning #plan-csb-blocks > * + * { margin-top: 0; }
+    html #modal-planning .plan-district { position: relative; padding-left: .85rem; }
+    html #modal-planning .plan-district::before { content: ''; position: absolute; inset: .3rem auto .3rem 0; width: 3px; border-radius: 3px; background: var(--qb-primary); opacity: .55; }
+    html #modal-planning .plan-district-none::before { background: var(--qb-faint); }
+    html #modal-planning .plan-district-head { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .7rem; margin-bottom: .55rem; }
+    html #modal-planning .plan-district-name { display: inline-flex; align-items: center; gap: .35rem; margin: 0 auto 0 0; color: var(--qb-primary-ink); font-size: .74rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    html #modal-planning .plan-district-name i { font-size: 1rem; }
+    html #modal-planning .plan-district-none .plan-district-name { color: var(--qb-muted); }
+    html #modal-planning .plan-district-count { padding: .05rem .5rem; border-radius: 999px; background: var(--qb-surface-3); color: var(--qb-text-2); font-size: .63rem; font-weight: 800; }
+    html #modal-planning .plan-district-stats { padding: .05rem .5rem; border-radius: 999px; background: var(--qb-surface-3); color: var(--qb-muted); font-size: .63rem; font-weight: 700; }
+    html #modal-planning .plan-district-stats.is-partial { background: var(--qb-accent-soft); color: var(--qb-accent-ink); }
+    html #modal-planning .plan-district-stats.is-complete { background: var(--qb-success-soft); color: var(--qb-success); }
+    html #modal-planning .plan-district-blocks { display: grid; gap: .6rem; }
+    html #modal-planning .planning-csb { border-color: var(--qb-line); border-radius: 14px; box-shadow: var(--qb-shadow-xs); transition: border-color .15s var(--qb-ease), box-shadow .15s var(--qb-ease); }
+    html #modal-planning .planning-csb[open] { border-color: var(--qb-primary-line); box-shadow: var(--qb-shadow-sm); }
+    html #modal-planning .planning-csb > summary { background: var(--qb-surface-2); }
+    html #modal-planning .planning-csb[open] > summary { background: color-mix(in srgb, var(--qb-primary) 5%, var(--qb-surface)); }
+    html #modal-planning .plan-blocks-empty { padding: 1.5rem; border: 1px dashed var(--qb-line-strong); border-radius: 14px; color: var(--qb-muted); font-size: .74rem; font-style: italic; text-align: center; }
+
+    /* ---------- Récapitulatif en pied de formulaire ---------- */
+    html #modal-planning .plan-form-summary { margin: 0 auto 0 0; color: var(--qb-text-2); font-size: .72rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    @media (max-width: 640px) {
+        html #modal-planning .plan-picker-grid { grid-template-columns: 1fr; }
+        html #modal-planning .plan-form-summary { width: 100%; margin-bottom: .25rem; }
+    }
+}
+
+/* ==========================================================================
+   Vols et largages, expéditions terrestres, historique (classes dl-*,
+   rendu par 05-livraisons.js ; écran uniquement)
+   ========================================================================== */
+@media screen {
+    /* ---------- Boutons et badges partagés ---------- */
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn {
+        display: inline-flex; align-items: center; gap: .35rem;
+        padding: .45rem .8rem;
+        border: 1px solid var(--qb-line-strong);
+        border-radius: 10px;
+        background: var(--qb-surface);
+        color: var(--qb-text-2);
+        font-size: .7rem;
+        font-weight: 800;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: border-color .15s var(--qb-ease), background .15s var(--qb-ease), color .15s var(--qb-ease);
+    }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn[data-icon]::before { font-family: "Phosphor"; font-size: .9rem; font-weight: 400; }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn[data-icon="check"]::before { content: "\e182"; }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn[data-icon="edit"]::before { content: "\e3b4"; }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn[data-icon="print"]::before { content: "\e3dc"; }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn[data-icon="cancel"]::before { content: "\e4f6"; }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn:focus-visible { outline: none; box-shadow: var(--qb-ring); }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn:disabled { opacity: .55; cursor: progress; }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn-primary { border-color: var(--qb-success); background: var(--qb-success); color: #fff; box-shadow: 0 6px 14px -8px var(--qb-success); }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn-primary:hover { filter: brightness(1.06); }
+    html.qb-dark :is(#view-drones, #view-sorties, #view-history) .dl-btn-primary { color: #052e1f; }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn-secondary:hover { border-color: var(--qb-primary-line); background: var(--qb-primary-soft); color: var(--qb-primary-ink); }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn-neutral { background: var(--qb-surface-2); }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn-neutral:hover { border-color: var(--qb-line-hover); background: var(--qb-surface-3); color: var(--qb-text); }
+    /* Annulation : action discrète, à l'écart, pour éviter les clics par erreur. */
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn-danger { border-color: transparent; background: transparent; color: var(--qb-danger); box-shadow: none; }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-btn-danger:hover { border-color: color-mix(in srgb, var(--qb-danger) 35%, transparent); background: var(--qb-danger-soft); }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-link { padding: 0; border: 0; background: none; color: var(--qb-primary-ink); font-size: .68rem; font-weight: 800; cursor: pointer; }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-link::before { content: "\e10a"; margin-right: .3rem; font-family: "Phosphor"; font-weight: 400; }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-link:hover { text-decoration: underline; }
+
+    html :is(#view-drones, #view-sorties, #view-history) .dl-status {
+        --tone: var(--qb-muted);
+        display: inline-flex; align-items: center; gap: .35rem;
+        width: max-content;
+        padding: .15rem .6rem;
+        border: 1px solid color-mix(in srgb, var(--tone) 32%, transparent);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--tone) 12%, transparent);
+        color: var(--tone);
+        font-size: .64rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-status::before { content: ''; width: .4rem; height: .4rem; border-radius: 50%; background: currentColor; }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-status-flight { --tone: #0891b2; }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-status-done { --tone: var(--qb-success); }
+    html :is(#view-drones, #view-sorties, #view-history) .dl-status-cancelled { --tone: var(--qb-danger); }
+    html.qb-dark :is(#view-drones, #view-sorties, #view-history) .dl-status-flight { --tone: #22d3ee; }
+
+    /* ---------- Recherche ---------- */
+    html #view-drones .dl-search { position: relative; }
+    html #view-drones .dl-search i { position: absolute; left: .7rem; top: 50%; transform: translateY(-50%); color: var(--qb-faint); font-size: .85rem; pointer-events: none; }
+    html #view-drones .dl-search input {
+        width: 17rem; max-width: 100%;
+        padding: .5rem .75rem .5rem 2rem;
+        border: 1px solid var(--qb-line-strong);
+        border-radius: 11px;
+        background: var(--qb-surface);
+        color: var(--qb-text);
+        font-size: .72rem;
+    }
+    html #view-drones .dl-search input:focus { outline: none; border-color: var(--qb-primary); box-shadow: var(--qb-ring); }
+
+    /* ---------- Indicateurs ---------- */
+    html #view-drones .dl-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; padding: 1rem 1.25rem 0; }
+    html #view-drones .dl-kpis:empty { display: none; }
+    html #view-drones .dl-kpi {
+        --tone: var(--qb-primary);
+        display: flex; align-items: center; gap: .7rem;
+        min-width: 0;
+        padding: .75rem .9rem;
+        border: 1px solid var(--qb-line);
+        border-radius: 14px;
+        background: var(--qb-surface-2);
+    }
+    html #view-drones .dl-tone-teal { --tone: var(--qb-teal); }
+    html #view-drones .dl-tone-accent { --tone: var(--qb-accent); }
+    html #view-drones .dl-tone-violet { --tone: #7c3aed; }
+    html #view-drones .dl-kpi-icon { display: grid; place-items: center; flex: none; width: 2.3rem; height: 2.3rem; border-radius: 11px; background: color-mix(in srgb, var(--tone) 14%, transparent); color: var(--tone); font-size: 1.2rem; }
+    html #view-drones .dl-kpi-text { display: flex; flex-direction: column; min-width: 0; }
+    html #view-drones .dl-kpi-label { color: var(--qb-muted); font-size: .64rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    html #view-drones .dl-kpi-value { color: var(--qb-text); font-family: var(--qb-font-display); font-size: 1.35rem; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    html #view-drones .dl-kpi-hint { overflow: hidden; color: var(--qb-faint); font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ---------- Districts et CSB ---------- */
+    html #view-drones .dl-groups { display: grid; gap: 1.1rem; padding: 1rem 1.25rem 1.25rem; }
+    html #view-drones .dl-district { display: grid; gap: .7rem; }
+    html #view-drones .dl-district-head { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .75rem; padding-bottom: .4rem; border-bottom: 2px solid var(--qb-primary-line); }
+    html #view-drones .dl-district-none .dl-district-head { border-bottom-color: var(--qb-line-strong); }
+    html #view-drones .dl-district-name { display: inline-flex; align-items: center; gap: .4rem; margin: 0 auto 0 0; color: var(--qb-primary-ink); font-size: .76rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    html #view-drones .dl-district-name i { font-size: 1rem; }
+    html #view-drones .dl-district-none .dl-district-name { color: var(--qb-muted); }
+    html #view-drones .dl-district-count { padding: .1rem .55rem; border-radius: 999px; background: var(--qb-surface-3); color: var(--qb-text-2); font-size: .64rem; font-weight: 800; }
+    html #view-drones .dl-csb { border: 1px solid var(--qb-line); border-radius: 16px; background: var(--qb-surface); box-shadow: var(--qb-shadow-xs); overflow: hidden; }
+    html #view-drones .dl-csb-head {
+        display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem;
+        padding: .75rem 1rem;
+        border-bottom: 1px solid var(--qb-line);
+        background: linear-gradient(180deg, var(--qb-surface-2), var(--qb-surface));
+    }
+    html #view-drones .dl-csb-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .6rem; min-width: 0; }
+    html #view-drones .dl-csb-name { margin: 0; color: var(--qb-text); font-family: var(--qb-font-display); font-size: .9rem; font-weight: 800; }
+    html #view-drones .dl-csb-meta { color: var(--qb-muted); font-family: var(--qb-font-mono); font-size: .66rem; }
+    html #view-drones .dl-csb-badges { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+    html #view-drones .dl-chip { padding: .12rem .55rem; border: 1px solid var(--qb-primary-line); border-radius: 999px; background: var(--qb-primary-soft); color: var(--qb-primary-ink); font-size: .63rem; font-weight: 800; }
+    html #view-drones .dl-count { padding: .12rem .55rem; border-radius: 999px; background: var(--qb-text); color: var(--qb-surface); font-size: .63rem; font-weight: 800; }
+
+    /* ---------- Colis (vol) ---------- */
+    html #view-drones .dl-flight {
+        display: grid;
+        grid-template-columns: minmax(10rem, 12rem) minmax(0, 1fr) auto;
+        grid-template-areas: "ref cargo actions" "history history history";
+        align-items: start;
+        gap: .6rem 1.1rem;
+        padding: .85rem 1rem;
+        border-top: 1px solid var(--qb-line-soft);
+        transition: background .15s var(--qb-ease);
+    }
+    html #view-drones .dl-csb-head + .dl-flight { border-top: 0; }
+    html #view-drones .dl-flight:hover { background: var(--qb-row-hover); }
+    html #view-drones .dl-ref { grid-area: ref; display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+    html #view-drones .dl-ref-label { color: var(--qb-faint); font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+    html #view-drones .dl-ref-value { color: var(--qb-text); font-family: var(--qb-font-mono); font-size: .8rem; font-weight: 800; overflow-wrap: anywhere; }
+    html #view-drones .dl-ref-date { margin-bottom: .2rem; color: var(--qb-muted); font-size: .64rem; }
+    html #view-drones .dl-cargo { grid-area: cargo; display: flex; flex-direction: column; gap: .4rem; min-width: 0; }
+    html #view-drones .dl-items { display: flex; flex-wrap: wrap; gap: .35rem; }
+    html #view-drones .dl-item {
+        display: inline-flex; align-items: baseline; gap: .4rem;
+        max-width: 100%;
+        padding: .3rem .6rem;
+        border: 1px solid var(--qb-line);
+        border-radius: 9px;
+        background: var(--qb-surface-2);
+        color: var(--qb-text-2);
+        font-size: .68rem;
+    }
+    html #view-drones .dl-item strong { color: var(--qb-text); font-family: var(--qb-font-mono); font-size: .76rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    html #view-drones .dl-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    html #view-drones .dl-items-empty { color: var(--qb-faint); font-size: .68rem; font-style: italic; }
+    html #view-drones .dl-cargo-total { color: var(--qb-muted); font-size: .64rem; font-weight: 700; }
+    html #view-drones .dl-actions { grid-area: actions; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .4rem; }
+    html #view-drones .dl-actions .dl-btn-danger { margin-left: .35rem; }
+    html #view-drones .dl-flight-history { grid-area: history; font-size: .7rem; color: var(--qb-text-2); }
+
+    /* ---------- États vides ---------- */
+    html #view-drones .dl-empty {
+        display: flex; flex-direction: column; align-items: center; gap: .35rem;
+        padding: 2.2rem 1rem;
+        border: 1px dashed var(--qb-line-strong);
+        border-radius: 16px;
+        color: var(--qb-muted);
+        font-size: .72rem;
+        text-align: center;
+    }
+    html #view-drones .dl-empty i { color: var(--qb-primary); font-size: 2rem; opacity: .7; }
+    html #view-drones .dl-empty strong { color: var(--qb-text); font-size: .82rem; }
+    html #view-drones .dl-no-match { margin: 0; padding: 1.5rem; color: var(--qb-muted); font-size: .74rem; font-style: italic; text-align: center; }
+
+    @media (max-width: 1000px) {
+        html #view-drones .dl-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        html #view-drones .dl-flight { grid-template-columns: minmax(9rem, 11rem) minmax(0, 1fr); grid-template-areas: "ref cargo" "actions actions" "history history"; }
+        html #view-drones .dl-actions { justify-content: flex-start; }
+    }
+    @media (max-width: 640px) {
+        html #view-drones .dl-kpis { padding: .9rem 1rem 0; }
+        html #view-drones .dl-groups { padding: .9rem 1rem 1rem; }
+        html #view-drones .dl-search, html #view-drones .dl-search input { width: 100%; }
+        html #view-drones .dl-flight { grid-template-columns: 1fr; grid-template-areas: "ref" "cargo" "actions" "history"; }
+    }
+}
+
+/* ==========================================================================
+   Analyse des stocks et de la CMM (classes sa-*, rendu par
+   09-analyse-des-stocks.js ; écran uniquement)
+   ========================================================================== */
+@media screen {
+    html #view-stock-analysis #stock-analysis-content { display: grid; gap: 1rem; }
+    html #view-stock-analysis #stock-analysis-content > * + * { margin-top: 0; }
+    html #view-stock-analysis #stock-analysis-content > [hidden] { display: none; }
+
+    /* Couleur de chaque statut (mêmes teintes que les graphiques). */
+    html #view-stock-analysis .sa-status-rupture { --tone: #dc2626; }
+    html #view-stock-analysis .sa-status-under { --tone: #d97706; }
+    html #view-stock-analysis .sa-status-ok { --tone: #16a34a; }
+    html #view-stock-analysis .sa-status-over { --tone: #7c3aed; }
+    html #view-stock-analysis .sa-status-nocmm { --tone: #64748b; }
+
+    /* ---------- Cartes communes ---------- */
+    html #view-stock-analysis .sa-card { min-width: 0; padding: 1rem 1.1rem; border: 1px solid var(--qb-line); border-radius: 16px; background: var(--qb-surface); box-shadow: var(--qb-shadow-xs); }
+    html #view-stock-analysis .sa-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .3rem 1rem; }
+    html #view-stock-analysis .sa-card-title { margin: 0; color: var(--qb-text); font-size: .8rem; font-weight: 800; }
+    html #view-stock-analysis .sa-card-note { margin: .2rem 0 0; color: var(--qb-muted); font-size: .66rem; line-height: 1.45; }
+    html #view-stock-analysis .sa-section { display: grid; gap: .35rem; }
+    html #view-stock-analysis .sa-section > .sa-scroll { margin-top: .5rem; }
+    html #view-stock-analysis .sa-empty { padding: 2.5rem 1.25rem; border: 1px dashed var(--qb-line-strong); border-radius: 16px; background: var(--qb-surface); color: var(--qb-muted); font-size: .74rem; font-style: italic; text-align: center; }
+    html #view-stock-analysis .sa-charts-message { margin: 0; padding: .6rem .9rem; border: 1px solid color-mix(in srgb, var(--qb-accent) 35%, transparent); border-radius: 12px; background: var(--qb-accent-soft); color: var(--qb-accent-ink); font-size: .7rem; font-weight: 600; }
+
+    /* ---------- Bandeau des ruptures ---------- */
+    html #view-stock-analysis .sa-alert {
+        --tone: var(--qb-success);
+        display: flex; align-items: flex-start; gap: .9rem;
+        padding: 1rem 1.15rem;
+        border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
+        border-left: 4px solid var(--tone);
+        border-radius: 16px;
+        background: color-mix(in srgb, var(--tone) 7%, var(--qb-surface));
+    }
+    html #view-stock-analysis .sa-alert-danger { --tone: #dc2626; }
+    html #view-stock-analysis .sa-alert-icon { display: grid; place-items: center; flex: none; width: 2.4rem; height: 2.4rem; border-radius: 12px; background: color-mix(in srgb, var(--tone) 15%, transparent); color: var(--tone); font-size: 1.3rem; }
+    html #view-stock-analysis .sa-alert-body { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+    html #view-stock-analysis .sa-alert-title { color: var(--qb-text); font-size: .84rem; font-weight: 800; }
+    html #view-stock-analysis .sa-alert-text { color: var(--qb-muted); font-size: .7rem; }
+    html #view-stock-analysis .sa-alert-groups { display: grid; gap: .4rem; margin-top: .5rem; }
+    html #view-stock-analysis .sa-alert-group { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+    html #view-stock-analysis .sa-alert-district { min-width: 6.5rem; margin-right: .25rem; color: var(--qb-text-2); font-size: .64rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+
+    /* ---------- Réglages et légende ---------- */
+    html #view-stock-analysis .sa-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .9rem 1.5rem; }
+    html #view-stock-analysis .sa-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .9rem; }
+    html #view-stock-analysis .sa-field { display: flex; flex-direction: column; gap: .3rem; }
+    html #view-stock-analysis .sa-field-label { color: var(--qb-muted); font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+    html #view-stock-analysis .sa-select {
+        min-width: 14rem;
+        padding: .5rem .75rem;
+        border: 1px solid var(--qb-line-strong);
+        border-radius: 11px;
+        background: var(--qb-surface);
+        color: var(--qb-text);
+        font-size: .74rem;
+        font-weight: 700;
+    }
+    html #view-stock-analysis .sa-select:focus { outline: none; border-color: var(--qb-primary); box-shadow: var(--qb-ring); }
+    html #view-stock-analysis .sa-segmented { display: inline-flex; padding: .2rem; border: 1px solid var(--qb-line); border-radius: 12px; background: var(--qb-surface-2); }
+    html #view-stock-analysis .sa-segment { padding: .4rem .85rem; border: 0; border-radius: 9px; background: transparent; color: var(--qb-muted); font-size: .72rem; font-weight: 800; cursor: pointer; transition: background .15s var(--qb-ease), color .15s var(--qb-ease); }
+    html #view-stock-analysis .sa-segment:hover { color: var(--qb-text); }
+    html #view-stock-analysis .sa-segment.is-active { background: var(--qb-surface); color: var(--qb-primary-ink); box-shadow: var(--qb-shadow-sm); }
+    html #view-stock-analysis .sa-segment:focus-visible { outline: none; box-shadow: var(--qb-ring); }
+    html #view-stock-analysis .sa-toolbar-info { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; max-width: 34rem; text-align: right; }
+    html #view-stock-analysis .sa-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .3rem .7rem; }
+    html #view-stock-analysis .sa-legend-item { display: inline-flex; align-items: center; gap: .3rem; color: var(--qb-text-2); font-size: .64rem; font-weight: 700; }
+    html #view-stock-analysis .sa-legend-item::before { content: ''; width: .55rem; height: .55rem; border-radius: 3px; background: var(--tone); }
+
+    /* ---------- Indicateurs ---------- */
+    html #view-stock-analysis .sa-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .75rem; }
+    html #view-stock-analysis .sa-kpi {
+        --tone: var(--qb-primary);
+        display: flex; align-items: center; gap: .7rem;
+        min-width: 0;
+        padding: .8rem .9rem;
+        border: 1px solid var(--qb-line);
+        border-top: 3px solid var(--tone);
+        border-radius: 14px;
+        background: var(--qb-surface);
+        box-shadow: var(--qb-shadow-xs);
+    }
+    html #view-stock-analysis .sa-tone-primary { --tone: var(--qb-primary); }
+    html #view-stock-analysis .sa-tone-teal { --tone: var(--qb-teal); }
+    html #view-stock-analysis .sa-tone-accent { --tone: var(--qb-accent); }
+    html #view-stock-analysis .sa-tone-rupture { --tone: #dc2626; background: color-mix(in srgb, #dc2626 6%, var(--qb-surface)); }
+    html #view-stock-analysis .sa-tone-under { --tone: #d97706; }
+    html #view-stock-analysis .sa-tone-ok { --tone: #16a34a; }
+    html #view-stock-analysis .sa-tone-over { --tone: #7c3aed; }
+    html #view-stock-analysis .sa-tone-nocmm { --tone: #64748b; }
+    html #view-stock-analysis .sa-kpi-icon { display: grid; place-items: center; flex: none; width: 2.2rem; height: 2.2rem; border-radius: 10px; background: color-mix(in srgb, var(--tone) 14%, transparent); color: var(--tone); font-size: 1.15rem; }
+    html #view-stock-analysis .sa-kpi-text { display: flex; flex-direction: column; min-width: 0; }
+    html #view-stock-analysis .sa-kpi-label { color: var(--qb-muted); font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    html #view-stock-analysis .sa-kpi-value { color: var(--qb-text); font-family: var(--qb-font-display); font-size: 1.3rem; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    html #view-stock-analysis .sa-kpi-hint { overflow: hidden; color: var(--qb-faint); font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ---------- Répartition par statut ---------- */
+    html #view-stock-analysis .sa-distribution { display: grid; gap: .6rem; }
+    html #view-stock-analysis .sa-bar { display: flex; height: .8rem; border-radius: 999px; background: var(--qb-surface-3); overflow: hidden; }
+    html #view-stock-analysis .sa-bar-segment { height: 100%; background: var(--tone); }
+    html #view-stock-analysis .sa-bar-segment + .sa-bar-segment { box-shadow: inset 2px 0 0 var(--qb-surface); }
+    html #view-stock-analysis .sa-bar-legend { display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; }
+    html #view-stock-analysis .sa-bar-legend .sa-legend-item strong { color: var(--qb-text); font-family: var(--qb-font-mono); font-size: .76rem; }
+
+    /* ---------- Graphiques ---------- */
+    html #view-stock-analysis .sa-chart-holder { position: relative; margin-top: .75rem; }
+    html #view-stock-analysis .sa-chart-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+
+    /* ---------- Tableaux ---------- */
+    html #view-stock-analysis .sa-scroll { overflow-x: auto; border: 1px solid var(--qb-line); border-radius: 12px; }
+    html #view-stock-analysis :is(.sa-table, .sa-matrix) { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .72rem; }
+    html #view-stock-analysis :is(.sa-table, .sa-matrix) :is(th, td) { padding: .5rem .7rem; border-bottom: 1px solid var(--qb-line-soft); white-space: nowrap; }
+    html #view-stock-analysis :is(.sa-table, .sa-matrix) tbody tr:last-child > * { border-bottom: 0; }
+    html #view-stock-analysis .sa-th { background: var(--qb-surface-2); color: var(--qb-muted); font-size: .6rem; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: .05em; border-bottom-color: var(--qb-line) !important; }
+    html #view-stock-analysis :is(.sa-right) { text-align: right; }
+    html #view-stock-analysis :is(.sa-center) { text-align: center; }
+    html #view-stock-analysis .sa-name { background: var(--qb-surface); color: var(--qb-text); font-weight: 700; text-align: left; }
+    html #view-stock-analysis .sa-cell { color: var(--qb-text-2); }
+    html #view-stock-analysis .sa-muted { color: var(--qb-muted); }
+    html #view-stock-analysis .sa-num { color: var(--qb-text-2); font-family: var(--qb-font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+    html #view-stock-analysis .sa-need { color: var(--qb-accent-ink); font-weight: 800; }
+    html #view-stock-analysis .sa-badges > * + * { margin-left: .25rem; }
+    html #view-stock-analysis .sa-table tbody tr:hover > * { background: var(--qb-row-hover); }
+    /* Liseré de statut à gauche de chaque ligne ; lignes en rupture teintées. */
+    html #view-stock-analysis .sa-row > .sa-name { box-shadow: inset 3px 0 0 var(--tone); }
+    html #view-stock-analysis .sa-row.sa-status-rupture > * { background: color-mix(in srgb, #dc2626 6%, var(--qb-surface)); }
+    html #view-stock-analysis .sa-months { display: flex; align-items: center; gap: .55rem; min-width: 9rem; }
+    html #view-stock-analysis .sa-months-value { width: 2.4rem; color: var(--qb-text); font-family: var(--qb-font-mono); font-weight: 800; text-align: right; }
+    html #view-stock-analysis .sa-gauge { position: relative; flex: 1 1 auto; height: .45rem; border-radius: 999px; background: var(--qb-surface-3); }
+    html #view-stock-analysis .sa-gauge-fill { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--tone); }
+    html #view-stock-analysis .sa-gauge-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--qb-text-2); opacity: .45; }
+
+    /* Matrice : première colonne fixe, pastilles colorées par statut. */
+    html #view-stock-analysis .sa-sticky { position: sticky; left: 0; z-index: 1; }
+    html #view-stock-analysis thead .sa-sticky { z-index: 2; }
+    html #view-stock-analysis .sa-chip {
+        display: inline-block;
+        min-width: 3.6rem;
+        padding: .25rem .5rem;
+        border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--tone) 14%, var(--qb-surface));
+        color: color-mix(in srgb, var(--tone) 80%, var(--qb-text));
+        font-family: var(--qb-font-mono);
+        font-size: .7rem;
+        font-weight: 800;
+        cursor: help;
+    }
+    html #view-stock-analysis .sa-chip.sa-status-rupture { background: #dc2626; border-color: #dc2626; color: #fff; }
+
+    @media (max-width: 1100px) {
+        html #view-stock-analysis .sa-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        html #view-stock-analysis .sa-toolbar-info { align-items: flex-start; text-align: left; }
+        html #view-stock-analysis .sa-legend { justify-content: flex-start; }
+    }
+    @media (max-width: 760px) {
+        html #view-stock-analysis .sa-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        html #view-stock-analysis .sa-chart-pair { grid-template-columns: 1fr; }
+        html #view-stock-analysis .sa-select { min-width: 0; width: 100%; }
+        html #view-stock-analysis .sa-fields, html #view-stock-analysis .sa-field:first-child { width: 100%; }
+        html #view-stock-analysis .sa-alert-district { width: 100%; }
+    }
+}
+
+/* ==========================================================================
+   Circuit de validation des plannings (Chef Unité SR) — cartes, avertissement
+   de livraison et fenêtre de validation (10-planning-validation.js ; écran)
+   ========================================================================== */
+@media screen {
+    /* ---------- Cartes de campagne ---------- */
+    html .pc-card .pc-validation {
+        --tone: var(--qb-muted);
+        display: inline-flex; align-items: center; gap: .35rem;
+        padding: .25rem .65rem;
+        border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--tone) 12%, transparent);
+        color: var(--tone);
+        font-size: .68rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    html .pc-card .pc-validation-submitted { --tone: var(--qb-accent-ink); }
+    html .pc-card .pc-validation-validated { --tone: var(--qb-success); }
+    html .pc-card .pc-validation-returned { --tone: var(--qb-danger); }
+    html .pc-card .pc-button[data-icon="send"]::before { content: "\e396"; }
+    html .pc-card .pc-button[data-icon="check"]::before { content: "\e182"; }
+    html .pc-card :is(.pc-button-submit, .pc-button-validate) { border-color: var(--qb-primary); background: var(--qb-primary); color: var(--qb-on-primary); }
+    html .pc-card .pc-button-validate { border-color: var(--qb-success); background: var(--qb-success); }
+    html .pc-card :is(.pc-button-submit, .pc-button-validate):hover { filter: brightness(1.07); color: var(--qb-on-primary); }
+    html.qb-dark .pc-card .pc-button-validate { color: #052e1f; }
+    html .pc-card .pc-review {
+        display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem;
+        margin: .9rem 1.25rem 0;
+        padding: .65rem .85rem;
+        border: 1px solid color-mix(in srgb, var(--qb-danger) 30%, transparent);
+        border-left: 4px solid var(--qb-danger);
+        border-radius: 12px;
+        background: var(--qb-danger-soft);
+        color: var(--qb-text-2);
+        font-size: .72rem;
+    }
+    html .pc-card .pc-review i { color: var(--qb-danger); }
+    html .pc-card .pc-review strong { color: var(--qb-danger); }
+
+    /* ---------- Avertissement des formulaires de vol et d'expédition ---------- */
+    html .plan-validation-warning {
+        margin: .45rem 0 0;
+        padding: .5rem .7rem;
+        border: 1px solid color-mix(in srgb, var(--qb-accent) 40%, transparent);
+        border-radius: 10px;
+        background: var(--qb-accent-soft);
+        color: var(--qb-accent-ink);
+        font-size: .68rem;
+        font-weight: 600;
+        line-height: 1.4;
+    }
+    html .plan-validation-warning::before { content: "\e4e0"; margin-right: .35rem; font-family: "Phosphor"; font-weight: 400; }
+
+    /* ---------- Fenêtre de validation ---------- */
+    html #modal-planning-validation .pv-help { margin: 0; color: var(--qb-muted); font-size: .7rem; line-height: 1.5; }
+    html #modal-planning-validation .pv-summary { display: flex; flex-wrap: wrap; gap: .5rem; }
+    html #modal-planning-validation .pv-chip { display: inline-flex; align-items: baseline; gap: .35rem; padding: .35rem .7rem; border: 1px solid var(--qb-line); border-radius: 10px; background: var(--qb-surface-2); color: var(--qb-muted); font-size: .68rem; font-weight: 700; }
+    html #modal-planning-validation .pv-chip strong { color: var(--qb-text); font-family: var(--qb-font-mono); font-size: .82rem; }
+    html #modal-planning-validation .pv-chip-warn { border-color: color-mix(in srgb, var(--qb-accent) 40%, transparent); background: var(--qb-accent-soft); color: var(--qb-accent-ink); }
+    html #modal-planning-validation .pv-chip-ok { border-color: color-mix(in srgb, var(--qb-success) 35%, transparent); background: var(--qb-success-soft); color: var(--qb-success); }
+    html #modal-planning-validation .pv-content { display: grid; gap: 1rem; }
+    html #modal-planning-validation .pv-district { position: relative; display: grid; gap: .6rem; padding-left: .85rem; }
+    html #modal-planning-validation .pv-district::before { content: ''; position: absolute; inset: .3rem auto .3rem 0; width: 3px; border-radius: 3px; background: var(--qb-primary); opacity: .55; }
+    html #modal-planning-validation .pv-district-none::before { background: var(--qb-faint); }
+    html #modal-planning-validation .pv-district-head { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .7rem; }
+    html #modal-planning-validation .pv-district-name { display: inline-flex; align-items: center; gap: .35rem; margin: 0 auto 0 0; color: var(--qb-primary-ink); font-size: .74rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    html #modal-planning-validation .pv-district-count, html #modal-planning-validation .pv-district-stats { padding: .05rem .5rem; border-radius: 999px; background: var(--qb-surface-3); color: var(--qb-text-2); font-size: .63rem; font-weight: 800; }
+    html #modal-planning-validation .pv-csb { border: 1px solid var(--qb-line); border-radius: 14px; background: var(--qb-surface); overflow: hidden; }
+    html #modal-planning-validation .pv-csb-name { margin: 0; padding: .55rem .85rem; border-bottom: 1px solid var(--qb-line); background: var(--qb-surface-2); color: var(--qb-text); font-size: .76rem; font-weight: 800; }
+    html #modal-planning-validation .pv-scroll { overflow-x: auto; }
+    html #modal-planning-validation .pv-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: .72rem; }
+    html #modal-planning-validation .pv-table :is(th, td) { padding: .45rem .7rem; border-bottom: 1px solid var(--qb-line-soft); vertical-align: middle; white-space: nowrap; }
+    html #modal-planning-validation .pv-table tbody tr:last-child > * { border-bottom: 0; }
+    html #modal-planning-validation .pv-th { color: var(--qb-muted); font-size: .6rem; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: .05em; }
+    html #modal-planning-validation .pv-right { text-align: right; }
+    html #modal-planning-validation .pv-row-name { color: var(--qb-text); font-weight: 700; text-align: left; white-space: normal; }
+    html #modal-planning-validation .pv-num { color: var(--qb-text-2); font-family: var(--qb-font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+    html #modal-planning-validation .pv-need { color: var(--qb-primary-ink); font-weight: 700; }
+    html #modal-planning-validation .pv-missing { color: var(--qb-accent-ink); font-family: var(--qb-font); font-style: italic; }
+    html #modal-planning-validation .pv-input {
+        width: 6.5rem;
+        padding: .35rem .5rem;
+        border: 1px solid var(--qb-line-strong);
+        border-radius: 8px;
+        background: var(--qb-surface);
+        color: var(--qb-text);
+        font-family: var(--qb-font-mono);
+        font-size: .74rem;
+        font-weight: 800;
+        text-align: right;
+    }
+    html #modal-planning-validation .pv-input:focus { outline: none; border-color: var(--qb-primary); box-shadow: var(--qb-ring); }
+    html #modal-planning-validation .pv-hint { display: block; margin-top: .15rem; color: var(--qb-faint); font-size: .6rem; }
+    html #modal-planning-validation .pv-row.is-adjusted > * { background: color-mix(in srgb, var(--qb-primary) 6%, var(--qb-surface)); }
+    html #modal-planning-validation .pv-row.is-adjusted .pv-input { border-color: var(--qb-primary); }
+    html #modal-planning-validation .pv-row.is-invalid > * { background: var(--qb-danger-soft); }
+    html #modal-planning-validation .pv-row.is-invalid .pv-input { border-color: var(--qb-danger); }
+    html #modal-planning-validation .pv-gap { font-weight: 800; }
+    html #modal-planning-validation .pv-gap-up { color: var(--qb-success); }
+    html #modal-planning-validation .pv-gap-down { color: var(--qb-accent-ink); }
+    html #modal-planning-validation .pv-gap-invalid { color: var(--qb-danger); font-family: var(--qb-font); }
+    html #modal-planning-validation .pv-totals { margin: 0 auto 0 0; color: var(--qb-text-2); font-size: .72rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    @media (max-width: 640px) {
+        html #modal-planning-validation .pv-totals { width: 100%; margin-bottom: .25rem; }
     }
 }
