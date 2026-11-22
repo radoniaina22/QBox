@@ -7646,7 +7646,7 @@
     async function openAlerts() {
         const generation = ++alertsGeneration, requestGeneration = sessionGeneration;
         $('alerts-form').reset();
-        for (const id of ['alerts-weekly', 'alerts-stockout', 'alerts-reports', 'alerts-validations', 'alerts-submit']) $(id).disabled = true;
+        for (const id of ['alerts-weekly', 'alerts-stockout', 'alerts-reports', 'alerts-validations', 'alerts-operations', 'alerts-submit']) $(id).disabled = true;
         $('alerts-status').textContent = 'Chargement…';
         $('alerts-dialog').showModal();
         try {
@@ -7656,7 +7656,8 @@
             $('alerts-stockout').checked = !!preferences?.stockout;
             $('alerts-reports').checked = !!preferences?.reports;
             $('alerts-validations').checked = preferences?.validations !== false;
-            for (const id of ['alerts-weekly', 'alerts-stockout', 'alerts-reports', 'alerts-validations', 'alerts-submit']) $(id).disabled = false;
+            $('alerts-operations').checked = preferences?.operations !== false;
+            for (const id of ['alerts-weekly', 'alerts-stockout', 'alerts-reports', 'alerts-validations', 'alerts-operations', 'alerts-submit']) $(id).disabled = false;
             $('alerts-status').textContent = preferences?.customized ? '' : 'Réglage par défaut selon votre rôle.';
         } catch (error) {
             if (generation === alertsGeneration) $('alerts-status').textContent = `Préférences indisponibles : ${error.message}`;
@@ -7669,7 +7670,7 @@
         $('alerts-submit').disabled = true;
         $('alerts-status').textContent = 'Enregistrement…';
         try {
-            await api('/rest/v1/rpc/qbox_set_alert_preferences', { weekly: $('alerts-weekly').checked, stockout: $('alerts-stockout').checked, reports: $('alerts-reports').checked, validations: $('alerts-validations').checked }, true);
+            await api('/rest/v1/rpc/qbox_set_alert_preferences', { weekly: $('alerts-weekly').checked, stockout: $('alerts-stockout').checked, reports: $('alerts-reports').checked, validations: $('alerts-validations').checked, operations: $('alerts-operations').checked }, true);
             if (generation !== alertsGeneration || requestGeneration !== sessionGeneration) return;
             $('alerts-status').textContent = 'Préférences enregistrées.';
         } catch (error) {

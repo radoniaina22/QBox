@@ -1,7 +1,7 @@
 'use strict';
 document.documentElement.classList.add('postgres-mode');
 const entryScript = document.createElement('script');
-entryScript.src = 'postgres-main.js?v=76bebaba03';
+entryScript.src = 'postgres-main.js?v=9f6f643acd';
 entryScript.async = false;
 entryScript.onerror = () => {
     document.documentElement.classList.add('postgres-ready');
