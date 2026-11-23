@@ -285,8 +285,7 @@
         $('inventory-form').classList.add('hidden');
         $('inventory-count-rows').replaceChildren();
         $('inventory-history').replaceChildren();
-        stockHistoryState = null;
-        clearStockHistoryCharts();
+        resetStockHistoryView();
         stockHistoryPrintOpen = false;
         $('stock-history-print-modal').classList.add('hidden');
         $('stock-history-print-content').replaceChildren();
@@ -301,10 +300,6 @@
         $('inventory-print-modal').classList.add('hidden');
         $('inventory-print-report').replaceChildren();
         document.body.classList.remove('postgres-inventory-print');
-        for (const id of ['stock-history-summary', 'stock-history-movements', 'stock-history-inventories']) $(id).replaceChildren();
-        $('stock-history-status').textContent = '';
-        for (const id of ['stock-history-from', 'stock-history-to', 'stock-history-type', 'stock-history-search']) $(id).value = '';
-        $('postgres-stock-history-more').classList.add('hidden');
         $('inventory-new').disabled = false;
         quarantineDraft = null;
         $('quarantine-form-main').classList.add('hidden');
@@ -3919,6 +3914,15 @@
         downloadTableCsv($('legacy-deliveries-table'), tableCsvFileName('sorties-avant-qbox', portSelect.selectedOptions?.[0]?.textContent || ''));
     }
 
+    // ================= Historique global des stocks (#view-stock-history) =================
+    // Style : stock-history.css ; courbe : stock-history-chart-style.js.
+    // Données : qbox_list_stocks (stock actuel), qbox_stock_at_date (stock au début d'un jour),
+    // qbox_stock_history (journal paginé par 100), qbox_list_inventories.
+
+    let stockAtDateState = null;
+    let stockAtDateSequence = 0;
+    let stockHistoryProduct = '';
+
     function stockHistoryFilter() {
         return {
             from_date: $('stock-history-from').value || null,
@@ -3928,67 +3932,626 @@
         };
     }
 
-    function clearStockHistoryCharts() {
-        for (const chart of stockHistoryCharts) chart.destroy();
-        stockHistoryCharts = [];
+    function shToday() {
+        return new Intl.DateTimeFormat('fr-CA', {timeZone:'Indian/Antananarivo'}).format(new Date());
     }
 
-    function renderStockHistoryCharts() {
-        clearStockHistoryCharts();
-        const chartArea = $('stock-history-charts');
-        if (typeof window.Chart !== 'function') {
-            chartArea.classList.add('postgres-hidden');
-            return ' Graphiques indisponibles : Chart.js n’est pas chargé ; ils restent accessibles dans les opérations.';
-        }
-        chartArea.classList.remove('postgres-hidden');
-        const state = stockHistoryState;
-        const products = [...state.balances.values()];
-        const colors = ['#0284c7', '#d97706', '#059669', '#be185d', '#7c3aed', '#b91c1c', '#0f766e'];
-        const entries = [...state.rows].reverse();
-        const names = [...new Set(entries.map(entry => entry.product_name))];
-        const ambiguous = names.some(name => state.products.filter(item => item.name === name).length > 1);
-        const labels = entries.map(entry => localDateTime(entry.occurred_at));
-        const datasets = (ambiguous ? [] : names).map((name, index) => ({
-            label:name, borderColor:colors[index % colors.length], backgroundColor:colors[index % colors.length],
-            data:entries.map(entry => entry.product_name === name ? Number(BigInt(entry.after_stock) - BigInt(entry.after_reserved)) : null),
-            spanGaps:true, pointRadius:3, pointHoverRadius:5, borderWidth:2.5, tension:0.15
-        }));
-        try {
-            stockHistoryChartStyle.sizeBars($('stock-history-bar-container'), products.length);
-            stockHistoryCharts.push(new window.Chart($('stock-history-bar'), {
-                type:'bar', data:{labels:products.map(item => item.name), datasets:[{
-                    label:'Disponible', data:products.map(item => Number(item.quantity - item.reserved)),
-                    backgroundColor:products.map(item => {
-                        const available = item.quantity - item.reserved;
-                        if (item.threshold === null || item.threshold <= 0n) return '#64748b';
-                        return available < item.threshold ? '#b91c1c' : available * 2n <= item.threshold * 3n ? '#b45309' : '#15803d';
-                    }), borderRadius:6, maxBarThickness:22
-                }]},
-                options:stockHistoryChartStyle.options('bar', true)
-            }));
-            stockHistoryCharts.push(new window.Chart($('stock-history-line'), {
-                type:'line', data:{labels, datasets},
-                options:stockHistoryChartStyle.options('line', true)
-            }));
-            return ambiguous
-                ? ' Courbe indisponible : plusieurs intrants portent le même nom. Les valeurs du graphique peuvent être arrondies.'
-                : ' Courbes limitées aux mouvements chargés ; les valeurs des graphiques peuvent être arrondies.';
-        } catch (error) {
-            clearStockHistoryCharts();
-            chartArea.classList.add('postgres-hidden');
-            return ` Graphiques indisponibles : ${error.message}. Utilisez le panneau d’opérations.`;
-        }
+    function shDateLabel(value) {
+        const [year, month, day] = String(value).split('-');
+        return `${day}/${month}/${year}`;
+    }
+
+    function shSigned(value) {
+        return value > 0n ? `+${number(value)}` : number(value);
+    }
+
+    function shLevel(available, threshold) {
+        if (available <= 0n) return {key:'out', label:'Rupture'};
+        if (threshold === null || threshold <= 0n) return {key:'none', label:'Seuil non défini'};
+        if (available < threshold) return {key:'low', label:'Sous le seuil'};
+        if (available * 2n <= threshold * 3n) return {key:'watch', label:'À surveiller'};
+        return {key:'good', label:'Suffisant'};
+    }
+
+    function shSearch() {
+        return ($('stock-history-search').value.trim() || '').toLocaleLowerCase('fr');
+    }
+
+    // Cellule de tableau : texte ou éléments.
+    function shCell(row, content, className = '') {
+        const cell = dsElement('td', className);
+        if (content && typeof content === 'object') cell.append(...[].concat(content));
+        else cell.textContent = content;
+        row.append(cell);
+        return cell;
+    }
+
+    function shDelta(value) {
+        if (value === null) return dsElement('span', 'sh-delta sh-delta-unknown', 'Inconnue');
+        return dsElement('span', `sh-delta ${value > 0n ? 'sh-delta-up' : value < 0n ? 'sh-delta-down' : 'sh-delta-flat'}`, shSigned(value));
     }
 
     function appendStockHistoryCells(parent, values) {
         const row = document.createElement('tr');
         for (const value of values) {
             const cell = document.createElement('td');
-            cell.className = 'py-2 px-2 text-slate-700';
             cell.textContent = value;
             row.append(cell);
         }
         parent.append(row);
+    }
+
+    function clearStockHistoryCharts() {
+        for (const chart of stockHistoryCharts) chart.destroy();
+        stockHistoryCharts = [];
+    }
+
+    function clearStockHistoryView() {
+        clearStockHistoryCharts();
+        $('stock-history-charts').classList.add('postgres-hidden');
+        for (const id of ['stock-history-summary', 'stock-history-movements', 'stock-history-inventories', 'stock-history-kpis', 'stock-history-evolution-stats'])
+            $(id).replaceChildren();
+        $('stock-history-count').textContent = '';
+        $('postgres-stock-history-more').classList.add('hidden');
+    }
+
+    // Remise à zéro complète (déconnexion, changement de compte).
+    function resetStockHistoryView() {
+        stockHistoryState = null;
+        stockAtDateState = null;
+        stockAtDateSequence++;
+        stockHistoryProduct = '';
+        clearStockHistoryView();
+        $('stock-history-at-date-rows').replaceChildren();
+        $('stock-history-at-date-status').textContent = '';
+        $('stock-history-at-date-export').disabled = true;
+        $('stock-history-status').textContent = '';
+        for (const id of ['stock-history-from', 'stock-history-to', 'stock-history-type', 'stock-history-search', 'stock-history-at-date'])
+            $(id).value = '';
+    }
+
+    // ---------- Indicateurs du bandeau ----------
+    function renderStockHistoryKpis() {
+        const state = stockHistoryState, kpis = $('stock-history-kpis');
+        kpis.replaceChildren();
+        const levels = [...state.balances.values()].map(item => shLevel(item.quantity - item.reserved, item.threshold).key);
+        let incoming = 0, outgoing = 0;
+        for (const entry of state.rows) {
+            if (entry.before_stock === null) continue;
+            const change = BigInt(entry.after_stock) - BigInt(entry.before_stock);
+            if (change > 0n) incoming++; else if (change < 0n) outgoing++;
+        }
+        const tiles = [
+            ['ph-package', 'Intrants suivis', levels.length, `${levels.filter(key => key !== 'out').length} avec du stock disponible`, ''],
+            ['ph-warning', 'Sous le seuil', levels.filter(key => key === 'low').length, `${levels.filter(key => key === 'watch').length} à surveiller`, 'sh-kpi-warn'],
+            ['ph-prohibit', 'En rupture', levels.filter(key => key === 'out').length, 'Disponible nul', 'sh-kpi-danger'],
+            ['ph-arrows-left-right', 'Mouvements chargés', state.count, `${incoming} entrée(s) · ${outgoing} sortie(s)${state.cursor ? ' · liste partielle' : ''}`, 'sh-kpi-info']
+        ];
+        for (const [icon, label, value, detail, tone] of tiles) {
+            const tile = dsElement('div', `sh-kpi ${tone}`);
+            const head = dsElement('span', 'sh-kpi-label');
+            head.append(dsIcon(icon), dsElement('span', '', label));
+            tile.append(head, dsElement('strong', 'sh-kpi-value', number(value)), dsElement('span', 'sh-kpi-detail', detail));
+            kpis.append(tile);
+        }
+    }
+
+    // ---------- Stock actuel (tableau + jauge) ----------
+    function renderStockHistorySummary() {
+        const body = $('stock-history-summary');
+        body.replaceChildren();
+        const items = [...stockHistoryState.balances.values()];
+        if (!items.length) {
+            const row = dsElement('tr', 'sh-empty-row');
+            shCell(row, 'Aucun stock pour cet intrant sur ce site.').colSpan = 6;
+            body.append(row);
+            return;
+        }
+        let largest = 0n;
+        for (const item of items) if (item.quantity - item.reserved > largest) largest = item.quantity - item.reserved;
+        for (const item of items) {
+            const available = item.quantity - item.reserved;
+            const level = shLevel(available, item.threshold);
+            const row = dsElement('tr', `sh-row-${level.key}`);
+            const name = dsElement('span', 'sh-product');
+            name.append(dsElement('strong', '', item.name));
+            if (item.unit) name.append(dsElement('small', '', item.unit));
+            shCell(row, name);
+            shCell(row, dsElement('span', `sh-badge sh-level-${level.key}`, level.label));
+            shCell(row, number(item.quantity), 'sh-num');
+            shCell(row, number(item.reserved), 'sh-num sh-muted');
+            shCell(row, number(available), 'sh-num sh-strong');
+            // Échelle : 3 × le seuil (repère au tiers) ; sans seuil, le plus gros disponible du site.
+            const hasThreshold = item.threshold !== null && item.threshold > 0n;
+            const scale = hasThreshold ? item.threshold * 3n : largest;
+            const clamped = available < 0n ? 0n : available > scale ? scale : available;
+            const percent = scale > 0n ? Number(clamped * 1000n / scale) / 10 : 0;
+            const gauge = dsElement('div', `sh-gauge sh-gauge-${level.key}`);
+            gauge.title = hasThreshold ? `Seuil minimal : ${number(item.threshold)}` : 'Seuil non défini';
+            const fill = dsElement('span', 'sh-gauge-fill');
+            fill.style.width = `${percent}%`;
+            gauge.append(fill);
+            if (hasThreshold) gauge.append(dsElement('span', 'sh-gauge-mark'));
+            const wrap = dsElement('div', 'sh-gauge-cell');
+            wrap.append(gauge, dsElement('small', '', hasThreshold ? `seuil ${number(item.threshold)}` : 'sans seuil'));
+            shCell(row, wrap, 'sh-gauge-col');
+            body.append(row);
+        }
+    }
+
+    // ---------- Stock à une date ----------
+    function renderStockAtDate() {
+        const body = $('stock-history-at-date-rows'), status = $('stock-history-at-date-status');
+        body.replaceChildren();
+        const state = stockAtDateState;
+        if (!state) return;
+        const search = shSearch();
+        const rows = state.rows.filter(item => !search || item.name.toLocaleLowerCase('fr').includes(search));
+        let unknown = 0;
+        for (const item of rows) {
+            const row = document.createElement('tr');
+            const name = dsElement('span', 'sh-product');
+            name.append(dsElement('strong', '', item.name));
+            name.append(dsElement('small', '', [item.category, item.unit].filter(Boolean).join(' · ')));
+            shCell(row, name);
+            const nowAvailable = BigInt(item.current_stock) - BigInt(item.current_reserved);
+            if (item.stock === null) {
+                unknown++;
+                shCell(row, dsElement('span', 'sh-badge sh-level-none', 'Pas encore suivi')).colSpan = 3;
+                shCell(row, number(nowAvailable), 'sh-num sh-strong');
+                shCell(row, dsElement('span', 'sh-delta sh-delta-unknown', '—'), 'sh-num');
+            } else {
+                const thenAvailable = BigInt(item.stock) - BigInt(item.reserved ?? 0);
+                const threshold = item.min_threshold == null ? null : BigInt(item.min_threshold);
+                shCell(row, number(item.stock), 'sh-num');
+                shCell(row, number(item.reserved ?? 0), 'sh-num sh-muted');
+                const level = shLevel(thenAvailable, threshold);
+                const then = dsElement('span', `sh-avail sh-avail-${level.key}`, number(thenAvailable));
+                then.title = level.label;
+                shCell(row, then, 'sh-num');
+                shCell(row, number(nowAvailable), 'sh-num');
+                shCell(row, shDelta(nowAvailable - thenAvailable), 'sh-num');
+            }
+            body.append(row);
+        }
+        if (!rows.length) {
+            const row = dsElement('tr', 'sh-empty-row');
+            shCell(row, 'Aucun intrant à afficher pour cette date.').colSpan = 6;
+            body.append(row);
+        }
+        const label = shDateLabel(state.date);
+        status.textContent = `Stock au ${label} à 00 h 00, avant la première opération du jour.` +
+            (unknown ? ` ${unknown} intrant(s) n’étaient pas encore suivis dans Q.box à cette date.` : '');
+        $('stock-history-at-date-export').disabled = !rows.length;
+    }
+
+    async function refreshStockAtDate() {
+        const port = portSelect.value, input = $('stock-history-at-date'), status = $('stock-history-at-date-status');
+        if (!input.value) input.value = shToday();
+        const date = input.value;
+        const sequence = ++stockAtDateSequence, requestGeneration = sessionGeneration;
+        stockAtDateState = null;
+        $('stock-history-at-date-rows').replaceChildren();
+        $('stock-history-at-date-export').disabled = true;
+        if (!port) { status.textContent = ''; return; }
+        status.textContent = 'Chargement du stock à cette date…';
+        try {
+            const rows = await api('/rest/v1/rpc/qbox_stock_at_date', {selected_port:port, at_date:date}, true);
+            if (sequence !== stockAtDateSequence || activeView !== 'stock-history' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
+            stockAtDateState = {port, date, rows};
+            renderStockAtDate();
+        } catch (error) {
+            if (sequence === stockAtDateSequence) status.textContent = `Stock à cette date indisponible : ${error.message}`;
+        }
+    }
+
+    function exportStockAtDate() {
+        const state = stockAtDateState;
+        if (!state || state.port !== portSelect.value) return;
+        const search = shSearch();
+        const header = ['Site', 'Date (début de journée, Madagascar)', 'Intrant', 'Catégorie', 'Unité', 'Stock', 'Réservé', 'Disponible ce jour-là', 'Disponible aujourd’hui', 'Évolution depuis'];
+        const site = portSelect.selectedOptions[0]?.textContent || state.port;
+        const lines = state.rows.filter(item => !search || item.name.toLocaleLowerCase('fr').includes(search)).map(item => {
+            const now = BigInt(item.current_stock) - BigInt(item.current_reserved);
+            if (item.stock === null) return [site, state.date, item.name, item.category, item.unit, 'Non suivi', '', '', now.toString(), ''];
+            const then = BigInt(item.stock) - BigInt(item.reserved ?? 0);
+            return [site, state.date, item.name, item.category, item.unit, item.stock, item.reserved ?? 0, then.toString(), now.toString(), (now - then).toString()];
+        });
+        // Un entier pur (même négatif) ne peut pas être une formule : pas de préfixe, il reste numérique dans le tableur.
+        const cell = value => /^-?\d+$/.test(String(value ?? '')) ? `"${value}"` : historyCsvCell(value);
+        const csv = '\ufeff' + [header, ...lines].map(row => row.map(cell).join(';')).join('\r\n');
+        const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `qbox-stock-au-${state.date}.csv`;
+        document.body.append(link);
+        try { link.click(); } finally {
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+    }
+
+    // ---------- Courbe d'évolution (un intrant à la fois) ----------
+    function renderStockHistoryEvolution() {
+        clearStockHistoryCharts();
+        const card = $('stock-history-charts'), note = $('stock-history-chart-note'), stats = $('stock-history-evolution-stats');
+        const state = stockHistoryState;
+        stats.replaceChildren();
+        note.textContent = '';
+        const counts = new Map();
+        for (const entry of state.rows) counts.set(entry.product_name, (counts.get(entry.product_name) || 0) + 1);
+        if (!counts.size) { card.classList.add('postgres-hidden'); return ''; }
+        card.classList.remove('postgres-hidden');
+        const names = [...counts.keys()].sort((a, b) => a.localeCompare(b, 'fr'));
+        if (!counts.has(stockHistoryProduct))
+            stockHistoryProduct = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'fr'))[0][0];
+        const select = $('stock-history-product');
+        select.replaceChildren();
+        for (const name of names) select.append(new Option(`${name} (${counts.get(name)})`, name));
+        select.value = stockHistoryProduct;
+        const name = stockHistoryProduct;
+        const homonyms = state.products.filter(item => item.name === name);
+        const product = homonyms.length === 1 ? homonyms[0] : null;
+        const entries = state.rows.filter(entry => entry.product_name === name).reverse();
+        const values = [], labels = [], meta = [], moves = [];
+        const first = entries[0], hasStart = first.before_stock !== null;
+        if (hasStart) {
+            const start = BigInt(first.before_stock) - BigInt(first.before_reserved ?? first.after_reserved);
+            values.push(Number(start));
+            labels.push('Début');
+            meta.push({title:'Avant le premier mouvement chargé', lines:[]});
+            moves.push(0);
+        }
+        let lowest = hasStart ? BigInt(values[0]) : null, totalIn = 0n, totalOut = 0n;
+        for (const entry of entries) {
+            const after = BigInt(entry.after_stock), available = after - BigInt(entry.after_reserved);
+            const change = entry.before_stock === null ? null : after - BigInt(entry.before_stock);
+            if (change !== null && change > 0n) totalIn += change;
+            if (change !== null && change < 0n) totalOut -= change;
+            if (lowest === null || available < lowest) lowest = available;
+            values.push(Number(available));
+            labels.push(new Date(entry.occurred_at).toLocaleDateString('fr-FR', {timeZone:'Indian/Antananarivo', day:'2-digit', month:'short'}));
+            meta.push({title:`${localDateTime(entry.occurred_at)} (Madagascar)`, lines:[
+                `${entry.operation}${entry.reference ? ` · ${entry.reference}` : ''}`,
+                change === null ? 'Variation du stock inconnue' : `Variation du stock : ${shSigned(change)}`
+            ]});
+            moves.push(change === null || change === 0n ? 0 : change > 0n ? 1 : -1);
+        }
+        const last = entries[entries.length - 1];
+        const facts = [
+            ['Disponible au début', hasStart ? number(BigInt(values[0])) : '—', ''],
+            ['Disponible après le dernier', number(BigInt(last.after_stock) - BigInt(last.after_reserved)), 'sh-evo-strong'],
+            ['Plus bas', number(lowest), ''],
+            ['Entrées', `+${number(totalIn)}`, 'sh-evo-up'],
+            ['Sorties', totalOut ? `−${number(totalOut)}` : '0', 'sh-evo-down']
+        ];
+        for (const [label, value, tone] of facts) {
+            const fact = dsElement('div', `sh-evo-stat ${tone}`);
+            fact.append(dsElement('span', '', label), dsElement('strong', '', value));
+            stats.append(fact);
+        }
+        if (homonyms.length > 1) note.textContent = 'Plusieurs intrants portent ce nom : la courbe peut les mélanger.';
+        else if (state.cursor) note.textContent = 'Courbe limitée aux mouvements chargés : chargez les plus anciens pour remonter plus loin.';
+        if (typeof window.Chart !== 'function') {
+            note.textContent = 'Courbe indisponible : Chart.js n’est pas chargé. Les chiffres ci-dessus restent exacts.';
+            return '';
+        }
+        try {
+            const threshold = product && product.min_threshold != null && BigInt(product.min_threshold) > 0n ? Number(product.min_threshold) : null;
+            stockHistoryCharts.push(new window.Chart($('stock-history-line'), {
+                type:'line',
+                data:{labels, datasets:stockHistoryChartStyle.evolutionDatasets(values, moves, threshold)},
+                options:stockHistoryChartStyle.evolutionOptions(meta, product?.unit || '', dsReducedMotion())
+            }));
+            return '';
+        } catch (error) {
+            clearStockHistoryCharts();
+            note.textContent = `Courbe indisponible : ${error.message}`;
+            return '';
+        }
+    }
+
+    // ---------- Journal des mouvements ----------
+    function appendStockHistoryMovement(entry) {
+        const before = entry.before_stock === null ? null : BigInt(entry.before_stock);
+        const after = BigInt(entry.after_stock), reserved = BigInt(entry.after_reserved);
+        const row = document.createElement('tr');
+        const when = dsElement('span', 'sh-when');
+        const date = new Date(entry.occurred_at);
+        when.append(dsElement('strong', '', date.toLocaleDateString('fr-FR', {timeZone:'Indian/Antananarivo'})),
+            dsElement('small', '', date.toLocaleTimeString('fr-FR', {timeZone:'Indian/Antananarivo', hour:'2-digit', minute:'2-digit'})));
+        when.title = `${localDateTime(entry.occurred_at)} (Madagascar)`;
+        shCell(row, when);
+        shCell(row, entry.product_name, 'sh-strong');
+        const operation = dsElement('span', 'sh-operation');
+        operation.append(dsElement('span', 'sh-op-chip', entry.operation));
+        if (entry.reference) operation.append(dsElement('small', '', entry.reference));
+        shCell(row, operation);
+        shCell(row, shDelta(before === null ? null : after - before), 'sh-num');
+        shCell(row, before === null ? 'Inconnu' : number(before), 'sh-num sh-muted');
+        shCell(row, number(after), 'sh-num');
+        const available = dsElement('span', '', number(after - reserved));
+        if (reserved > 0n) available.title = `${number(reserved)} réservé(s) aux vols`;
+        shCell(row, available, 'sh-num sh-strong');
+        shCell(row, entry.performed_by_name || 'Nom non renseigné', 'sh-muted');
+        $('stock-history-movements').append(row);
+    }
+
+    // ---------- Inventaires ----------
+    function renderStockHistoryInventories(inventories, filter) {
+        const list = $('stock-history-inventories'), search = (filter.search_text || '').toLocaleLowerCase('fr');
+        for (const inventory of inventories) {
+            const date = new Date(inventory.created_at).toLocaleDateString('sv-SE', {timeZone:'Indian/Antananarivo'});
+            if ((filter.from_date && date < filter.from_date) || (filter.to_date && date > filter.to_date) ||
+                (filter.operation_filter && filter.operation_filter !== 'Inventaire physique')) continue;
+            const items = inventory.items.filter(item => !search || item.product_name.toLocaleLowerCase('fr').includes(search));
+            if (!items.length) continue;
+            stockHistoryState.inventories.push({...inventory, items});
+            const gaps = items.filter(item => BigInt(item.difference) !== 0n).length;
+            const card = dsElement('details', 'sh-inventory rounded-xl');
+            const summary = dsElement('summary', 'sh-inventory-summary');
+            const title = dsElement('span', 'sh-inventory-title');
+            title.append(dsElement('strong', '', `${localDateTime(inventory.created_at)} (Madagascar)`),
+                dsElement('small', '', `${inventory.created_by_name || 'Nom non renseigné'} · ${inventory.id}`));
+            summary.append(title, dsElement('span', `sh-badge ${gaps ? 'sh-level-watch' : 'sh-level-good'}`,
+                gaps ? `${gaps} écart(s) sur ${items.length} lot(s)` : `${items.length} lot(s) conformes`));
+            const scroll = dsElement('div', 'sh-table-wrap sh-inventory-table');
+            const table = dsElement('table', 'sh-table');
+            const head = document.createElement('thead');
+            const heading = document.createElement('tr');
+            for (const label of ['Intrant', 'Lot', 'Attendu', 'Compté', 'Écart']) {
+                const th = dsElement('th', ['Attendu', 'Compté', 'Écart'].includes(label) ? 'sh-num' : '', label);
+                th.scope = 'col';
+                heading.append(th);
+            }
+            head.append(heading);
+            const body = document.createElement('tbody');
+            for (const item of items) {
+                const row = document.createElement('tr');
+                shCell(row, item.product_name, 'sh-strong');
+                shCell(row, item.lot);
+                shCell(row, number(BigInt(item.system_quantity) - BigInt(item.in_delivery)), 'sh-num');
+                shCell(row, number(item.counted), 'sh-num');
+                const gap = BigInt(item.difference);
+                shCell(row, dsElement('span', `sh-delta ${gap > 0n ? 'sh-delta-up' : gap < 0n ? 'sh-delta-down' : 'sh-delta-flat'}`, number(gap)), 'sh-num');
+                body.append(row);
+            }
+            table.append(head, body);
+            scroll.append(table);
+            card.append(summary, scroll);
+            if (inventory.observations) {
+                const note = dsElement('p', 'sh-inventory-note', `Remarques et observations : ${inventory.observations}`);
+                note.style.whiteSpace = 'pre-wrap';
+                card.append(note);
+            }
+            list.append(card);
+        }
+        if (!list.children.length) list.append(dsElement('p', 'sh-empty', 'Aucun inventaire pour ces filtres.'));
+    }
+
+    // ---------- Chargement ----------
+    async function refreshStockHistory(loadMore = false) {
+        const port = portSelect.value, filter = stockHistoryFilter();
+        const status = $('stock-history-status'), more = $('postgres-stock-history-more');
+        if (loadMore && (!stockHistoryState?.cursor || stockHistoryState.port !== port)) return;
+        if (loadMore && JSON.stringify(filter) !== JSON.stringify(stockHistoryState.filter)) {
+            status.textContent = 'Les filtres ont changé : appliquez-les avant de charger la suite.';
+            return;
+        }
+        const sequence = ++requestSequence, requestGeneration = sessionGeneration;
+        if (!loadMore) {
+            stockHistoryState = null;
+            clearStockHistoryView();
+        }
+        if (!port) { status.textContent = 'Aucun port disponible.'; return; }
+        if (filter.from_date && filter.to_date && filter.from_date > filter.to_date) {
+            stockHistoryState = null;
+            clearStockHistoryView();
+            status.textContent = 'La date de début doit précéder ou égaler la date de fin.';
+            return;
+        }
+        if (!loadMore) refreshStockAtDate();
+        const cursor = loadMore ? stockHistoryState.cursor : null;
+        status.textContent = 'Chargement…';
+        more.disabled = true;
+        try {
+            const requests = [api('/rest/v1/rpc/qbox_stock_history', {
+                selected_port:port, ...filter, before_time:cursor?.time || null, before_id:cursor?.id || null
+            }, true)];
+            if (!loadMore) requests.push(
+                api('/rest/v1/rpc/qbox_list_stocks', {selected_port:port}, true),
+                api('/rest/v1/rpc/qbox_list_inventories', {selected_port:port}, true),
+                api('/rest/v1/rpc/qbox_list_products', {}, true)
+            );
+            const [rows, stocks, inventories, products] = await Promise.all(requests);
+            if (sequence !== requestSequence || activeView !== 'stock-history' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
+            if (JSON.stringify(stockHistoryFilter()) !== JSON.stringify(filter)) {
+                status.textContent = 'Les filtres ont changé : appliquez-les pour actualiser les résultats.';
+                return;
+            }
+            if (!loadMore) {
+                stockHistoryState = {port, filter, cursor:null, count:0, rows:[], balances:new Map(), products, inventories:[], loadedAt:new Date()};
+                const balances = new Map(), search = (filter.search_text || '').toLocaleLowerCase('fr');
+                for (const stock of stocks) {
+                    if (search && !stock.name.toLocaleLowerCase('fr').includes(search)) continue;
+                    const product = products.find(item => item.id === stock.product_id);
+                    const balance = balances.get(stock.product_id) || {name:stock.name, unit:stock.unit || product?.unit || '', quantity:0n, reserved:0n,
+                        threshold:product?.min_threshold == null ? null : BigInt(product.min_threshold)};
+                    balance.quantity += BigInt(stock.quantity);
+                    balance.reserved += BigInt(stock.reserved);
+                    balances.set(stock.product_id, balance);
+                }
+                stockHistoryState.balances = balances;
+                renderStockHistorySummary();
+                renderStockHistoryInventories(inventories, filter);
+            }
+            for (const entry of rows) appendStockHistoryMovement(entry);
+            stockHistoryState.count += rows.length;
+            stockHistoryState.rows.push(...rows);
+            stockHistoryState.cursor = rows.length === 100 ? {time:rows[rows.length - 1].occurred_at, id:rows[rows.length - 1].id} : null;
+            more.classList.toggle('hidden', !stockHistoryState.cursor);
+            if (!stockHistoryState.count) {
+                const row = dsElement('tr', 'sh-empty-row');
+                shCell(row, 'Aucun mouvement pour ces filtres.').colSpan = 8;
+                $('stock-history-movements').append(row);
+            }
+            $('stock-history-count').textContent = `${number(stockHistoryState.count)}${stockHistoryState.cursor ? '+' : ''} mouvement(s)`;
+            renderStockHistoryKpis();
+            status.textContent = `${stockHistoryState.count} mouvement(s) chargé(s)${stockHistoryState.cursor ? ' ; d’autres mouvements peuvent être chargés.' : '.'}${renderStockHistoryEvolution()}`;
+        } catch (error) {
+            if (sequence === requestSequence && activeView === 'stock-history' && port === portSelect.value && sessionGeneration === requestGeneration)
+                status.textContent = `Lecture indisponible : ${error.message}`;
+        } finally {
+            if (sequence === requestSequence) more.disabled = false;
+        }
+    }
+
+    function selectStockHistoryProduct() {
+        if (!stockHistoryState) return;
+        stockHistoryProduct = $('stock-history-product').value;
+        renderStockHistoryEvolution();
+    }
+
+    // ---------- Impression et export du journal ----------
+    function openStockHistoryPrint() {
+        const state = stockHistoryState;
+        if (!state || state.port !== portSelect.value || JSON.stringify(state.filter) !== JSON.stringify(stockHistoryFilter())) {
+            $('stock-history-status').textContent = 'Appliquez les filtres et chargez les mouvements avant impression.';
+            return;
+        }
+        const report = $('stock-history-print-content');
+        report.replaceChildren();
+        const header = document.createElement('div');
+        header.className = 'stock-report-header';
+        const identity = document.createElement('div');
+        identity.className = 'stock-report-identity';
+        const logo = document.createElement('img');
+        logo.src = 'logo-unfpa.svg';
+        logo.alt = 'Logo UNFPA';
+        logo.className = 'stock-report-logo';
+        const organization = document.createElement('div');
+        organization.className = 'stock-report-organization';
+        const brand = document.createElement('span');
+        brand.textContent = 'Q.box · Logistique santé';
+        organization.append(brand);
+        identity.append(logo, organization);
+        const headerMeta = document.createElement('div');
+        headerMeta.className = 'stock-report-header-meta';
+        const reportKind = document.createElement('strong');
+        reportKind.textContent = 'RAPPORT DE STOCK';
+        const port = document.createElement('span');
+        port.textContent = portSelect.selectedOptions[0]?.textContent || state.port;
+        const snapshot = document.createElement('span');
+        snapshot.textContent = `Instantané : ${localDateTime(state.loadedAt)} (Madagascar)`;
+        headerMeta.append(reportKind, port, snapshot);
+        header.append(identity, headerMeta);
+        report.append(header);
+        const info = [
+            ['h1', 'Historique global des stocks'],
+            ['p', `Filtres : du ${state.filter.from_date || 'début'} au ${state.filter.to_date || 'présent'} · Opération : ${state.filter.operation_filter || 'toutes'} · Intrant : ${state.filter.search_text || 'tous'}`],
+            ['p', `${state.count} mouvement(s) chargé(s)${state.cursor ? ' ; couverture potentiellement partielle, d’autres mouvements peuvent être chargés.' : '.'}`],
+            ['p', 'Les données reflètent l’instantané chargé ; actualisez pour obtenir les données récentes.'],
+            ['h2', 'Stock actuel']
+        ];
+        for (const [tag, value] of info) {
+            const node = document.createElement(tag);
+            node.textContent = value;
+            report.append(node);
+        }
+        function table(headers, rows) {
+            const element = document.createElement('table');
+            const head = document.createElement('thead'), heading = document.createElement('tr');
+            for (const title of headers) {
+                const cell = document.createElement('th');
+                cell.textContent = title;
+                heading.append(cell);
+            }
+            head.append(heading);
+            const body = document.createElement('tbody');
+            for (const row of rows) appendStockHistoryCells(body, row);
+            element.append(head, body);
+            report.append(element);
+        }
+        table(['Intrant', 'État', 'Stock', 'Réservé', 'Disponible'], [...state.balances.values()].map(item =>
+            [item.name, shLevel(item.quantity - item.reserved, item.threshold).label, number(item.quantity), number(item.reserved), number(item.quantity - item.reserved)]));
+        const atDate = stockAtDateState;
+        if (atDate && atDate.port === state.port) {
+            const search = shSearch();
+            const atTitle = document.createElement('h2');
+            atTitle.textContent = `Stock au ${shDateLabel(atDate.date)}, avant toute opération du jour`;
+            report.append(atTitle);
+            table(['Intrant', 'Stock', 'Réservé', 'Disponible ce jour-là', 'Disponible aujourd’hui'],
+                atDate.rows.filter(item => !search || item.name.toLocaleLowerCase('fr').includes(search)).map(item => {
+                    const now = number(BigInt(item.current_stock) - BigInt(item.current_reserved));
+                    if (item.stock === null) return [item.name, 'Non suivi', '', '', now];
+                    return [item.name, number(item.stock), number(item.reserved ?? 0), number(BigInt(item.stock) - BigInt(item.reserved ?? 0)), now];
+                }));
+        }
+        const title = document.createElement('h2');
+        title.textContent = 'Mouvements chargés (heure de Madagascar)';
+        report.append(title);
+        table(['Date', 'Intrant', 'Opération / référence', 'Avant', 'Après', 'Réservé après', 'Disponible après', 'Utilisateur'],
+            state.rows.map(entry => [localDateTime(entry.occurred_at), entry.product_name,
+                `${entry.operation}${entry.reference ? ` · ${entry.reference}` : ''}`,
+                entry.before_stock === null ? 'Inconnu' : number(entry.before_stock), number(entry.after_stock),
+                number(entry.after_reserved), number(BigInt(entry.after_stock) - BigInt(entry.after_reserved)), entry.performed_by_name || 'Nom non renseigné']));
+        const inventoryTitle = document.createElement('h2');
+        inventoryTitle.textContent = 'Inventaires filtrés';
+        report.append(inventoryTitle);
+        if (!state.inventories.length) addLine(report, 'Aucun inventaire pour ces filtres.');
+        for (const inventory of state.inventories) {
+            addLine(report, `${localDateTime(inventory.created_at)} (Madagascar) · ${inventory.created_by_name || 'Nom non renseigné'} · ${inventory.id}`);
+            if (inventory.observations) {
+                const note = document.createElement('p');
+                note.style.whiteSpace = 'pre-wrap';
+                note.textContent = `Remarques et observations : ${inventory.observations}`;
+                report.append(note);
+            }
+            table(['Intrant', 'Lot', 'Attendu', 'Compté', 'Écart'], inventory.items.map(item => [
+                item.product_name, item.lot, number(BigInt(item.system_quantity) - BigInt(item.in_delivery)),
+                number(item.counted), number(item.difference)
+            ]));
+        }
+        stockHistoryPrintOpen = true;
+        portSelect.disabled = true;
+        $('modal-backdrop').classList.remove('hidden');
+        $('stock-history-print-modal').classList.remove('hidden');
+    }
+
+    function exportStockHistory() {
+        const state = stockHistoryState;
+        if (!state || state.port !== portSelect.value || JSON.stringify(state.filter) !== JSON.stringify(stockHistoryFilter())) {
+            $('stock-history-status').textContent = 'Appliquez les filtres et chargez les mouvements avant export.';
+            return;
+        }
+        try {
+            const filter = `du ${state.filter.from_date || 'début'} au ${state.filter.to_date || 'présent'} · Opération : ${state.filter.operation_filter || 'toutes'} · Intrant : ${state.filter.search_text || 'tous'}`;
+            const csv = historyCsv(state.rows, {
+                port:portSelect.selectedOptions[0]?.textContent || state.port,
+                filter, coverage:state.cursor ? 'Potentiellement partielle : mouvements chargés uniquement' : 'Mouvements chargés'
+            });
+            const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'qbox-mouvements-charges.csv';
+            document.body.append(link);
+            try { link.click(); } finally {
+                link.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }
+            $('stock-history-status').textContent = `${state.count} mouvement(s) chargé(s) exporté(s)${state.cursor ? ' ; d’autres mouvements peuvent ne pas être inclus.' : '.'}`;
+        } catch (error) {
+            $('stock-history-status').textContent = `Impossible d’exporter les mouvements : ${error.message}`;
+        }
+    }
+
+    function closeStockHistoryPrint() {
+        stockHistoryPrintOpen = false;
+        $('stock-history-print-modal').classList.add('hidden');
+        $('modal-backdrop').classList.add('hidden');
+        $('stock-history-print-content').replaceChildren();
+        document.body.classList.remove('stock-history-print-mode');
+        portSelect.disabled = false;
     }
 
     async function refreshLogisticsReport() {
@@ -4132,266 +4695,6 @@
         } catch (error) {
             document.body.classList.remove('logistics-report-print-mode');
             $('logistics-report-status').textContent = `Impression impossible : ${error.message}`;
-        }
-    }
-
-    function openStockHistoryPrint() {
-        const state = stockHistoryState;
-        if (!state || state.port !== portSelect.value || JSON.stringify(state.filter) !== JSON.stringify(stockHistoryFilter())) {
-            $('stock-history-status').textContent = 'Appliquez les filtres et chargez les mouvements avant impression.';
-            return;
-        }
-        const report = $('stock-history-print-content');
-        report.replaceChildren();
-        const header = document.createElement('div');
-        header.className = 'stock-report-header';
-        const identity = document.createElement('div');
-        identity.className = 'stock-report-identity';
-        const logo = document.createElement('img');
-        logo.src = 'logo-unfpa.svg';
-        logo.alt = 'Logo UNFPA';
-        logo.className = 'stock-report-logo';
-        const organization = document.createElement('div');
-        organization.className = 'stock-report-organization';
-        const brand = document.createElement('span');
-        brand.textContent = 'Q.box · Logistique santé';
-        organization.append(brand);
-        identity.append(logo, organization);
-        const headerMeta = document.createElement('div');
-        headerMeta.className = 'stock-report-header-meta';
-        const reportKind = document.createElement('strong');
-        reportKind.textContent = 'RAPPORT DE STOCK';
-        const port = document.createElement('span');
-        port.textContent = portSelect.selectedOptions[0]?.textContent || state.port;
-        const snapshot = document.createElement('span');
-        snapshot.textContent = `Instantané : ${localDateTime(state.loadedAt)} (Madagascar)`;
-        headerMeta.append(reportKind, port, snapshot);
-        header.append(identity, headerMeta);
-        report.append(header);
-        const info = [
-            ['h1', 'Historique global des stocks'],
-            ['p', `Filtres : du ${state.filter.from_date || 'début'} au ${state.filter.to_date || 'présent'} · Opération : ${state.filter.operation_filter || 'toutes'} · Intrant : ${state.filter.search_text || 'tous'}`],
-            ['p', `${state.count} mouvement(s) chargé(s)${state.cursor ? ' ; couverture potentiellement partielle, d’autres mouvements peuvent être chargés.' : '.'}`],
-            ['p', 'Les données reflètent l’instantané chargé ; actualisez pour obtenir les données récentes.'],
-            ['h2', 'Synthèse actuelle']
-        ];
-        for (const [tag, value] of info) {
-            const node = document.createElement(tag);
-            node.textContent = value;
-            report.append(node);
-        }
-        function table(headers, rows) {
-            const element = document.createElement('table');
-            const head = document.createElement('thead'), heading = document.createElement('tr');
-            for (const title of headers) {
-                const cell = document.createElement('th');
-                cell.textContent = title;
-                heading.append(cell);
-            }
-            head.append(heading);
-            const body = document.createElement('tbody');
-            for (const row of rows) appendStockHistoryCells(body, row);
-            element.append(head, body);
-            report.append(element);
-        }
-        table(['Intrant', 'Stock', 'Réservé', 'Disponible'], [...state.balances.values()].map(item =>
-            [item.name, number(item.quantity), number(item.reserved), number(item.quantity - item.reserved)]));
-        const title = document.createElement('h2');
-        title.textContent = 'Mouvements chargés (heure de Madagascar)';
-        report.append(title);
-        table(['Date', 'Intrant', 'Opération / référence', 'Avant', 'Après', 'Réservé après', 'Disponible après', 'Utilisateur'],
-            state.rows.map(entry => [localDateTime(entry.occurred_at), entry.product_name,
-                `${entry.operation}${entry.reference ? ` · ${entry.reference}` : ''}`,
-                entry.before_stock === null ? 'Inconnu' : number(entry.before_stock), number(entry.after_stock),
-                number(entry.after_reserved), number(BigInt(entry.after_stock) - BigInt(entry.after_reserved)), entry.performed_by_name || 'Nom non renseigné']));
-        const inventoryTitle = document.createElement('h2');
-        inventoryTitle.textContent = 'Inventaires filtrés';
-        report.append(inventoryTitle);
-        if (!state.inventories.length) addLine(report, 'Aucun inventaire pour ces filtres.');
-        for (const inventory of state.inventories) {
-            addLine(report, `${localDateTime(inventory.created_at)} (Madagascar) · ${inventory.created_by_name || 'Nom non renseigné'} · ${inventory.id}`);
-            if (inventory.observations) {
-                const note = document.createElement('p');
-                note.style.whiteSpace = 'pre-wrap';
-                note.textContent = `Remarques et observations : ${inventory.observations}`;
-                report.append(note);
-            }
-            table(['Intrant', 'Lot', 'Attendu', 'Compté', 'Écart'], inventory.items.map(item => [
-                item.product_name, item.lot, number(BigInt(item.system_quantity) - BigInt(item.in_delivery)),
-                number(item.counted), number(item.difference)
-            ]));
-        }
-        stockHistoryPrintOpen = true;
-        portSelect.disabled = true;
-        $('modal-backdrop').classList.remove('hidden');
-        $('stock-history-print-modal').classList.remove('hidden');
-    }
-
-    function exportStockHistory() {
-        const state = stockHistoryState;
-        if (!state || state.port !== portSelect.value || JSON.stringify(state.filter) !== JSON.stringify(stockHistoryFilter())) {
-            $('stock-history-status').textContent = 'Appliquez les filtres et chargez les mouvements avant export.';
-            return;
-        }
-        try {
-            const filter = `du ${state.filter.from_date || 'début'} au ${state.filter.to_date || 'présent'} · Opération : ${state.filter.operation_filter || 'toutes'} · Intrant : ${state.filter.search_text || 'tous'}`;
-            const csv = historyCsv(state.rows, {
-                port:portSelect.selectedOptions[0]?.textContent || state.port,
-                filter, coverage:state.cursor ? 'Potentiellement partielle : mouvements chargés uniquement' : 'Mouvements chargés'
-            });
-            const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = 'qbox-mouvements-charges.csv';
-            document.body.append(link);
-            try { link.click(); } finally {
-                link.remove();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-            }
-            $('stock-history-status').textContent = `${state.count} mouvement(s) chargé(s) exporté(s)${state.cursor ? ' ; d’autres mouvements peuvent ne pas être inclus.' : '.'}`;
-        } catch (error) {
-            $('stock-history-status').textContent = `Impossible d’exporter les mouvements : ${error.message}`;
-        }
-    }
-
-    function closeStockHistoryPrint() {
-        stockHistoryPrintOpen = false;
-        $('stock-history-print-modal').classList.add('hidden');
-        $('modal-backdrop').classList.add('hidden');
-        $('stock-history-print-content').replaceChildren();
-        document.body.classList.remove('stock-history-print-mode');
-        portSelect.disabled = false;
-    }
-
-    async function refreshStockHistory(loadMore = false) {
-        const port = portSelect.value, filter = stockHistoryFilter();
-        const status = $('stock-history-status'), more = $('postgres-stock-history-more');
-        if (loadMore && (!stockHistoryState?.cursor || stockHistoryState.port !== port)) return;
-        if (loadMore && JSON.stringify(filter) !== JSON.stringify(stockHistoryState.filter)) {
-            status.textContent = 'Les filtres ont changé : appliquez-les avant de charger la suite.';
-            return;
-        }
-        const sequence = ++requestSequence, requestGeneration = sessionGeneration;
-        if (!loadMore) {
-            stockHistoryState = null;
-            clearStockHistoryCharts();
-            $('stock-history-charts').classList.add('postgres-hidden');
-            for (const id of ['stock-history-summary', 'stock-history-movements', 'stock-history-inventories']) $(id).replaceChildren();
-            more.classList.add('hidden');
-        }
-        if (!port) { status.textContent = 'Aucun port disponible.'; return; }
-        if (filter.from_date && filter.to_date && filter.from_date > filter.to_date) {
-            stockHistoryState = null;
-            for (const id of ['stock-history-summary', 'stock-history-movements', 'stock-history-inventories']) $(id).replaceChildren();
-            more.classList.add('hidden');
-            status.textContent = 'La date de début doit précéder ou égaler la date de fin.';
-            return;
-        }
-        const cursor = loadMore ? stockHistoryState.cursor : null;
-        status.textContent = 'Chargement…';
-        more.disabled = true;
-        try {
-            const requests = [api('/rest/v1/rpc/qbox_stock_history', {
-                selected_port:port, ...filter, before_time:cursor?.time || null, before_id:cursor?.id || null
-            }, true)];
-            if (!loadMore) requests.push(
-                api('/rest/v1/rpc/qbox_list_stocks', {selected_port:port}, true),
-                api('/rest/v1/rpc/qbox_list_inventories', {selected_port:port}, true),
-                api('/rest/v1/rpc/qbox_list_products', {}, true)
-            );
-            const [rows, stocks, inventories, products] = await Promise.all(requests);
-            if (sequence !== requestSequence || activeView !== 'stock-history' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
-            if (JSON.stringify(stockHistoryFilter()) !== JSON.stringify(filter)) {
-                status.textContent = 'Les filtres ont changé : appliquez-les pour actualiser les résultats.';
-                return;
-            }
-            if (!loadMore) {
-                stockHistoryState = {port, filter, cursor:null, count:0, rows:[], balances:new Map(), products, inventories:[], loadedAt:new Date()};
-                const balances = new Map(), search = (filter.search_text || '').toLocaleLowerCase('fr');
-                for (const stock of stocks) {
-                    if (search && !stock.name.toLocaleLowerCase('fr').includes(search)) continue;
-                    const product = products.find(item => item.id === stock.product_id);
-                    const balance = balances.get(stock.product_id) || {name:stock.name, quantity:0n, reserved:0n,
-                        threshold:product?.min_threshold == null ? null : BigInt(product.min_threshold)};
-                    balance.quantity += BigInt(stock.quantity);
-                    balance.reserved += BigInt(stock.reserved);
-                    balances.set(stock.product_id, balance);
-                }
-                for (const balance of balances.values())
-                    appendStockHistoryCells($('stock-history-summary'), [balance.name, number(balance.quantity), number(balance.reserved), number(balance.quantity - balance.reserved)]);
-                stockHistoryState.balances = balances;
-                const list = $('stock-history-inventories');
-                for (const inventory of inventories) {
-                    const date = new Date(inventory.created_at).toLocaleDateString('sv-SE', {timeZone:'Indian/Antananarivo'});
-                    if ((filter.from_date && date < filter.from_date) || (filter.to_date && date > filter.to_date) ||
-                        (filter.operation_filter && filter.operation_filter !== 'Inventaire physique')) continue;
-                    const items = inventory.items.filter(item => !search || item.product_name.toLocaleLowerCase('fr').includes(search));
-                    if (!items.length) continue;
-                    stockHistoryState.inventories.push({...inventory, items});
-                    const card = document.createElement('details');
-                    card.className = 'border border-slate-200 rounded-xl p-3 text-xs';
-                    const summary = document.createElement('summary');
-                    summary.className = 'font-bold cursor-pointer text-slate-800';
-                    summary.textContent = `${localDateTime(inventory.created_at)} (Madagascar) · ${inventory.created_by_name || 'Nom non renseigné'} · ${inventory.id}`;
-                    const scroll = document.createElement('div');
-                    scroll.className = 'stock-history-inventory-table';
-                    const table = document.createElement('table');
-                    const head = document.createElement('thead');
-                    const heading = document.createElement('tr');
-                    for (const label of ['Intrant', 'Lot', 'Attendu', 'Compté', 'Écart']) {
-                        const th = document.createElement('th');
-                        th.scope = 'col';
-                        th.textContent = label;
-                        heading.append(th);
-                    }
-                    head.append(heading);
-                    const body = document.createElement('tbody');
-                    for (const item of items) appendStockHistoryCells(body, [
-                        item.product_name, item.lot, number(BigInt(item.system_quantity) - BigInt(item.in_delivery)),
-                        number(item.counted), number(item.difference)
-                    ]);
-                    table.append(head, body);
-                    scroll.append(table);
-                    const explanation = document.createElement('p');
-                    explanation.className = 'mt-2 text-slate-500';
-                    explanation.textContent = 'Comptage hors produits en quarantaine et colis drone en livraison.';
-                    card.append(summary, scroll, explanation);
-                    if (inventory.observations) {
-                        const note = document.createElement('p');
-                        note.className = 'mt-2 text-slate-600';
-                        note.style.whiteSpace = 'pre-wrap';
-                        note.textContent = `Remarques et observations : ${inventory.observations}`;
-                        card.append(note);
-                    }
-                    list.append(card);
-                }
-                if (!list.children.length) {
-                    const empty = document.createElement('p');
-                    empty.className = 'text-xs text-slate-500';
-                    empty.textContent = 'Aucun inventaire pour ces filtres.';
-                    list.append(empty);
-                }
-            }
-            for (const entry of rows) {
-                const before = entry.before_stock === null ? null : BigInt(entry.before_stock);
-                const after = BigInt(entry.after_stock), reserved = BigInt(entry.after_reserved);
-                appendStockHistoryCells($('stock-history-movements'), [
-                    `${localDateTime(entry.occurred_at)} (Madagascar)`, entry.product_name,
-                    `${entry.operation}${entry.reference ? ` · ${entry.reference}` : ''}`,
-                    before === null ? 'Inconnue' : number(after - before), before === null ? 'Inconnu' : number(before),
-                    number(after), number(reserved), number(after - reserved), entry.performed_by_name || 'Nom non renseigné'
-                ]);
-            }
-            stockHistoryState.count += rows.length;
-            stockHistoryState.rows.push(...rows);
-            stockHistoryState.cursor = rows.length === 100 ? {time:rows[rows.length - 1].occurred_at, id:rows[rows.length - 1].id} : null;
-            more.classList.toggle('hidden', !stockHistoryState.cursor);
-            status.textContent = `${stockHistoryState.count} mouvement(s) chargé(s)${stockHistoryState.cursor ? ' ; d’autres mouvements peuvent être chargés.' : '.'}${renderStockHistoryCharts()}`;
-        } catch (error) {
-            if (sequence === requestSequence && activeView === 'stock-history' && port === portSelect.value && sessionGeneration === requestGeneration)
-                status.textContent = `Lecture indisponible : ${error.message}`;
-        } finally {
-            if (sequence === requestSequence) more.disabled = false;
         }
     }
 
@@ -8438,12 +8741,14 @@
         for (const value of ['Annulation drone', 'Modification expédition', 'Annulation expédition', 'Transfert entrant', 'Transfert sortant'])
             $('stock-history-type').add(new Option(value, value));
         $('stock-history-type').value = historyOperation;
-        $('stock-history-explanation').textContent = 'La synthèse montre le stock actuel ; les filtres s’appliquent aux mouvements et inventaires après validation. Les courbes, impressions et exports utilisent uniquement les mouvements chargés.';
-        $('stock-history-charts').classList.add('postgres-hidden');
         $('postgres-stock-history-actions').classList.remove('postgres-hidden');
         $('postgres-stock-history-apply').addEventListener('click', () => refreshStockHistory());
         $('postgres-stock-history-more').addEventListener('click', () => refreshStockHistory(true));
-        $('postgres-stock-history-operations').addEventListener('click', () => openOperations(operationSections['stock-history']));
+        $('stock-history-at-date').addEventListener('change', () => refreshStockAtDate());
+        $('stock-history-at-date-export').addEventListener('click', exportStockAtDate);
+        $('stock-history-product').addEventListener('change', selectStockHistoryProduct);
+        for (const id of ['stock-history-from', 'stock-history-to', 'stock-history-search'])
+            $(id).addEventListener('keydown', event => { if (event.key === 'Enter') refreshStockHistory(); });
         $('stock-history-export').addEventListener('click', exportStockHistory);
         $('stock-history-print').addEventListener('click', openStockHistoryPrint);
         $('stock-history-print-confirm').addEventListener('click', () => {

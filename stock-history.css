@@ -1,0 +1,408 @@
+/* ==========================================================================
+   Q.box — Historique global des stocks (#view-stock-history)
+   Code : src/postgres-main/06-historique-des-stocks.js ; courbe : stock-history-chart-style.js.
+   Variables du thème Horizon (modern-theme.css) : le mode sombre suit (html.qb-dark).
+   Uniquement @media screen : l'impression passe par la modale #stock-history-print-modal.
+   Sélecteurs préfixés par #main-app #view-stock-history pour primer sur les règles
+   génériques des tableaux du thème.
+   ========================================================================== */
+@media screen {
+    #main-app #view-stock-history .sh {
+        --sh-good: var(--qb-success);
+        --sh-watch: #c27803;
+        --sh-low: #ea580c;
+        --sh-out: var(--qb-danger);
+        --sh-none: var(--qb-muted);
+        display: grid;
+        gap: 1.1rem;
+        min-width: 0;
+    }
+    html.qb-dark #main-app #view-stock-history .sh {
+        --sh-good: #34d399;
+        --sh-watch: #fbbf24;
+        --sh-low: #fb923c;
+        --sh-out: #fb7185;
+        --sh-none: var(--qb-muted);
+    }
+    #main-app #view-stock-history .sh > * { margin: 0; min-width: 0; }
+
+    /* ---------- Bandeau ---------- */
+    #main-app #view-stock-history .sh-hero {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "text actions" "kpis kpis";
+        gap: 1.15rem 1.5rem;
+        padding: 1.5rem 1.6rem;
+        border-radius: 20px;
+        color: #fff;
+        background: var(--qb-hero);
+        box-shadow: 0 22px 44px -26px rgba(21, 71, 154, .85);
+    }
+    #main-app #view-stock-history .sh-hero::before {
+        content: '';
+        position: absolute; z-index: -1;
+        right: -4rem; top: -6rem;
+        width: 18rem; height: 18rem;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, .18);
+        box-shadow: 0 0 0 2.4rem rgba(255, 255, 255, .05), 0 0 0 4.8rem rgba(255, 255, 255, .03);
+        pointer-events: none;
+    }
+    #main-app #view-stock-history .sh-hero-text { grid-area: text; min-width: 0; }
+    #main-app #view-stock-history .sh-eyebrow {
+        display: inline-flex; align-items: center; gap: .4rem;
+        padding: .25rem .6rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, .14);
+        color: rgba(255, 255, 255, .9);
+        font-size: .66rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    }
+    #main-app #view-stock-history .sh-hero h3 {
+        margin: .6rem 0 .3rem;
+        color: #fff;
+        font-family: var(--qb-font-display);
+        font-size: 1.4rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.15;
+    }
+    #main-app #view-stock-history .sh-hero p { margin: 0; color: rgba(255, 255, 255, .8); font-size: .78rem; line-height: 1.5; }
+    #main-app #view-stock-history .sh-hero-actions { grid-area: actions; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: .5rem; }
+    #main-app #view-stock-history .sh-hero-button {
+        display: inline-flex; align-items: center; gap: .4rem;
+        min-height: 2.4rem; padding: .55rem .9rem;
+        border: 1px solid rgba(255, 255, 255, .32);
+        border-radius: 11px;
+        background: rgba(255, 255, 255, .12);
+        color: #fff;
+        font-size: .74rem; font-weight: 700;
+        transition: background-color .18s ease, transform .18s var(--qb-ease);
+    }
+    #main-app #view-stock-history .sh-hero-button:hover { background: rgba(255, 255, 255, .24); transform: translateY(-1px); }
+    #main-app #view-stock-history .sh-hero-button-primary { border-color: #fff; background: #fff; color: var(--qb-primary-ink); }
+    #main-app #view-stock-history .sh-hero-button-primary:hover { background: #f1f5ff; }
+    #main-app #view-stock-history .sh-hero-button i { font-size: 1rem; }
+
+    #main-app #view-stock-history .sh-kpis { grid-area: kpis; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; }
+    #main-app #view-stock-history .sh-kpis:empty { display: none; }
+    #main-app #view-stock-history .sh-kpi {
+        --tone: #fff;
+        display: flex; flex-direction: column; gap: .3rem;
+        min-width: 0;
+        padding: .85rem 1rem;
+        border: 1px solid rgba(255, 255, 255, .18);
+        border-radius: 15px;
+        background: rgba(255, 255, 255, .1);
+        backdrop-filter: blur(6px);
+        animation: sh-rise .45s var(--qb-ease) backwards;
+    }
+    #main-app #view-stock-history .sh-kpi:nth-child(2) { animation-delay: 60ms; }
+    #main-app #view-stock-history .sh-kpi:nth-child(3) { animation-delay: 120ms; }
+    #main-app #view-stock-history .sh-kpi:nth-child(4) { animation-delay: 180ms; }
+    #main-app #view-stock-history .sh-kpi-warn { --tone: #fde68a; }
+    #main-app #view-stock-history .sh-kpi-danger { --tone: #fecdd3; }
+    #main-app #view-stock-history .sh-kpi-info { --tone: #bae6fd; }
+    #main-app #view-stock-history .sh-kpi-label { display: flex; align-items: center; gap: .35rem; color: rgba(255, 255, 255, .82); font-size: .7rem; font-weight: 600; }
+    #main-app #view-stock-history .sh-kpi-label i { color: var(--tone); font-size: 1rem; }
+    #main-app #view-stock-history .sh-kpi-value { color: #fff; font-family: var(--qb-font-display); font-size: 1.6rem; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
+    #main-app #view-stock-history .sh-kpi-detail { overflow: hidden; color: rgba(255, 255, 255, .7); font-size: .66rem; white-space: nowrap; text-overflow: ellipsis; }
+
+    /* ---------- Filtres ---------- */
+    #main-app #view-stock-history .sh-filters {
+        display: grid; gap: .7rem;
+        padding: 1rem 1.1rem;
+        border: 1px solid var(--qb-line);
+        border-radius: var(--qb-radius-lg);
+        background: var(--qb-surface);
+        box-shadow: var(--qb-shadow-sm);
+    }
+    #main-app #view-stock-history .sh-filter-grid {
+        display: grid;
+        grid-template-columns: minmax(8.5rem, 1fr) minmax(8.5rem, 1fr) minmax(10rem, 1.3fr) minmax(12rem, 2fr) auto;
+        gap: .7rem; align-items: end;
+    }
+    #main-app #view-stock-history .sh-filter-grid > label,
+    #main-app #view-stock-history .sh-date-field { display: block; min-width: 0; color: var(--qb-muted); font-size: .68rem; font-weight: 700; }
+    #main-app #view-stock-history .sh-filter-grid :is(input, select),
+    #main-app #view-stock-history .sh-date-field :is(input, select) {
+        display: block; width: 100%; min-width: 0;
+        height: 2.5rem; margin-top: .3rem; padding: .5rem .65rem;
+        border: 1px solid var(--qb-line-strong);
+        border-radius: 10px;
+        background: var(--qb-surface);
+        color: var(--qb-text);
+        font-size: .76rem;
+    }
+    #main-app #view-stock-history :is(.sh-filter-grid, .sh-date-field) :is(input, select):focus { border-color: var(--qb-primary); outline: none; box-shadow: var(--qb-ring); }
+    #main-app #view-stock-history .sh-search-wrap { position: relative; display: block; }
+    #main-app #view-stock-history .sh-search-wrap i { position: absolute; top: 50%; left: .7rem; z-index: 1; margin-top: .15rem; color: var(--qb-faint); font-size: .95rem; transform: translateY(-50%); }
+    #main-app #view-stock-history .sh-search-wrap input { padding-left: 2.05rem; }
+    #main-app #view-stock-history .sh-filter-actions { display: flex; gap: .45rem; }
+    #main-app #view-stock-history .sh-filter-help { display: flex; align-items: flex-start; gap: .35rem; margin: 0; color: var(--qb-muted); font-size: .68rem; line-height: 1.5; }
+    #main-app #view-stock-history .sh-filter-help i { margin-top: .1rem; color: var(--qb-primary); }
+    #main-app #view-stock-history .sh-status { margin: 0; color: var(--qb-text-2); font-size: .7rem; line-height: 1.45; }
+    #main-app #view-stock-history .sh-status:empty { display: none; }
+
+    /* ---------- Boutons ---------- */
+    #main-app #view-stock-history .sh-button {
+        display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+        height: 2.5rem; padding: 0 .9rem;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        font-size: .74rem; font-weight: 700; white-space: nowrap;
+        transition: background-color .18s ease, border-color .18s ease, color .18s ease;
+    }
+    #main-app #view-stock-history .sh-button i { font-size: .95rem; }
+    #main-app #view-stock-history .sh-button:focus-visible,
+    #main-app #view-stock-history .sh-hero-button:focus-visible { outline: 2px solid var(--qb-accent); outline-offset: 2px; }
+    #main-app #view-stock-history .sh-button:disabled { cursor: not-allowed; opacity: .5; }
+    #main-app #view-stock-history .sh-button-primary { background: var(--qb-primary); color: var(--qb-on-primary); box-shadow: var(--qb-shadow-xs); }
+    #main-app #view-stock-history .sh-button-primary:hover:not(:disabled) { background: var(--qb-primary-hover); }
+    #main-app #view-stock-history .sh-button-ghost { border-color: var(--qb-line-strong); background: var(--qb-surface); color: var(--qb-text-2); }
+    #main-app #view-stock-history .sh-button-ghost:hover:not(:disabled) { border-color: var(--qb-line-hover); background: var(--qb-surface-2); }
+
+    /* ---------- Cartes ---------- */
+    #main-app #view-stock-history .sh-card {
+        display: grid; gap: .85rem;
+        padding: 1.15rem 1.2rem 1.2rem;
+        border: 1px solid var(--qb-line);
+        border-radius: var(--qb-radius-lg);
+        background: var(--qb-surface);
+        box-shadow: var(--qb-shadow-sm);
+    }
+    #main-app #view-stock-history .sh-card.postgres-hidden { display: none; }
+    #main-app #view-stock-history .sh-card-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .75rem 1rem; }
+    #main-app #view-stock-history .sh-card-icon {
+        --c: var(--qb-primary);
+        display: grid; place-items: center; flex: none;
+        width: 2.4rem; height: 2.4rem;
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--c) 13%, transparent);
+        color: var(--c);
+        font-size: 1.2rem;
+    }
+    #main-app #view-stock-history .sh-card-icon-teal { --c: var(--qb-teal); }
+    #main-app #view-stock-history .sh-card-icon-green { --c: var(--qb-success); }
+    #main-app #view-stock-history .sh-card-icon-amber { --c: var(--qb-accent); }
+    #main-app #view-stock-history .sh-card-title { flex: 1 1 16rem; min-width: 0; }
+    #main-app #view-stock-history .sh-card-title h4 { margin: 0; color: var(--qb-text); font-family: var(--qb-font-display); font-size: .95rem; font-weight: 800; letter-spacing: -.01em; }
+    #main-app #view-stock-history .sh-card-title p { margin: .2rem 0 0; color: var(--qb-muted); font-size: .7rem; line-height: 1.5; }
+    #main-app #view-stock-history .sh-card-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem; }
+    #main-app #view-stock-history .sh-card-tools .sh-date-field { min-width: 11rem; }
+    #main-app #view-stock-history .sh-card-tools .sh-date-field select { min-width: 14rem; }
+    #main-app #view-stock-history .sh-card-note { margin: 0; color: var(--qb-muted); font-size: .7rem; line-height: 1.45; }
+    #main-app #view-stock-history .sh-card-note:empty { display: none; }
+    #main-app #view-stock-history .sh-count {
+        align-self: center;
+        padding: .3rem .65rem;
+        border-radius: 999px;
+        background: var(--qb-primary-soft);
+        color: var(--qb-primary-ink);
+        font-size: .7rem; font-weight: 700; font-variant-numeric: tabular-nums;
+    }
+    #main-app #view-stock-history .sh-count:empty { display: none; }
+    #main-app #view-stock-history .sh-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+
+    /* ---------- Badges et états ---------- */
+    #main-app #view-stock-history .sh-badge {
+        --c: var(--sh-none);
+        display: inline-flex; align-items: center; gap: .35rem;
+        padding: .2rem .55rem;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--c) 13%, transparent);
+        color: var(--c);
+        font-size: .66rem; font-weight: 700; white-space: nowrap;
+    }
+    #main-app #view-stock-history .sh-badge::before { content: ''; width: .42rem; height: .42rem; border-radius: 50%; background: currentColor; }
+    #main-app #view-stock-history .sh-level-good { --c: var(--sh-good); }
+    #main-app #view-stock-history .sh-level-watch { --c: var(--sh-watch); }
+    #main-app #view-stock-history .sh-level-low { --c: var(--sh-low); }
+    #main-app #view-stock-history .sh-level-out { --c: var(--sh-out); }
+    #main-app #view-stock-history .sh-level-none { --c: var(--sh-none); }
+
+    /* ---------- Tableaux ---------- */
+    #main-app #view-stock-history .sh-table-wrap {
+        max-height: 30rem;
+        overflow: auto;
+        border: 1px solid var(--qb-line);
+        border-radius: var(--qb-radius);
+        background: var(--qb-surface);
+    }
+    #main-app #view-stock-history .sh-table-tall { max-height: 36rem; }
+    #main-app #view-stock-history .sh-table { width: 100%; min-width: 46rem; border-collapse: separate; border-spacing: 0; font-size: .75rem; }
+    #main-app #view-stock-history .sh-movements-table { min-width: 60rem; }
+    #main-app #view-stock-history .sh-table thead th {
+        position: sticky; top: 0; z-index: 2;
+        padding: .65rem .8rem;
+        border-bottom: 1px solid var(--qb-line);
+        background: var(--qb-surface-2);
+        color: var(--qb-muted);
+        font-size: .64rem; font-weight: 700; letter-spacing: .05em; text-align: left; text-transform: uppercase; white-space: nowrap;
+    }
+    #main-app #view-stock-history .sh-table tbody td {
+        padding: .6rem .8rem;
+        border-bottom: 1px solid var(--qb-line-soft);
+        color: var(--qb-text-2);
+        vertical-align: middle;
+    }
+    #main-app #view-stock-history .sh-table tbody tr:last-child td { border-bottom: 0; }
+    #main-app #view-stock-history .sh-table tbody tr:hover td { background: var(--qb-row-hover); }
+    #main-app #view-stock-history .sh-table .sh-num { text-align: right; font-family: var(--qb-font-mono); font-size: .72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    #main-app #view-stock-history .sh-table thead .sh-num { font-family: inherit; font-size: .64rem; }
+    #main-app #view-stock-history .sh-table .sh-strong { color: var(--qb-text); font-weight: 700; }
+    #main-app #view-stock-history .sh-table .sh-muted { color: var(--qb-muted); }
+    #main-app #view-stock-history .sh-empty-row td { padding: 1.4rem .8rem; color: var(--qb-muted); text-align: center; }
+    #main-app #view-stock-history .sh-product { display: flex; flex-direction: column; gap: .1rem; min-width: 10rem; }
+    #main-app #view-stock-history .sh-product strong { color: var(--qb-text); font-weight: 700; }
+    #main-app #view-stock-history .sh-product small,
+    #main-app #view-stock-history .sh-when small,
+    #main-app #view-stock-history .sh-operation small { color: var(--qb-faint); font-size: .66rem; }
+    #main-app #view-stock-history .sh-when { display: flex; flex-direction: column; gap: .05rem; white-space: nowrap; }
+    #main-app #view-stock-history .sh-when strong { color: var(--qb-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+    #main-app #view-stock-history .sh-operation { display: flex; flex-direction: column; align-items: flex-start; gap: .2rem; }
+    #main-app #view-stock-history .sh-op-chip {
+        padding: .15rem .5rem;
+        border: 1px solid var(--qb-line);
+        border-radius: 7px;
+        background: var(--qb-surface-2);
+        color: var(--qb-text-2);
+        font-size: .68rem; font-weight: 600; white-space: nowrap;
+    }
+    #main-app #view-stock-history .sh-delta {
+        display: inline-block; min-width: 3.2rem;
+        padding: .15rem .45rem;
+        border-radius: 7px;
+        font-weight: 700; text-align: right;
+    }
+    #main-app #view-stock-history .sh-delta-up { background: color-mix(in srgb, var(--sh-good) 13%, transparent); color: var(--sh-good); }
+    #main-app #view-stock-history .sh-delta-down { background: color-mix(in srgb, var(--sh-out) 12%, transparent); color: var(--sh-out); }
+    #main-app #view-stock-history .sh-delta-flat,
+    #main-app #view-stock-history .sh-delta-unknown { color: var(--qb-faint); }
+    #main-app #view-stock-history .sh-avail { font-weight: 700; }
+    #main-app #view-stock-history .sh-avail-out { color: var(--sh-out); }
+    #main-app #view-stock-history .sh-avail-low { color: var(--sh-low); }
+    #main-app #view-stock-history .sh-avail-watch { color: var(--sh-watch); }
+    #main-app #view-stock-history .sh-avail-good, #main-app #view-stock-history .sh-avail-none { color: var(--qb-text); }
+
+    /* Jauge du stock actuel : remplissage = disponible, repère = seuil (au tiers de l'échelle). */
+    #main-app #view-stock-history .sh-gauge-col { width: 13rem; }
+    #main-app #view-stock-history .sh-gauge-cell { display: grid; gap: .25rem; }
+    #main-app #view-stock-history .sh-gauge-cell small { color: var(--qb-faint); font-size: .63rem; font-variant-numeric: tabular-nums; }
+    #main-app #view-stock-history .sh-gauge {
+        --c: var(--sh-none);
+        position: relative;
+        height: .55rem;
+        border-radius: 999px;
+        background: var(--qb-surface-3);
+    }
+    #main-app #view-stock-history .sh-gauge-fill {
+        position: absolute; inset: 0 auto 0 0;
+        border-radius: inherit;
+        background: var(--c);
+        transition: width .6s var(--qb-ease);
+    }
+    #main-app #view-stock-history .sh-gauge-mark {
+        position: absolute; top: -.2rem; bottom: -.2rem; left: 33.333%;
+        width: 2px;
+        border-radius: 2px;
+        background: var(--qb-text);
+        opacity: .55;
+    }
+    #main-app #view-stock-history .sh-gauge-good { --c: var(--sh-good); }
+    #main-app #view-stock-history .sh-gauge-watch { --c: var(--sh-watch); }
+    #main-app #view-stock-history .sh-gauge-low { --c: var(--sh-low); }
+    #main-app #view-stock-history .sh-gauge-out { --c: var(--sh-out); }
+    #main-app #view-stock-history .sh-gauge-none { --c: var(--qb-primary); opacity: .7; }
+
+    /* ---------- Courbe ---------- */
+    #main-app #view-stock-history .sh-evo-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .6rem; }
+    #main-app #view-stock-history .sh-evo-stats:empty { display: none; }
+    #main-app #view-stock-history .sh-evo-stat {
+        --c: var(--qb-text);
+        display: grid; gap: .2rem;
+        padding: .6rem .75rem;
+        border: 1px solid var(--qb-line-soft);
+        border-radius: 12px;
+        background: var(--qb-surface-2);
+    }
+    #main-app #view-stock-history .sh-evo-stat span { color: var(--qb-muted); font-size: .64rem; font-weight: 600; }
+    #main-app #view-stock-history .sh-evo-stat strong { color: var(--c); font-family: var(--qb-font-display); font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    #main-app #view-stock-history .sh-evo-strong { --c: var(--qb-primary-ink); }
+    html.qb-dark #main-app #view-stock-history .sh-evo-strong { --c: #8fb4ff; }
+    #main-app #view-stock-history .sh-evo-up { --c: var(--sh-good); }
+    #main-app #view-stock-history .sh-evo-down { --c: var(--sh-out); }
+    #main-app #view-stock-history .sh-chart { position: relative; height: 20rem; min-width: 0; }
+    #main-app #view-stock-history .sh-chart-legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; color: var(--qb-muted); font-size: .66rem; font-weight: 600; }
+    #main-app #view-stock-history .sh-chart-legend span { display: inline-flex; align-items: center; gap: .35rem; }
+    #main-app #view-stock-history .sh-dot { width: .6rem; height: .6rem; border-radius: 50%; }
+    #main-app #view-stock-history .sh-dot-line { width: 1rem; height: 3px; border-radius: 2px; background: var(--qb-primary); }
+    #main-app #view-stock-history .sh-dot-up { background: var(--qb-success); }
+    #main-app #view-stock-history .sh-dot-down { background: var(--qb-danger); }
+    #main-app #view-stock-history .sh-dot-flat { background: var(--qb-faint); }
+    #main-app #view-stock-history .sh-dash { width: 1.1rem; border-top: 2px dashed var(--qb-accent); }
+
+    #main-app #view-stock-history .sh-more { display: flex; justify-content: center; }
+    #main-app #view-stock-history .sh-more:has(> .hidden) { display: none; }
+
+    /* ---------- Inventaires ---------- */
+    #main-app #view-stock-history .sh-inventories { display: grid; gap: .6rem; }
+    #main-app #view-stock-history .sh-inventory {
+        overflow: hidden;
+        border: 1px solid var(--qb-line);
+        border-radius: var(--qb-radius);
+        background: var(--qb-surface);
+        transition: box-shadow .18s ease, border-color .18s ease;
+    }
+    #main-app #view-stock-history .sh-inventory[open] { border-color: var(--qb-line-strong); box-shadow: var(--qb-shadow-sm); }
+    #main-app #view-stock-history .sh-inventory-summary {
+        display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem;
+        padding: .75rem .95rem;
+        background: var(--qb-surface-2);
+        cursor: pointer;
+        list-style: none;
+    }
+    #main-app #view-stock-history .sh-inventory-summary::-webkit-details-marker { display: none; }
+    #main-app #view-stock-history .sh-inventory-summary::before {
+        content: '\25B8';
+        color: var(--qb-faint);
+        transition: transform .18s ease;
+    }
+    #main-app #view-stock-history .sh-inventory[open] .sh-inventory-summary::before { transform: rotate(90deg); }
+    #main-app #view-stock-history .sh-inventory-title { display: flex; flex: 1 1 14rem; flex-direction: column; gap: .1rem; min-width: 0; }
+    #main-app #view-stock-history .sh-inventory-title strong { color: var(--qb-text); font-size: .76rem; }
+    #main-app #view-stock-history .sh-inventory-title small { overflow: hidden; color: var(--qb-faint); font-size: .66rem; text-overflow: ellipsis; white-space: nowrap; }
+    #main-app #view-stock-history .sh-inventory-table { margin: .75rem; max-height: 22rem; }
+    #main-app #view-stock-history .sh-inventory-table .sh-table { min-width: 32rem; }
+    #main-app #view-stock-history .sh-inventory-note { margin: 0 .95rem .85rem; color: var(--qb-text-2); font-size: .72rem; line-height: 1.5; }
+    #main-app #view-stock-history .sh-empty { margin: 0; padding: 1rem; border: 1px dashed var(--qb-line-strong); border-radius: var(--qb-radius); color: var(--qb-muted); font-size: .72rem; text-align: center; }
+
+    @keyframes sh-rise { from { opacity: 0; transform: translateY(6px); } }
+
+    /* ---------- Petits écrans ---------- */
+    @media (max-width: 1100px) {
+        #main-app #view-stock-history .sh-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        #main-app #view-stock-history .sh-search { grid-column: span 2; }
+        #main-app #view-stock-history .sh-filter-actions { grid-column: span 2; }
+        #main-app #view-stock-history .sh-filter-actions .sh-button { flex: 1; }
+        #main-app #view-stock-history .sh-evo-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+        #main-app #view-stock-history .sh-hero { grid-template-columns: minmax(0, 1fr); grid-template-areas: "text" "actions" "kpis"; padding: 1.2rem; }
+        #main-app #view-stock-history .sh-hero-actions { justify-content: stretch; }
+        #main-app #view-stock-history .sh-hero-button { flex: 1; justify-content: center; }
+        #main-app #view-stock-history .sh-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        #main-app #view-stock-history .sh-card { padding: 1rem; }
+        #main-app #view-stock-history .sh-card-tools, #main-app #view-stock-history .sh-card-tools .sh-date-field { width: 100%; }
+        #main-app #view-stock-history .sh-card-tools .sh-date-field select { min-width: 0; }
+        #main-app #view-stock-history .sh-evo-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        #main-app #view-stock-history .sh-chart { height: 16rem; }
+    }
+    @media (max-width: 480px) {
+        #main-app #view-stock-history .sh-filter-grid { grid-template-columns: minmax(0, 1fr); }
+        #main-app #view-stock-history .sh-search, #main-app #view-stock-history .sh-filter-actions { grid-column: auto; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        #main-app #view-stock-history .sh-kpi { animation: none; }
+        #main-app #view-stock-history .sh-gauge-fill { transition: none; }
+    }
+}

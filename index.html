@@ -34,6 +34,7 @@
     <link rel="stylesheet" href="national-view.css?v=6c99d6819e">
     <link rel="stylesheet" href="logistics-report.css?v=2e0cfd87ed">
     <link rel="stylesheet" href="delivery-stats.css?v=c242a759b3">
+    <link rel="stylesheet" href="stock-history.css?v=9af34fe94c">
     <!-- Tailwind compilé (npm run build:assets), chargé en dernier comme l'ancien CDN -->
     <link rel="stylesheet" href="tailwind.css?v=7828e1c15a">
     <script src="theme-toggle.js?v=f439f0b4ec"></script>
@@ -372,26 +373,24 @@
                     </div>
                 </section>
 
-                <section id="view-stock-history" class="tab-content hidden space-y-4">
-                    <div class="stock-history-page bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-5">
-                        <div class="stock-history-header">
-                            <div class="stock-history-title">
-                                <span class="stock-history-title-icon" aria-hidden="true"><i class="ph ph-clock-counter-clockwise"></i></span>
-                                <div><h3 class="font-bold text-slate-900 text-sm">Historique global des stocks</h3>
-                                    <p class="text-xs text-slate-500">Suivez les mouvements, comparez les soldes et consultez les inventaires du port actif.</p></div>
+                <!-- ================= HISTORIQUE GLOBAL DES STOCKS — style : stock-history.css, code : 06-historique-des-stocks.js ================= -->
+                <section id="view-stock-history" class="tab-content hidden">
+                    <div class="sh">
+                        <header class="sh-hero">
+                            <div class="sh-hero-text">
+                                <span class="sh-eyebrow"><i class="ph ph-clock-counter-clockwise" aria-hidden="true"></i>Suivi des stocks</span>
+                                <h3>Historique global des stocks</h3>
+                                <p>Stock actuel, stock à une date passée, évolution et journal des mouvements du site actif.</p>
                             </div>
-                            <div class="stock-history-header-actions">
-                                <button id="stock-history-export" type="button" class="stock-history-button stock-history-button-muted"><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter CSV</button>
-                                <button id="stock-history-print" type="button" class="stock-history-button stock-history-button-primary"><i class="ph ph-printer" aria-hidden="true"></i>Imprimer</button>
+                            <div class="sh-hero-actions">
+                                <button id="stock-history-export" type="button" class="sh-hero-button"><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter le journal</button>
+                                <button id="stock-history-print" type="button" class="sh-hero-button sh-hero-button-primary"><i class="ph ph-printer" aria-hidden="true"></i>Imprimer</button>
                             </div>
-                        </div>
-                        <div class="stock-history-filter-panel">
-                            <div class="stock-history-filter-heading">
-                                <div><h4><i class="ph ph-funnel" aria-hidden="true"></i>Filtrer les mouvements</h4>
-                                    <p>Les filtres s’appliquent aux mouvements et inventaires ; la synthèse affiche le stock actuel.</p></div>
-                                <button id="stock-history-reset" type="button" class="stock-history-reset postgres-hidden">Effacer les filtres</button>
-                            </div>
-                            <div class="stock-history-filter-grid">
+                            <div id="stock-history-kpis" class="sh-kpis" aria-live="polite"></div>
+                        </header>
+
+                        <div class="sh-filters" role="search" aria-label="Filtres de l'historique">
+                            <div class="sh-filter-grid">
                                 <label for="stock-history-from">Du
                                     <input id="stock-history-from" type="date">
                                 </label>
@@ -401,60 +400,86 @@
                                 <label for="stock-history-type">Opération
                                     <select id="stock-history-type"><option value="">Toutes les opérations</option><option>Solde initial</option><option>Réception SALAMA</option><option>Réservation drone</option><option>Modification drone</option><option>Clôture drone</option><option>Expédition terrestre</option><option>Inventaire physique</option><option>Mise en quarantaine</option><option>Remise en stock</option><option>Destruction</option></select>
                                 </label>
-                                <label class="stock-history-search-field" for="stock-history-search">Intrant
-                                    <span class="stock-history-search-wrap"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><input id="stock-history-search" type="search" placeholder="Rechercher un intrant"></span>
+                                <label class="sh-search" for="stock-history-search">Intrant
+                                    <span class="sh-search-wrap"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><input id="stock-history-search" type="search" placeholder="Rechercher un intrant"></span>
                                 </label>
+                                <div id="postgres-stock-history-actions" class="sh-filter-actions postgres-hidden">
+                                    <button id="postgres-stock-history-apply" type="button" class="sh-button sh-button-primary"><i class="ph ph-funnel" aria-hidden="true"></i>Appliquer</button>
+                                    <button id="stock-history-reset" type="button" class="sh-button sh-button-ghost postgres-hidden"><i class="ph ph-x" aria-hidden="true"></i>Effacer</button>
+                                </div>
                             </div>
+                            <p class="sh-filter-help"><i class="ph ph-info" aria-hidden="true"></i>La période et l’opération filtrent la courbe, le journal et les inventaires ; la recherche d’intrant s’applique à toute la page.</p>
+                            <p id="stock-history-status" class="sh-status" role="status" aria-live="polite"></p>
                         </div>
-                        <div class="stock-history-results-toolbar">
-                            <p id="stock-history-status" role="status" aria-live="polite"></p>
-                            <div id="postgres-stock-history-actions" class="stock-history-actions postgres-hidden">
-                                <button id="postgres-stock-history-apply" type="button" class="stock-history-button stock-history-button-primary"><i class="ph ph-magnifying-glass" aria-hidden="true"></i>Appliquer les filtres</button>
-                                <button id="postgres-stock-history-more" type="button" class="stock-history-button stock-history-button-muted hidden">Charger la suite</button>
-                                <button id="postgres-stock-history-operations" type="button" class="stock-history-button stock-history-button-muted"><i class="ph ph-chart-line-up" aria-hidden="true"></i>Graphiques avancés</button>
+
+                        <section class="sh-card" aria-labelledby="stock-history-summary-title">
+                            <div class="sh-card-head">
+                                <span class="sh-card-icon" aria-hidden="true"><i class="ph ph-package"></i></span>
+                                <div class="sh-card-title"><h4 id="stock-history-summary-title">Stock actuel</h4>
+                                    <p>Tous lots confondus. La jauge situe le disponible par rapport au seuil minimal (repère vertical).</p></div>
+                                <div class="sh-legend" aria-label="Légende des états">
+                                    <span class="sh-badge sh-level-good">Suffisant</span><span class="sh-badge sh-level-watch">À surveiller</span><span class="sh-badge sh-level-low">Sous le seuil</span><span class="sh-badge sh-level-out">Rupture</span>
+                                </div>
                             </div>
-                        </div>
-                        <section class="stock-history-section" aria-labelledby="stock-history-summary-title">
-                            <div class="stock-history-section-heading">
-                                <div><h4 id="stock-history-summary-title">Synthèse actuelle</h4><p>Soldes du port actif, tous lots confondus.</p><p id="stock-history-explanation" class="stock-history-section-note">La synthèse montre le stock actuel ; les filtres s’appliquent aux mouvements et inventaires.</p></div>
-                                <span class="stock-history-section-icon" aria-hidden="true"><i class="ph ph-package"></i></span>
-                            </div>
-                            <div class="stock-history-table-wrap"><table class="stock-history-table stock-history-summary-table text-left">
-                                <thead><tr><th>Intrant</th><th>Stock enregistré</th><th>Réservé aux vols</th><th>Disponible</th></tr></thead>
+                            <div class="sh-table-wrap"><table class="sh-table sh-summary-table">
+                                <thead><tr><th scope="col">Intrant</th><th scope="col">État</th><th scope="col" class="sh-num">Stock</th><th scope="col" class="sh-num">Réservé aux vols</th><th scope="col" class="sh-num">Disponible</th><th scope="col" class="sh-gauge-col">Niveau / seuil</th></tr></thead>
                                 <tbody id="stock-history-summary"></tbody>
                             </table></div>
                         </section>
-                        <section id="stock-history-charts" class="stock-history-charts grid grid-cols-1 lg:grid-cols-2 gap-4" aria-label="Graphiques de l'historique des stocks">
-                            <article class="stock-history-chart-card">
-                                <div class="stock-history-chart-heading"><span class="stock-history-chart-icon" aria-hidden="true"><i class="ph ph-chart-bar-horizontal"></i></span>
-                                    <div><h4>Stock disponible par intrant</h4><p>Comparaison des quantités et des seuils actuels.</p></div></div>
-                                <div class="stock-history-chart-legend" aria-label="Légende des seuils">
-                                    <span><i class="stock-history-legend-low"></i>Sous le seuil</span><span><i class="stock-history-legend-watch"></i>Jusqu’à 1,5 × le seuil</span><span><i class="stock-history-legend-good"></i>Au-delà de 1,5 × le seuil</span><span><i class="stock-history-legend-unknown"></i>Seuil non défini</span>
+
+                        <section class="sh-card" aria-labelledby="stock-history-at-date-title">
+                            <div class="sh-card-head">
+                                <span class="sh-card-icon sh-card-icon-teal" aria-hidden="true"><i class="ph ph-calendar-check"></i></span>
+                                <div class="sh-card-title"><h4 id="stock-history-at-date-title">Stock à une date</h4>
+                                    <p>Stock au début de la journée choisie, avant toute opération (heure de Madagascar), comparé au stock d’aujourd’hui.</p></div>
+                                <div class="sh-card-tools">
+                                    <label class="sh-date-field" for="stock-history-at-date"><span>Date</span><input id="stock-history-at-date" type="date"></label>
+                                    <button id="stock-history-at-date-export" type="button" class="sh-button sh-button-ghost" disabled><i class="ph ph-file-csv" aria-hidden="true"></i>CSV</button>
                                 </div>
-                                <div class="stock-history-chart-scroll"><div id="stock-history-bar-container" class="stock-history-chart-canvas"><canvas id="stock-history-bar" role="img" aria-label="Comparaison des stocks disponibles par intrant"></canvas></div></div>
-                            </article>
-                            <article class="stock-history-chart-card">
-                                <div class="stock-history-chart-heading"><span class="stock-history-chart-icon stock-history-chart-icon-line" aria-hidden="true"><i class="ph ph-chart-line-up"></i></span>
-                                    <div><h4>Évolution du stock disponible</h4><p>Cliquez sur une courbe dans la légende pour la masquer ou l’afficher.</p></div></div>
-                                <div class="stock-history-chart-canvas stock-history-line-canvas"><canvas id="stock-history-line" role="img" aria-label="Évolution des stocks disponibles par intrant"></canvas></div>
-                            </article>
-                        </section>
-                        <section class="stock-history-section" aria-labelledby="stock-history-movements-title">
-                            <div class="stock-history-section-heading">
-                                <div><h4 id="stock-history-movements-title">Mouvements enregistrés</h4><p>Variations et soldes au moment de chaque opération.</p></div>
-                                <span class="stock-history-section-icon" aria-hidden="true"><i class="ph ph-arrows-left-right"></i></span>
                             </div>
-                            <div class="stock-history-table-wrap"><table class="stock-history-table stock-history-movements-table text-left">
-                                <thead><tr><th>Date</th><th>Intrant</th><th>Opération</th><th>Variation stock</th><th>Avant</th><th>Après</th><th>Réservé après</th><th>Disponible après</th><th>Utilisateur</th></tr></thead>
-                                <tbody id="stock-history-movements"></tbody>
+                            <p id="stock-history-at-date-status" class="sh-card-note" role="status" aria-live="polite"></p>
+                            <div class="sh-table-wrap"><table class="sh-table sh-at-date-table">
+                                <thead><tr><th scope="col">Intrant</th><th scope="col" class="sh-num">Stock</th><th scope="col" class="sh-num">Réservé</th><th scope="col" class="sh-num">Disponible ce jour-là</th><th scope="col" class="sh-num">Disponible aujourd’hui</th><th scope="col" class="sh-num">Évolution depuis</th></tr></thead>
+                                <tbody id="stock-history-at-date-rows"></tbody>
                             </table></div>
                         </section>
-                        <section class="stock-history-section" aria-labelledby="stock-history-inventories-title">
-                            <div class="stock-history-section-heading">
-                                <div><h4 id="stock-history-inventories-title">Rapports d’inventaire physique</h4><p>Les écarts d’inventaire ne sont pas ajoutés une seconde fois aux mouvements.</p></div>
-                                <span class="stock-history-section-icon" aria-hidden="true"><i class="ph ph-clipboard-text"></i></span>
+
+                        <section id="stock-history-charts" class="sh-card postgres-hidden" aria-labelledby="stock-history-evolution-title">
+                            <div class="sh-card-head">
+                                <span class="sh-card-icon sh-card-icon-green" aria-hidden="true"><i class="ph ph-chart-line-up"></i></span>
+                                <div class="sh-card-title"><h4 id="stock-history-evolution-title">Évolution du stock disponible</h4>
+                                    <p>Un palier par mouvement chargé ; survolez un point pour voir l’opération.</p></div>
+                                <div class="sh-card-tools">
+                                    <label class="sh-date-field" for="stock-history-product"><span>Intrant</span><select id="stock-history-product"></select></label>
+                                </div>
                             </div>
-                            <div id="stock-history-inventories" class="stock-history-inventories"></div>
+                            <div id="stock-history-evolution-stats" class="sh-evo-stats"></div>
+                            <div class="sh-chart"><canvas id="stock-history-line" role="img" aria-label="Évolution du stock disponible de l’intrant choisi"></canvas></div>
+                            <div class="sh-chart-legend" aria-hidden="true"><span><i class="sh-dot sh-dot-line"></i>Disponible</span><span><i class="sh-dot sh-dot-up"></i>Entrée</span><span><i class="sh-dot sh-dot-down"></i>Sortie</span><span><i class="sh-dot sh-dot-flat"></i>Réservation / sans variation</span><span><i class="sh-dash"></i>Seuil minimal</span></div>
+                            <p id="stock-history-chart-note" class="sh-card-note"></p>
+                        </section>
+
+                        <section class="sh-card" aria-labelledby="stock-history-movements-title">
+                            <div class="sh-card-head">
+                                <span class="sh-card-icon" aria-hidden="true"><i class="ph ph-arrows-left-right"></i></span>
+                                <div class="sh-card-title"><h4 id="stock-history-movements-title">Journal des mouvements</h4>
+                                    <p>Du plus récent au plus ancien ; stocks totaux de l’intrant sur le site.</p></div>
+                                <span id="stock-history-count" class="sh-count"></span>
+                            </div>
+                            <div class="sh-table-wrap sh-table-tall"><table class="sh-table sh-movements-table">
+                                <thead><tr><th scope="col">Date</th><th scope="col">Intrant</th><th scope="col">Opération</th><th scope="col" class="sh-num">Variation</th><th scope="col" class="sh-num">Stock avant</th><th scope="col" class="sh-num">Stock après</th><th scope="col" class="sh-num">Disponible après</th><th scope="col">Utilisateur</th></tr></thead>
+                                <tbody id="stock-history-movements"></tbody>
+                            </table></div>
+                            <div class="sh-more"><button id="postgres-stock-history-more" type="button" class="sh-button sh-button-ghost hidden"><i class="ph ph-arrow-down" aria-hidden="true"></i>Charger les mouvements plus anciens</button></div>
+                        </section>
+
+                        <section class="sh-card" aria-labelledby="stock-history-inventories-title">
+                            <div class="sh-card-head">
+                                <span class="sh-card-icon sh-card-icon-amber" aria-hidden="true"><i class="ph ph-clipboard-text"></i></span>
+                                <div class="sh-card-title"><h4 id="stock-history-inventories-title">Inventaires physiques</h4>
+                                    <p>Comptages hors quarantaine et colis en livraison ; leurs écarts figurent déjà dans le journal.</p></div>
+                            </div>
+                            <div id="stock-history-inventories" class="sh-inventories"></div>
                         </section>
                     </div>
                 </section>
@@ -1944,10 +1969,10 @@
     <script src="auth-policy.js?v=cd7c4a299b"></script>
     <script src="dashboard-report-postgres.js?v=d70c688518"></script>
     <script src="inventory-report-postgres.js?v=5d7ae28a79"></script>
-    <script src="stock-history-chart-style.js?v=f600ec6479"></script>
+    <script src="stock-history-chart-style.js?v=5df1f70d94"></script>
     <script src="dashboard-notice.js?v=1bdc6e1598"></script>
     <script src="layout-nav.js?v=40b93e2a36"></script>
     <script src="motion.js?v=7bd162fd50"></script>
-    <script src="app-entry.js?v=0e40655ab5"></script>
+    <script src="app-entry.js?v=4d49a4049c"></script>
 </body>
 </html>
