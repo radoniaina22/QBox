@@ -94,7 +94,7 @@
         if (remaining > 0) lockedForms.set(id, remaining);
         else lockedForms.delete(id);
     }
-    const nativeViewIds = ['stocks', 'salama', 'products', 'csb', 'ports', 'planning', 'archives', 'stock-analysis', 'drones', 'history', 'sorties', 'inventory', 'quarantine', 'stock-history', 'logistics-report', 'transfers', 'national'];
+    const nativeViewIds = ['stocks', 'salama', 'products', 'csb', 'ports', 'planning', 'archives', 'stock-analysis', 'drones', 'history', 'sorties', 'inventory', 'quarantine', 'stock-history', 'logistics-report', 'transfers', 'national', 'statistics'];
     const portSelect = $('drone-port-select');
     const login = $('main-login');
     const notice = $('postgres-dashboard-notice');
@@ -149,7 +149,8 @@
         'logistics-report': { title: 'Rapport logistique' },
         'stock-analysis': { title: 'Analyse des stocks et de la CMM des CSB' },
         transfers: { title: 'Transferts et expéditions terrestres' },
-        national: { title: 'Vue nationale' }
+        national: { title: 'Vue nationale' },
+        statistics: { title: 'Statistiques de livraison' }
     };
 
     function setText(id, value) { $(id).textContent = value; }
@@ -160,7 +161,7 @@
 
     function updateSiteNavigation() {
         const storage = isStorage();
-        for (const id of ['planning-navigation', 'nav-drones', 'nav-history', 'nav-sorties', 'nav-csb',
+        for (const id of ['planning-navigation', 'nav-drones', 'nav-history', 'nav-statistics', 'nav-sorties', 'nav-csb',
             'dashboard-missions-kpi', 'dashboard-planning-kpi', 'dashboard-network-kpi', 'dashboard-progress-kpi',
             'dashboard-missions-card', 'dashboard-planning-card'])
             $(id).classList.toggle('postgres-hidden', storage);
@@ -265,6 +266,13 @@
         $('archives-container').replaceChildren();
         $('drones-groups').replaceChildren();
         $('history-table-body').replaceChildren();
+        $('history-closed-count').textContent = '';
+        $('legacy-deliveries-count').textContent = '';
+        cypSequence++;
+        clearCyp();
+        $('cyp-status').textContent = '';
+        if (statsPrintOpen) closeStatsPrint();
+        if (populationRows) { populationSaving = false; closePopulations(); }
         $('sorties-table-body').replaceChildren();
         planningDraft = null;
         archiveDraft = null;
@@ -554,7 +562,11 @@
         const requestGeneration = sessionGeneration;
         productLoading = true;
         try {
-            const categories = await api('/rest/v1/rpc/qbox_list_categories', {}, true);
+            // Méthodes CAP : facultatives (le formulaire reste utilisable si la liste est indisponible).
+            const [categories, methods] = await Promise.all([
+                api('/rest/v1/rpc/qbox_list_categories', {}, true),
+                api('/rest/v1/rpc/qbox_list_cyp_methods', {}, true).catch(() => null)
+            ]);
             if (sessionGeneration !== requestGeneration || activeView !== 'products') return;
             if (!categories.length) throw new Error('Aucune catégorie disponible.');
             productEditing = product?.id || null;
@@ -569,6 +581,20 @@
             $('product-gtin').value = product?.gtin || '';
             $('product-gtin').dataset.original = product?.gtin || '';
             if (product) $('product-category').value = product.category_id;
+            const cyp = $('product-cyp-method');
+            // '' = non renseigné (signalé dans les CAP), 'none' = non contraceptif (exclu sans alerte).
+            cyp.replaceChildren(new Option('Non renseignée', ''), new Option('Non contraceptif (exclu des CAP)', 'none'));
+            for (const method of methods || []) {
+                const factor = method.factor === null ? 'facteur non fourni'
+                    : `${Number(method.factor).toLocaleString('fr-FR', { maximumSignificantDigits: 3 })} CAP / ${method.unit_label}`;
+                const option = new Option(`${method.label} · ${factor}`, method.code);
+                option.disabled = method.factor === null;
+                cyp.add(option);
+            }
+            const cypValue = product?.cyp_not_applicable ? 'none' : product?.cyp_method || '';
+            cyp.value = cypValue;
+            cyp.dataset.original = cypValue;
+            cyp.disabled = !methods;
             setFormTitle('product-modal-title', product ? 'ph-pencil' : 'ph-dna', 'text-teal-600',
                 product ? "Modifier l'intrant médical" : 'Référencer un intrant médical');
             $('product-submit-btn').textContent = product ? 'Mettre à jour' : 'Enregistrer au catalogue';
@@ -606,6 +632,9 @@
             return;
         }
         const gtinChanged = gtin.padStart(gtin ? 14 : 0, '0') !== ($('product-gtin').dataset.original || '');
+        const cypControl = $('product-cyp-method');
+        const cypMethod = cypControl.value || '';
+        const cypChanged = !cypControl.disabled && cypMethod !== (cypControl.dataset.original || '');
         const requestGeneration = sessionGeneration;
         productSaving = true;
         markFormLocked('form-product');
@@ -625,12 +654,21 @@
                 } catch (error) { gtinError = error.message; }
                 if (sessionGeneration !== requestGeneration) return;
             }
+            // Méthode CAP : enregistrée à part elle aussi.
+            let cypError = '';
+            if (cypChanged) {
+                try {
+                    await api('/rest/v1/rpc/qbox_set_product_cyp', { product_id: savedId || productEditing, method_code: cypMethod || null }, true);
+                } catch (error) { cypError = error.message; }
+                if (sessionGeneration !== requestGeneration) return;
+            }
             productSaving = false;
             closeProduct();
             if (frameConnected) sendFrame({ type: 'qbox-catalog-changed' });
             await refreshCatalog();
             if (sessionGeneration !== requestGeneration) return;
-            $('postgres-products-status').textContent += gtinError ? ` Intrant enregistré, mais code GTIN refusé : ${gtinError}` : ' Intrant enregistré.';
+            $('postgres-products-status').textContent += gtinError ? ` Intrant enregistré, mais code GTIN refusé : ${gtinError}`
+                : cypError ? ` Intrant enregistré, mais méthode CAP refusée : ${cypError}` : ' Intrant enregistré.';
         } catch (error) {
             if (sessionGeneration === requestGeneration) $('postgres-product-form-status').textContent = `${error.message} Après une interruption, actualisez le catalogue avant de recommencer.`;
         } finally {
@@ -2197,6 +2235,353 @@
         } finally { if (sessionGeneration === requestGeneration) $('planning-print-button').disabled = false; }
     }
 
+    // ---------- Couples-Année de Protection (CAP) livrés (écran Statistiques) — style : delivery-stats.css (ds-cyp-*) ----------
+    // Données : qbox_cyp_estimate (quantités livrées × facteur standard de la méthode de l'intrant, document
+    // « Facteurs de conversion standards »). Estimation des CAP *livrés* (aux CSB par défaut), pas des clientes servies.
+    // Période et origine : celles du bandeau des statistiques (statsPeriod, deliveryStatsSource) ; refreshCyp est
+    // appelé par refreshDeliveryStats.
+    const CYP_TABS = [
+        { key: 'products', label: 'Par intrant' },
+        { key: 'districts', label: 'Par district' },
+        { key: 'destinations', label: 'Par CSB' }
+    ];
+    let cypSequence = 0;
+    let cypState = null;
+    let cypTab = 'products';
+    let statsPrintOpen = false;
+
+    function cypValue(value) {
+        return Number(value || 0).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    function cypFactor(value) {
+        return value === null || value === undefined ? '—' : Number(value).toLocaleString('fr-FR', { maximumSignificantDigits: 3 });
+    }
+
+    function cypShare(part, total) {
+        return total > 0 ? dsPercent(Number(part || 0), total) : '—';
+    }
+
+    function clearCyp() {
+        cypState = null;
+        for (const id of ['cyp-summary', 'cyp-months', 'cyp-table', 'cyp-unmapped']) $(id).replaceChildren();
+        $('cyp-export').disabled = true;
+        $('cyp-print').disabled = true;
+    }
+
+    async function refreshCyp() {
+        const port = portSelect.value, sequence = ++cypSequence, requestGeneration = sessionGeneration;
+        const status = $('cyp-status');
+        clearCyp();
+        $('cyp-populations').hidden = cypTab !== 'districts' || !hasRole(POPULATION_ROLES);
+        // Portée commune à tout l'écran Statistiques (statsScopeAll, 05-statistiques-livraison.js).
+        const all = statsScopeAll();
+        if (!port && !all) { status.textContent = 'Aucun site disponible.'; return; }
+        const period = statsPeriod();
+        if (period.error) { status.textContent = period.error; return; }
+        const csbOnly = !$('cyp-include-other').checked;
+        status.textContent = 'Calcul des CAP…';
+        try {
+            const data = await api('/rest/v1/rpc/qbox_cyp_estimate', {
+                selected_port: all ? null : port, from_date: period.from, to_date: period.to,
+                source_filter: deliveryStatsSource, csb_only: csbOnly
+            }, true);
+            if (sequence !== cypSequence || activeView !== 'statistics' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
+            const scope = statsScopeLabel(all);
+            const source = { all: 'toutes origines', app: 'livraisons Q.box', legacy: 'sorties avant Q.box' }[deliveryStatsSource] || 'toutes origines';
+            cypState = { data, period, scope, csbOnly, source };
+            renderCyp();
+            status.textContent = `${period.label} · ${scope} · ${csbOnly ? 'livraisons aux CSB' : 'tous les destinataires'} · ${source} · Actualisé le ${localDateTime(new Date())} (heure de Madagascar).`;
+        } catch (error) {
+            if (sequence === cypSequence && activeView === 'statistics' && sessionGeneration === requestGeneration)
+                status.textContent = `Estimation des CAP indisponible : ${error.message}`;
+        }
+    }
+
+    function renderCyp() {
+        const { data } = cypState;
+        const totals = data.totals || {};
+        renderCypSummary(totals);
+        renderCypMonths(data.months || []);
+        renderCypTable();
+        const unmapped = data.unmapped || [];
+        const note = $('cyp-unmapped');
+        if (unmapped.length) {
+            note.append(dsIcon('ph-info'), dsElement('span', '',
+                `Méthode CAP à renseigner dans la fiche de l’intrant (méthode, ou « Non contraceptif ») — non comptés : ${unmapped.map(item => `${item.name} (${dsNumber(item.quantity)})`).join(', ')}.`));
+        }
+        const empty = !(data.products || []).length;
+        $('cyp-export').disabled = empty;
+        $('cyp-print').disabled = empty;
+    }
+
+    function renderCypSummary(totals) {
+        const kpi = (icon, label, value, hint, main = false) => {
+            const card = dsElement('div', main ? 'ds-cyp-kpi ds-cyp-kpi-main' : 'ds-cyp-kpi');
+            const head = dsElement('span', 'ds-cyp-kpi-label');
+            head.append(dsIcon(icon), dsElement('span', '', label));
+            card.append(head, dsElement('strong', 'ds-cyp-kpi-value', value), dsElement('span', 'ds-cyp-kpi-hint', hint));
+            return card;
+        };
+        const period = totals.first_date ? `du ${dsDate(totals.first_date)} au ${dsDate(totals.last_date)}` : 'aucune livraison comptée';
+        $('cyp-summary').replaceChildren(
+            kpi('ph-shield-check', 'CAP livrés (estimation)', cypValue(totals.cyp), period, true),
+            kpi('ph-first-aid-kit', cypState.csbOnly ? 'CSB desservis' : 'Destinataires', dsNumber(totals.destinations), `${dsNumber(totals.deliveries)} livraison(s)`),
+            kpi('ph-map-pin-area', 'Districts', dsNumber(totals.districts), 'couverts sur la période'),
+            kpi('ph-pill', 'Intrants comptés', dsNumber(totals.products), 'méthodes contraceptives'));
+    }
+
+    function renderCypMonths(months) {
+        const container = $('cyp-months');
+        if (!months.length) return;
+        const max = Math.max(...months.map(month => Number(month.cyp) || 0), 0);
+        const list = dsElement('ol', 'ds-cyp-bars');
+        list.setAttribute('aria-label', 'CAP livrés par mois');
+        for (const month of months) {
+            const item = dsElement('li', 'ds-cyp-bar');
+            item.title = `${dsMonth(month.month, true)} : ${cypValue(month.cyp)} CAP`;
+            const bar = dsElement('span', 'ds-cyp-bar-fill');
+            bar.style.height = `${max > 0 ? Math.max(2, Number(month.cyp) * 100 / max) : 0}%`;
+            // Une étiquette sur trois est affichée (CSS) : toujours avec l'année pour rester lisible.
+            item.append(bar, dsElement('span', 'ds-cyp-bar-label', `${dsMonth(month.month)} ${String(month.month).slice(2, 4)}`));
+            list.append(item);
+        }
+        container.append(dsElement('p', 'ds-cyp-bars-title', 'Évolution mensuelle des CAP livrés'), list);
+    }
+
+    function setCypTab(key) {
+        cypTab = key;
+        for (const tab of CYP_TABS) $(`cyp-tab-${tab.key}`).setAttribute('aria-selected', String(tab.key === key));
+        $('cyp-search-wrap').hidden = key !== 'destinations';
+        $('cyp-populations').hidden = key !== 'districts' || !hasRole(POPULATION_ROLES);
+        renderCypTable();
+    }
+
+    // Lignes du tableau d'un onglet : [cellules], la dernière cellule numérique est le CAP.
+    function cypRows(data, key, query = '') {
+        const total = Number(data.totals?.cyp || 0);
+        if (key === 'products') {
+            return {
+                head: ['Intrant', 'Méthode', 'Facteur (CAP / unité)', 'Quantité livrée', 'CAP', 'Part'],
+                rows: (data.products || []).map(item => [item.name, item.method_label || '—', cypFactor(item.factor),
+                    `${dsNumber(item.quantity)}${item.unit ? ` ${item.unit}` : ''}`, cypValue(item.cyp), cypShare(item.cyp, total)]),
+                numeric: [2, 3, 4], total
+            };
+        }
+        if (key === 'districts') {
+            return {
+                // Femmes en âge de procréer (population de référence du district) : CAP pour 1 000 femmes sur la période.
+                head: ['District', cypState?.csbOnly === false ? 'Destinataires' : 'CSB desservis', 'Livraisons',
+                    'Femmes 15-49 ans', 'CAP / 1 000 femmes', 'CAP', 'Part'],
+                rows: (data.districts || []).map(item => [item.district, dsNumber(item.destinations), dsNumber(item.deliveries),
+                    item.women ? `${dsNumber(item.women)}${item.women_year ? ` (${item.women_year})` : ''}` : '—',
+                    item.women ? cypValue(Number(item.cyp) * 1000 / Number(item.women)) : '—',
+                    cypValue(item.cyp), cypShare(item.cyp, total)]),
+                numeric: [1, 2, 3, 4, 5], total
+            };
+        }
+        const search = query.trim().toLocaleLowerCase('fr-FR');
+        const names = new Map((data.products || []).map(item => [item.product_id, item.name]));
+        return {
+            head: ['CSB', 'District', 'Livraisons', 'Principal intrant', 'CAP', 'Part'],
+            rows: (data.destinations || [])
+                .filter(item => !search || `${item.name} ${item.district}`.toLocaleLowerCase('fr-FR').includes(search))
+                .map(item => [item.name, item.district, dsNumber(item.deliveries),
+                    names.get(item.products?.[0]?.product_id) || '—', cypValue(item.cyp), cypShare(item.cyp, total)]),
+            numeric: [2, 4], total
+        };
+    }
+
+    function cypTableElement(table, { head, rows, numeric, total }, emptyText, withBars = true) {
+        const thead = dsElement('thead');
+        const header = dsElement('tr');
+        head.forEach((label, index) => header.append(dsElement('th', numeric.includes(index) || index === head.length - 1 ? 'ds-num' : '', label)));
+        thead.append(header);
+        const tbody = dsElement('tbody');
+        for (const cells of rows) {
+            const tr = dsElement('tr');
+            cells.forEach((value, index) => {
+                const cell = dsElement('td', numeric.includes(index) || index === cells.length - 1 ? 'ds-num' : '');
+                if (index === cells.length - 1 && withBars) {
+                    cell.className = 'ds-num ds-cyp-share';
+                    const bar = dsElement('span', 'ds-cyp-share-bar');
+                    const fill = dsElement('i');
+                    fill.style.width = value === '—' ? '0%' : `${Math.min(100, Number(String(value).replace(/[^\d,]/g, '').replace(',', '.')) || 0)}%`;
+                    bar.append(fill);
+                    cell.append(bar, dsElement('span', '', value));
+                } else cell.textContent = value;
+                if (index === 0) cell.className = 'ds-cyp-name';
+                tr.append(cell);
+            });
+            tbody.append(tr);
+        }
+        if (!rows.length) {
+            const tr = dsElement('tr');
+            const cell = dsElement('td', 'ds-empty', emptyText);
+            cell.colSpan = head.length;
+            tr.append(cell);
+            tbody.append(tr);
+        } else {
+            const tr = dsElement('tr', 'ds-cyp-total');
+            head.forEach((_, index) => tr.append(dsElement('td', index === head.length - 2 ? 'ds-num' : '',
+                index === 0 ? 'Total' : index === head.length - 2 ? cypValue(total) : '')));
+            tbody.append(tr);
+        }
+        table.replaceChildren(thead, tbody);
+        return table;
+    }
+
+    function renderCypTable() {
+        const table = $('cyp-table');
+        if (!cypState) { table.replaceChildren(); return; }
+        const query = cypTab === 'destinations' ? String($('cyp-search').value ?? '') : '';
+        const model = cypRows(cypState.data, cypTab, query);
+        // Avec une recherche, le total affiché reste celui de toute la période (part calculée sur le grand total).
+        cypTableElement(table, model, query.trim() ? 'Aucun CSB ne correspond à la recherche.' : 'Aucun CAP livré sur cette période.');
+    }
+
+    function exportCyp() {
+        if (!cypState) return;
+        const label = CYP_TABS.find(tab => tab.key === cypTab)?.label || '';
+        downloadTableCsv($('cyp-table'), tableCsvFileName(`cap-livres-${label}`, cypState.scope));
+    }
+
+    function openCypPrint() {
+        if (!cypState) return;
+        const { data, period, scope, csbOnly, source } = cypState;
+        const report = $('stats-print-content');
+        report.replaceChildren(planningPrintHeader('COUPLES-ANNÉE DE PROTECTION LIVRÉS', null, { name: scope },
+            `Période : ${period.label}`));
+        report.append(dsElement('h1', '', 'Estimation des Couples-Année de Protection (CAP) livrés'),
+            dsElement('p', '', `${scope} · ${period.label} · ${csbOnly ? 'livraisons aux CSB' : 'tous les destinataires'} · ${source}.`),
+            dsElement('p', '', 'CAP = quantité livrée × facteur de conversion standard de la méthode (document « Facteurs de conversion standards »). '
+                + 'Il s’agit des CAP livrés aux structures, et non des CAP des clientes servies.'),
+            dsElement('p', 'stats-print-total', `Total : ${cypValue(data.totals?.cyp)} CAP · ${dsNumber(data.totals?.destinations)} destinataire(s) · ${dsNumber(data.totals?.districts)} district(s)`));
+        for (const tab of CYP_TABS) {
+            report.append(dsElement('h2', '', tab.label));
+            report.append(cypTableElement(dsElement('table'), cypRows(data, tab.key), 'Aucune donnée.', false));
+        }
+        const unmapped = data.unmapped || [];
+        if (unmapped.length) report.append(dsElement('p', '', `Non comptés (sans méthode CAP) : ${unmapped.map(item => `${item.name} (${dsNumber(item.quantity)})`).join(', ')}.`));
+        showStatsPrint('Aperçu · Couples-Année de Protection livrés');
+    }
+
+    // Ouvre l'aperçu commun de l'écran Statistiques (statistiques de livraison ou CAP), contenu déjà rempli.
+    function showStatsPrint(title) {
+        $('stats-print-title').textContent = title;
+        statsPrintOpen = true;
+        portSelect.disabled = true;
+        $('modal-backdrop').classList.remove('hidden');
+        $('stats-print-modal').classList.remove('hidden');
+    }
+
+    async function printStats() {
+        if (!statsPrintOpen) return;
+        // Attendre le logo pour qu'il figure sur la page imprimée (impression maintenue en cas d'échec).
+        try { await $('stats-print-content').querySelector('.planning-print-logo')?.decode?.(); } catch { /* logo indisponible */ }
+        if (!statsPrintOpen) return;
+        document.body.classList.add('stats-print-mode');
+        window.print();
+    }
+
+    function closeStatsPrint() {
+        statsPrintOpen = false;
+        $('stats-print-modal').classList.add('hidden');
+        $('modal-backdrop').classList.add('hidden');
+        $('stats-print-content').replaceChildren();
+        document.body.classList.remove('stats-print-mode');
+        portSelect.disabled = false;
+    }
+
+    // ---------- Populations de référence des districts (CAP pour 1 000 femmes) ----------
+    const POPULATION_ROLES = ['admin', 'logistics'];
+    let populationRows = null;
+    let populationSaving = false;
+
+    async function openPopulations() {
+        if (!hasRole(POPULATION_ROLES) || populationRows || populationSaving) return;
+        const requestGeneration = sessionGeneration;
+        $('population-status').textContent = 'Chargement des districts…';
+        $('population-rows').replaceChildren();
+        $('modal-backdrop').classList.remove('hidden');
+        $('population-modal').classList.remove('hidden');
+        populationRows = [];
+        try {
+            const districts = await api('/rest/v1/rpc/qbox_list_district_populations', {}, true);
+            if (sessionGeneration !== requestGeneration || !populationRows) return;
+            const year = Number(new Intl.DateTimeFormat('fr-CA', { timeZone: 'Indian/Antananarivo', year: 'numeric' }).format(new Date()));
+            for (const district of districts || []) {
+                const tr = dsElement('tr', 'border-t border-slate-100');
+                const women = dsElement('input', 'w-full text-xs px-3 py-2 rounded-xl border border-slate-200 font-mono');
+                women.type = 'number';
+                women.min = '1';
+                women.step = '1';
+                women.value = district.women ?? '';
+                women.setAttribute('aria-label', `Femmes 15-49 ans, district ${district.district}`);
+                const reference = dsElement('input', 'w-full text-xs px-3 py-2 rounded-xl border border-slate-200 font-mono');
+                reference.type = 'number';
+                reference.min = '2000';
+                reference.max = '2100';
+                reference.value = district.reference_year ?? year;
+                reference.setAttribute('aria-label', `Année de référence, district ${district.district}`);
+                const cell = control => { const td = dsElement('td', 'py-2 pr-2'); td.append(control); return td; };
+                tr.append(dsElement('td', 'py-2 pr-2 font-bold text-slate-900', district.district),
+                    dsElement('td', 'py-2 pr-2', String(district.csbs ?? 0)), cell(women), cell(reference));
+                $('population-rows').append(tr);
+                populationRows.push({ district: district.district, women, reference,
+                    original: `${district.women ?? ''}|${district.women ? district.reference_year ?? '' : ''}` });
+            }
+            $('population-status').textContent = populationRows.length ? '' : 'Aucun district : renseignez d’abord le district des CSB.';
+        } catch (error) {
+            if (sessionGeneration === requestGeneration) $('population-status').textContent = `Lecture impossible : ${error.message}`;
+        }
+    }
+
+    function closePopulations() {
+        if (populationSaving) return;
+        populationRows = null;
+        $('population-modal').classList.add('hidden');
+        $('modal-backdrop').classList.add('hidden');
+        $('population-rows').replaceChildren();
+    }
+
+    async function submitPopulations(event) {
+        event.preventDefault();
+        if (!populationRows || populationSaving) return;
+        const changes = [];
+        for (const row of populationRows) {
+            const womenText = String(row.women.value ?? '').trim();
+            const women = womenText ? Number(womenText) : null;
+            const year = womenText ? Number(row.reference.value) : null;
+            if (women !== null && (!Number.isSafeInteger(women) || women <= 0 || !Number.isInteger(year) || year < 2000 || year > 2100)) {
+                $('population-status').textContent = `District ${row.district} : effectif entier positif et année entre 2000 et 2100 requis.`;
+                return;
+            }
+            if (`${women ?? ''}|${women === null ? '' : year}` !== row.original) changes.push({ district: row.district, women, year });
+        }
+        if (!changes.length) { closePopulations(); return; }
+        const requestGeneration = sessionGeneration;
+        populationSaving = true;
+        $('population-submit').disabled = true;
+        $('population-status').textContent = 'Enregistrement…';
+        try {
+            for (const change of changes) {
+                await api('/rest/v1/rpc/qbox_set_district_population',
+                    { district_name: change.district, women: change.women, reference_year: change.year }, true);
+                if (sessionGeneration !== requestGeneration) return;
+            }
+            populationSaving = false;
+            closePopulations();
+            refreshCyp();
+        } catch (error) {
+            if (sessionGeneration === requestGeneration) $('population-status').textContent = `${error.message} Les districts précédents sont enregistrés.`;
+        } finally {
+            if (sessionGeneration === requestGeneration) {
+                populationSaving = false;
+                $('population-submit').disabled = false;
+            }
+        }
+    }
     function appendDeliveryHistory(container, view, id, buttonClass = 'ml-3 text-xs font-bold text-sky-700') {
         const button = document.createElement('button');
         button.type = 'button';
@@ -2418,14 +2803,96 @@
         if (droneFilterState.empty) droneFilterState.empty.hidden = !noMatch;
     }
 
-    async function refreshDeliveries(view) {
+    // Libellés des colonnes (affichage en cartes sur petit écran : data-label).
+    const DELIVERY_ROW_LABELS = {
+        history: ['N° BL', 'Date clôture', 'CSB livré', 'Intrants largués', 'Statut'],
+        sorties: ['Référence', 'Expédition', 'CSB', 'Transport', 'Intrants', 'Statut']
+    };
+
+    // Ligne du registre des clôtures (history) ou des expéditions terrestres (sorties).
+    function deliveryTableRow(view, entry) {
+        const labels = DELIVERY_ROW_LABELS[view];
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition-colors';
+        const values = view === 'history'
+            ? [entry.bl, entry.closed_date || 'Non renseignée', entry.csb_name, cargo(entry.items), entry.status]
+            : [entry.reference, localDateTime(entry.dispatched_at), entry.csb_name, entry.transport, cargo(entry.items), entry.status];
+        const statusIndex = values.length - 1;
+        values.forEach((value, index) => {
+            const cell = document.createElement('td');
+            cell.className = 'py-3 px-4 text-slate-700';
+            cell.dataset.label = labels[index];
+            if (index === statusIndex) cell.append(deliveryStatusBadge(value)); else cell.textContent = value;
+            tr.append(cell);
+        });
+        tr.children[0].className += ' font-mono font-bold';
+        tr.children[2].className += ' font-bold text-slate-900';
+        const cell = document.createElement('td');
+        cell.className = 'py-3 px-4 text-right';
+        cell.dataset.label = 'Actions';
+        const actions = document.createElement('div');
+        actions.className = 'flex flex-wrap justify-end items-center gap-2';
+        if (view === 'sorties' && entry.status === 'En cours' && hasRole(['admin', 'logistics'])) {
+            const close = document.createElement('button');
+            close.type = 'button';
+            close.className = DELIVERY_BUTTON.primary;
+            close.dataset.icon = 'check';
+            close.textContent = 'Clôturer';
+            close.addEventListener('click', () => openDeliveryClose('sorties', entry.id));
+            actions.append(close);
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = DELIVERY_BUTTON.danger;
+            cancel.dataset.icon = 'cancel';
+            cancel.textContent = 'Annuler';
+            cancel.addEventListener('click', () => openDeliveryClose('sorties', entry.id, 'cancel'));
+            actions.append(cancel);
+            const edit = document.createElement('button');
+            edit.type = 'button';
+            edit.className = DELIVERY_BUTTON.secondary;
+            edit.dataset.icon = 'edit';
+            edit.textContent = 'Modifier';
+            edit.addEventListener('click', () => openDeliveryEdit('sorties', entry.id));
+            actions.append(edit);
+        }
+        if (entry.status !== 'Annulé') {
+            const print = document.createElement('button');
+            print.type = 'button';
+            print.className = DELIVERY_BUTTON.neutral;
+            print.dataset.icon = 'print';
+            print.textContent = 'Aperçu du BL';
+            print.addEventListener('click', () => openDeliveryPrint(view, entry.id));
+            actions.append(print);
+        }
+        if (!['history', 'sorties'].includes(view) || userRole === 'admin') {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = DELIVERY_BUTTON.neutral;
+            button.textContent = 'Opérations / BL';
+            button.addEventListener('click', () => openOperations(operationSections[view]));
+            actions.append(button);
+        }
+        cell.append(actions);
+        const history = document.createElement('div');
+        history.className = 'mt-2 text-right';
+        appendDeliveryHistory(history, view, entry.id, DELIVERY_BUTTON.secondary);
+        cell.append(history);
+        tr.append(cell);
+        return tr;
+    }
+
+    async function refreshDeliveries(view, { keepLegacy = false } = {}) {
         const port = portSelect.value, sequence = ++requestSequence, requestGeneration = sessionGeneration;
         const container = $(view === 'drones' ? 'drones-groups' : view === 'history' ? 'history-table-body' : 'sorties-table-body');
         const message = $(`postgres-${view}-status`);
         container.replaceChildren();
         if (view === 'drones') { $('drones-summary').replaceChildren(); droneFilterState = null; }
-        // Historique : statistiques de livraison et sorties d'avant Q.box (05-statistiques-livraison.js).
-        if (view === 'history') { refreshDeliveryStats(); refreshLegacyDeliveries(true); }
+        // Historique : sorties d'avant Q.box (05-statistiques-livraison.js) et registre des clôtures, paginé côté serveur.
+        if (view === 'history') {
+            if (!keepLegacy) refreshLegacyDeliveries(true);
+            loadClosedFlights(true);
+            return;
+        }
         message.textContent = port ? 'Chargement…' : 'Aucun port disponible.';
         if (!port) return;
         try {
@@ -2436,84 +2903,58 @@
                 view === 'drones' ? api('/rest/v1/rpc/qbox_list_csbs', { selected_port: port }, true).catch(() => null) : null
             ]);
             if (sequence !== requestSequence || activeView !== view || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
-            const rows = view === 'sorties' ? data : data.filter(flight => view === 'drones' ? flight.status === 'En vol' : flight.status !== 'En vol');
+            const rows = view === 'sorties' ? data : data.filter(flight => flight.status === 'En vol');
             if (view === 'drones') {
                 renderDroneFlights(container, rows, csbs, view);
             } else {
-                for (const entry of rows) {
-                    const tr = document.createElement('tr');
-                    tr.className = 'hover:bg-slate-50 transition-colors';
-                    const values = view === 'history'
-                        ? [entry.bl, entry.closed_date || 'Non renseignée', entry.csb_name, cargo(entry.items), entry.status]
-                        : [entry.reference, localDateTime(entry.dispatched_at), entry.csb_name, entry.transport, cargo(entry.items), entry.status];
-                    const statusIndex = values.length - 1;
-                    values.forEach((value, index) => {
-                        const cell = document.createElement('td');
-                        cell.className = 'py-3 px-4 text-slate-700';
-                        if (index === statusIndex) cell.append(deliveryStatusBadge(value)); else cell.textContent = value;
-                        tr.append(cell);
-                    });
-                    tr.children[0].className += ' font-mono font-bold';
-                    tr.children[2].className += ' font-bold text-slate-900';
-                    const cell = document.createElement('td');
-                    cell.className = 'py-3 px-4 text-right';
-                    const actions = document.createElement('div');
-                    actions.className = 'flex flex-wrap justify-end items-center gap-2';
-                    if (view === 'sorties' && entry.status === 'En cours' && hasRole(['admin', 'logistics'])) {
-                        const close = document.createElement('button');
-                        close.type = 'button';
-                        close.className = DELIVERY_BUTTON.primary;
-                        close.dataset.icon = 'check';
-                        close.textContent = 'Clôturer';
-                        close.addEventListener('click', () => openDeliveryClose('sorties', entry.id));
-                        actions.append(close);
-                        const cancel = document.createElement('button');
-                        cancel.type = 'button';
-                        cancel.className = DELIVERY_BUTTON.danger;
-                        cancel.dataset.icon = 'cancel';
-                        cancel.textContent = 'Annuler';
-                        cancel.addEventListener('click', () => openDeliveryClose('sorties', entry.id, 'cancel'));
-                        actions.append(cancel);
-                        const edit = document.createElement('button');
-                        edit.type = 'button';
-                        edit.className = DELIVERY_BUTTON.secondary;
-                        edit.dataset.icon = 'edit';
-                        edit.textContent = 'Modifier';
-                        edit.addEventListener('click', () => openDeliveryEdit('sorties', entry.id));
-                        actions.append(edit);
-                    }
-                    if (entry.status !== 'Annulé') {
-                        const print = document.createElement('button');
-                        print.type = 'button';
-                        print.className = DELIVERY_BUTTON.neutral;
-                        print.dataset.icon = 'print';
-                        print.textContent = 'Aperçu du BL';
-                        print.addEventListener('click', () => openDeliveryPrint(view, entry.id));
-                        actions.append(print);
-                    }
-                    if (!['history', 'sorties'].includes(view) || userRole === 'admin') {
-                        const button = document.createElement('button');
-                        button.type = 'button';
-                        button.className = DELIVERY_BUTTON.neutral;
-                        button.textContent = 'Opérations / BL';
-                        button.addEventListener('click', () => openOperations(operationSections[view]));
-                        actions.append(button);
-                    }
-                    cell.append(actions);
-                    const history = document.createElement('div');
-                    history.className = 'mt-2 text-right';
-                    appendDeliveryHistory(history, view, entry.id, DELIVERY_BUTTON.secondary);
-                    cell.append(history);
-                    tr.append(cell);
-                    container.append(tr);
-                }
-                if (!rows.length) container.append(emptyTableRow(
-                    view === 'sorties' ? 'Aucune expédition terrestre.' : 'Aucun vol dans l’historique.',
-                    view === 'sorties' ? 7 : 6));
+                for (const entry of rows) container.append(deliveryTableRow(view, entry));
+                if (!rows.length) container.append(emptyTableRow('Aucune expédition terrestre.', 7));
             }
             message.textContent = `${rows.length} ${view === 'sorties' ? 'expédition(s)' : 'vol(s)'} · Actualisé le ${localDateTime(new Date())} (heure de Madagascar).`;
         } catch (error) {
             if (sequence === requestSequence && activeView === view && port === portSelect.value && sessionGeneration === requestGeneration)
+                message.textContent = `Lecture indisponible : ${error.message}`;
+        }
+    }
+
+    // ---------- Registre des vols clôturés (écran Historique) : qbox_list_closed_flights, 50 vols par page ----------
+    const CLOSED_PAGE_SIZE = 50;
+    let closedSequence = 0;
+    let historyClosedState = null;
+
+    async function loadClosedFlights(reset) {
+        const port = portSelect.value, requestGeneration = sessionGeneration;
+        const container = $('history-table-body'), message = $('postgres-history-status'), more = $('history-closed-more');
+        if (reset) {
+            historyClosedState = { port, period: historyClosedPeriod(), offset: 0 };
+            container.replaceChildren();
+            $('history-closed-count').textContent = '';
+        }
+        const state = historyClosedState;
+        more.hidden = true;
+        if (!state) return;
+        if (state.period.error) { message.textContent = state.period.error; return; }
+        if (!port) { message.textContent = 'Aucun port disponible.'; return; }
+        const sequence = ++closedSequence;
+        message.textContent = 'Chargement…';
+        try {
+            const data = await api('/rest/v1/rpc/qbox_list_closed_flights', {
+                selected_port: port, from_date: state.period.from, to_date: state.period.to,
+                page_limit: CLOSED_PAGE_SIZE, page_offset: state.offset
+            }, true);
+            if (state !== historyClosedState || sequence !== closedSequence || activeView !== 'history' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
+            const rows = data.rows || [];
+            for (const entry of rows) container.append(deliveryTableRow('history', entry));
+            state.offset += rows.length;
+            const total = Number(data.total || 0);
+            const filtered = Boolean(state.period.from || state.period.to);
+            if (!state.offset) container.append(emptyTableRow(filtered ? 'Aucun vol clôturé sur cette période.' : 'Aucun vol dans l’historique.', 6));
+            more.hidden = state.offset >= total;
+            $('history-closed-count').textContent = `${number(total)} vol(s)`;
+            message.textContent = `${state.offset < total ? `${number(state.offset)} affiché(s) sur ` : ''}${number(total)} vol(s)`
+                + `${filtered ? ` · ${state.period.label}` : ''} · Actualisé le ${localDateTime(new Date())} (heure de Madagascar).`;
+        } catch (error) {
+            if (state === historyClosedState && sequence === closedSequence && activeView === 'history' && sessionGeneration === requestGeneration)
                 message.textContent = `Lecture indisponible : ${error.message}`;
         }
     }
@@ -3407,7 +3848,7 @@
         }
     }
 
-    // ---------- Statistiques de livraison et sorties d'avant Q.box (écran Historique) — style : delivery-stats.css ----------
+    // ---------- Statistiques de livraison (écran Statistiques) et sorties d'avant Q.box (écran Historique) — style : delivery-stats.css ----------
     // Données : qbox_delivery_statistics (vols et expéditions clôturés + sorties historiques importées) et
     // qbox_legacy_deliveries (registre des sorties d'avant Q.box, hors stock, par BL).
     // Couleurs des origines : 3 premières teintes de la palette catégorielle validée (daltonisme), fixes par origine.
@@ -3421,6 +3862,7 @@
     const LEGACY_PAGE_SIZE = 50;
     let deliveryStatsSequence = 0;
     let deliveryStatsSource = 'all';
+    let deliveryStatsState = null;
     let legacySequence = 0;
     let legacyState = null;
     let legacyProductsLoaded = false;
@@ -3472,7 +3914,78 @@
         if (value === '12m') return { from: back(12), to: today, label: '12 derniers mois' };
         if (value === '3m') return { from: back(3), to: today, label: '3 derniers mois' };
         if (value === 'year') return { from: `${year}-01-01`, to: today, label: `Année ${year}` };
+        if (value === 'custom') {
+            // Bornes incluses ; une borne vide laisse la période ouverte de ce côté.
+            const from = $('delivery-stats-from').value || null, to = $('delivery-stats-to').value || null;
+            if (from && to && from > to) return { from, to, error: 'La date de début doit précéder la date de fin.' };
+            const label = from && to ? `Du ${dsDate(from)} au ${dsDate(to)}`
+                : from ? `Depuis le ${dsDate(from)}` : to ? `Jusqu’au ${dsDate(to)}` : 'Tout l’historique';
+            return { from, to, label };
+        }
         return { from: null, to: null, label: 'Tout l’historique' };
+    }
+
+    // Période choisie en haut de l'écran Statistiques : statistiques de livraison et CAP livrés.
+    function statsPeriod() {
+        return dsPeriod($('delivery-stats-period').value);
+    }
+
+    // Période du registre des livraisons clôturées (écran Historique) : dates Du/Au propres au registre.
+    function historyClosedPeriod() {
+        const from = $('history-closed-from').value || null, to = $('history-closed-to').value || null;
+        if (from && to && from > to) return { from, to, error: 'La date de début doit précéder la date de fin.' };
+        const label = from && to ? `Du ${dsDate(from)} au ${dsDate(to)}`
+            : from ? `Depuis le ${dsDate(from)}` : to ? `Jusqu’au ${dsDate(to)}` : 'Tout l’historique';
+        return { from, to, label };
+    }
+
+    function changeHistoryClosedPeriod() {
+        $('history-closed-to').min = $('history-closed-from').value || '';
+        $('history-closed-from').max = $('history-closed-to').value || '';
+        refreshDeliveries('history', { keepLegacy: true });
+    }
+
+    function clearHistoryClosedPeriod() {
+        $('history-closed-from').value = '';
+        $('history-closed-to').value = '';
+        changeHistoryClosedPeriod();
+    }
+
+    // Blocs dépliables de l'écran Historique (registre des clôtures, sorties d'avant Q.box) : repliés à chaque
+    // ouverture de l'écran (selectView) ; leurs données sont chargées quand même (compteur dans l'en-tête).
+    const HISTORY_COLLAPSIBLES = ['history-closed', 'legacy-deliveries'];
+
+    function setHistoryBlockOpen(id, open) {
+        $(`${id}-panel`).hidden = !open;
+        $(`${id}-toggle`).setAttribute('aria-expanded', String(open));
+        $(`${id}-toggle`).classList.toggle('is-open', open);
+    }
+
+    function collapseHistoryBlocks() {
+        for (const id of HISTORY_COLLAPSIBLES) setHistoryBlockOpen(id, false);
+    }
+
+    function toggleHistoryBlock(id) {
+        setHistoryBlockOpen(id, Boolean($(`${id}-panel`).hidden));
+    }
+
+    // Changement de période des statistiques : affiche les dates si « personnalisée », puis relit statistiques et CAP.
+    function changeStatsPeriod() {
+        const custom = $('delivery-stats-period').value === 'custom';
+        $('delivery-stats-range').hidden = !custom;
+        const from = $('delivery-stats-from'), to = $('delivery-stats-to');
+        const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Indian/Antananarivo' }).format(new Date());
+        to.max = today;
+        from.max = to.value || today;
+        to.min = from.value || '';
+        if (custom && !from.value && !to.value) {
+            // Aucune date choisie : propose le mois en cours, modifiable.
+            from.value = `${today.slice(0, 8)}01`;
+            to.value = today;
+            from.max = today;
+            to.min = from.value;
+        }
+        refreshDeliveryStats();
     }
 
     function dsReducedMotion() {
@@ -3516,24 +4029,46 @@
         $('delivery-stats-total').textContent = '—';
         $('delivery-stats-total-hint').textContent = 'unités, tous intrants confondus';
         $('delivery-stats-export').disabled = true;
+        $('delivery-stats-print').disabled = true;
+        deliveryStatsState = null;
     }
+
+    // Portée de tout l'écran Statistiques : site sélectionné, ou tous les sites (admin, logistique, UNFPA).
+    const STATS_ALL_SITES_ROLES = ['admin', 'logistics', 'unfpa'];
+
+    function statsScopeAll() {
+        return hasRole(STATS_ALL_SITES_ROLES) && $('stats-scope').value === 'all';
+    }
+
+    function statsScopeLabel(all = statsScopeAll()) {
+        return all ? 'Tous les sites' : (portSelect.selectedOptions?.[0]?.textContent || 'Site sélectionné');
+    }
+
+    const DS_SOURCE_LABELS = { all: 'toutes origines', app: 'livraisons Q.box', legacy: 'sorties avant Q.box' };
 
     async function refreshDeliveryStats() {
         const port = portSelect.value, sequence = ++deliveryStatsSequence, requestGeneration = sessionGeneration;
         const status = $('delivery-stats-status');
+        $('stats-scope-wrap').hidden = !hasRole(STATS_ALL_SITES_ROLES);
         clearDeliveryStats();
-        if (!port) { status.textContent = 'Aucun site disponible.'; return; }
-        const period = dsPeriod($('delivery-stats-period').value);
+        // Même portée, période et origine pour l'estimation des CAP livrés (05-couples-annee-protection.js).
+        refreshCyp();
+        const all = statsScopeAll();
+        $('delivery-stats-heading').textContent = all ? 'Ce que le réseau a livré' : 'Ce que le drone port a livré';
+        if (!port && !all) { status.textContent = 'Aucun site disponible.'; return; }
+        const period = statsPeriod();
+        if (period.error) { status.textContent = period.error; return; }
         status.textContent = 'Calcul des statistiques…';
         try {
             const data = await api('/rest/v1/rpc/qbox_delivery_statistics', {
-                selected_port: port, from_date: period.from, to_date: period.to, source_filter: deliveryStatsSource
+                selected_port: all ? null : port, from_date: period.from, to_date: period.to, source_filter: deliveryStatsSource
             }, true);
-            if (sequence !== deliveryStatsSequence || activeView !== 'history' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
+            if (sequence !== deliveryStatsSequence || activeView !== 'statistics' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
+            deliveryStatsState = { data, period, scope: statsScopeLabel(all), source: DS_SOURCE_LABELS[deliveryStatsSource] || DS_SOURCE_LABELS.all };
             renderDeliveryStats(data);
-            status.textContent = `${period.label} · Actualisé le ${localDateTime(new Date())} (heure de Madagascar).`;
+            status.textContent = `${period.label} · ${deliveryStatsState.scope} · Actualisé le ${localDateTime(new Date())} (heure de Madagascar).`;
         } catch (error) {
-            if (sequence === deliveryStatsSequence && activeView === 'history' && sessionGeneration === requestGeneration)
+            if (sequence === deliveryStatsSequence && activeView === 'statistics' && sessionGeneration === requestGeneration)
                 status.textContent = `Statistiques indisponibles : ${error.message}`;
         }
     }
@@ -3552,6 +4087,7 @@
         renderDeliveryStatsDistricts(data, total);
         renderDeliveryStatsMatrix(data);
         $('delivery-stats-export').disabled = !(data.products || []).length;
+        $('delivery-stats-print').disabled = !(data.products || []).length;
     }
 
     function renderDeliveryStatsKpis(data, total) {
@@ -3824,8 +4360,57 @@
         table.append(thead, tbody);
     }
 
+    // Impression des statistiques de livraison : en-tête UNFPA, synthèse, origines, mois, intrants, districts.
+    function openDeliveryStatsPrint() {
+        if (!deliveryStatsState) return;
+        const { data, period, scope, source } = deliveryStatsState;
+        const totals = data.totals || {};
+        const total = Number(totals.quantity || 0);
+        const report = $('stats-print-content');
+        report.replaceChildren(planningPrintHeader('STATISTIQUES DE LIVRAISON', null, { name: scope }, `Période : ${period.label}`));
+        report.append(dsElement('h1', '', 'Statistiques de livraison'),
+            dsElement('p', '', `${scope} · ${period.label} · ${source}. Vols drone et expéditions terrestres clôturés, et sorties d’avant Q.box (hors stock).`),
+            dsElement('p', 'stats-print-total', `Grand total livré : ${dsNumber(totals.quantity)} unités · ${dsNumber(totals.deliveries)} livraison(s) · `
+                + `${dsNumber(totals.destinations)} destinataire(s) · ${dsNumber(totals.districts)} district(s)`
+                + (totals.first_date ? ` · du ${dsDate(totals.first_date)} au ${dsDate(totals.last_date)}` : '')));
+        const table = (title, head, rows, numeric) => {
+            report.append(dsElement('h2', '', title));
+            const element = dsElement('table');
+            const thead = dsElement('thead'), header = dsElement('tr');
+            head.forEach((label, index) => header.append(dsElement('th', numeric.includes(index) ? 'ds-num' : '', label)));
+            thead.append(header);
+            const tbody = dsElement('tbody');
+            for (const cells of rows) {
+                const tr = dsElement('tr');
+                cells.forEach((value, index) => tr.append(dsElement('td', numeric.includes(index) ? 'ds-num' : '', String(value))));
+                tbody.append(tr);
+            }
+            if (!rows.length) {
+                const tr = dsElement('tr'), cell = dsElement('td', '', 'Aucune donnée.');
+                cell.colSpan = head.length;
+                tr.append(cell);
+                tbody.append(tr);
+            }
+            element.append(thead, tbody);
+            report.append(element);
+        };
+        const labels = Object.fromEntries(DS_SOURCES.map(item => [item.key, item.label]));
+        table('Par origine', ['Origine', 'Quantité', 'Livraisons', 'Part'],
+            (data.sources || []).map(item => [labels[item.source] || item.source, dsNumber(item.quantity), dsNumber(item.deliveries), dsPercent(Number(item.quantity), total)]), [1, 2, 3]);
+        table('Par mois', ['Mois', 'Quantité', 'Livraisons', 'Vols drone', 'Expéditions', 'Avant Q.box'],
+            (data.months || []).map(item => [dsMonth(item.month, true), dsNumber(item.quantity), dsNumber(item.deliveries),
+                dsNumber(item.drone), dsNumber(item.road), dsNumber(item.legacy)]), [1, 2, 3, 4, 5]);
+        table('Par intrant', ['Intrant', 'Unité', 'Quantité', 'Livraisons', 'Destinataires', 'Part'],
+            (data.products || []).map(item => [item.name, item.unit || '', dsNumber(item.quantity), dsNumber(item.deliveries),
+                dsNumber(item.destinations), dsPercent(Number(item.quantity), total)]), [2, 3, 4, 5]);
+        table('Par district', ['District', 'Quantité', 'Livraisons', 'Destinataires', 'Part'],
+            (data.districts || []).map(item => [item.district, dsNumber(item.quantity), dsNumber(item.deliveries),
+                dsNumber(item.destinations), dsPercent(Number(item.quantity), total)]), [1, 2, 3, 4]);
+        showStatsPrint('Aperçu · Statistiques de livraison');
+    }
+
     function exportDeliveryStats() {
-        downloadTableCsv($('delivery-stats-matrix'), tableCsvFileName('statistiques-livraison', portSelect.selectedOptions?.[0]?.textContent || ''));
+        downloadTableCsv($('delivery-stats-matrix'), tableCsvFileName('statistiques-livraison', statsScopeLabel()));
     }
 
     // ---------- Registre des sorties d'avant Q.box ----------
@@ -3859,6 +4444,7 @@
             legacyState = { port, filter: legacyFilter(), offset: 0 };
             body.replaceChildren();
             $('legacy-deliveries-export').disabled = true;
+            $('legacy-deliveries-count').textContent = '';
         }
         more.hidden = true;
         if (!port) { status.textContent = 'Aucun site disponible.'; return; }
@@ -3886,6 +4472,7 @@
             }
             more.hidden = state.offset >= Number(data.total || 0);
             $('legacy-deliveries-export').disabled = !state.offset;
+            $('legacy-deliveries-count').textContent = Number(data.imported) ? `${dsNumber(data.total)} BL` : '';
         } catch (error) {
             if (sequence === legacySequence && activeView === 'history' && sessionGeneration === requestGeneration)
                 status.textContent = `Lecture indisponible : ${error.message}`;
@@ -5547,7 +6134,7 @@
         if (!csb || planningEntries.has(csbId)) return null;
         const block = planningElement('details', 'planning-csb group border border-slate-200 rounded-xl bg-white overflow-hidden');
         block.dataset.csb = csb.id;
-        block.open = true;
+        block.open = false; // replié par défaut : seul un CSB ajouté à la main est déplié (openOnlyPlanningCsb)
         const summary = planningElement('summary', 'flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-slate-50 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden');
         const title = planningElement('div', 'flex items-center gap-2 min-w-0');
         const status = planningElement('span');
@@ -5638,7 +6225,7 @@
                 input.type = 'checkbox';
                 input.value = csb.id;
                 input.addEventListener('change', () => {
-                    if (input.checked) addPlanningCsb(csb.id)?.scrollIntoView?.({block: 'nearest', behavior: 'smooth'});
+                    if (input.checked) openOnlyPlanningCsb(addPlanningCsb(csb.id))?.scrollIntoView?.({block: 'nearest', behavior: 'smooth'});
                     else removePlanningCsb(csb.id);
                 });
                 const text = planningElement('span', 'plan-picker-text');
@@ -5713,6 +6300,14 @@
         }
         selected.forEach(id => planningEntries.delete(id));
         renderPlanningBlocks();
+    }
+
+    // Un CSB coché seul : on replie les autres et on ne déplie que lui.
+    function openOnlyPlanningCsb(block) {
+        if (!block) return null;
+        for (const entry of planningEntries.values()) entry.block.open = entry.block === block;
+        syncPlanningPicker();
+        return block;
     }
 
     function togglePlanningBlocks() {
@@ -7960,7 +8555,10 @@
             ['Sites suivis', 'ph-globe-hemisphere-east', sites.length, `${sites.filter(site => site.site_type === 'storage').length} magasin(s) · ${sites.filter(site => site.site_type !== 'storage').length} drone port(s)`, ''],
             ['Ruptures', 'ph-warning-octagon', sum('stockouts'), 'Intrants à zéro sur un site', sum('stockouts') ? 'nv-alert' : ''],
             ['Sous le seuil', 'ph-trend-down', sum('below_threshold'), 'Ruptures comprises', sum('below_threshold') ? 'nv-warn' : ''],
-            ['Lots périmés', 'ph-calendar-x', sum('expired_lots'), `${sum('expiring_lots')} autre(s) sous 3 mois`, sum('expired_lots') ? 'nv-alert' : '']
+            ['Lots périmés', 'ph-calendar-x', sum('expired_lots'), `${sum('expiring_lots')} autre(s) sous 3 mois`, sum('expired_lots') ? 'nv-alert' : ''],
+            // CAP livrés aux CSB depuis le 1er janvier (estimation, détail dans l'écran Statistiques).
+            ['CAP livrés', 'ph-shield-check', nationalCyp(data.cyp_year),
+                `aux CSB depuis le ${data.cyp_year_start ? String(data.cyp_year_start).slice(8, 10) + '/' + String(data.cyp_year_start).slice(5, 7) + '/' + String(data.cyp_year_start).slice(0, 4) : '1er janvier'} (estimation)`, 'nv-good']
         ]) {
             const tile = nationalElement('div', `nv-kpi ${tone}`.trim());
             const head = nationalElement('span', 'nv-kpi-label');
@@ -7968,6 +8566,11 @@
             tile.append(head, nationalElement('span', 'nv-kpi-value', String(value)), nationalElement('span', 'nv-kpi-hint', hint));
             kpis.append(tile);
         }
+    }
+
+    // CAP (Couples-Année de Protection) : nombre arrondi à l'unité, séparateurs français.
+    function nationalCyp(value) {
+        return Math.round(Number(value || 0)).toLocaleString('fr-FR');
     }
 
     function requestAnimationFrameSafe(callback) {
@@ -8029,6 +8632,12 @@
                 fact.title = { 'ph-calendar-x': 'Lots périmés encore en stock', 'ph-hourglass-medium': 'Lots qui périment dans les 3 mois', 'ph-airplane-tilt': 'Vols en cours', 'ph-truck': 'Expéditions terrestres en cours' }[icon];
                 fact.append(nationalIcon(icon), nationalElement('b', '', String(value)), nationalElement('span', '', label));
                 facts.append(fact);
+            }
+            if (site.site_type !== 'storage') {
+                const cyp = nationalElement('li', 'nv-cyp');
+                cyp.title = 'Couples-Année de Protection livrés aux CSB depuis le 1er janvier (estimation)';
+                cyp.append(nationalIcon('ph-shield-check'), nationalElement('b', '', nationalCyp(site.cyp_year)), nationalElement('span', '', 'CAP livrés cette année'));
+                facts.append(cyp);
             }
             const open = nationalElement('span', 'nv-open', 'Ouvrir le tableau de bord');
             open.append(nationalIcon('ph-arrow-right'));
@@ -8303,6 +8912,8 @@
             $(receiptId ? 'postgres-salama-form-status' : csbOpen ? 'postgres-csb-form-status' : (portFormOpen || portSaving) ? 'postgres-ports-status' : planningDraft ? 'postgres-plan-form-status' : archiveDraft ? 'postgres-archive-form-status' : flightDraft ? 'postgres-drone-form-status' : shipmentDraft ? 'postgres-sortie-form-status' : inventoryDraft ? 'postgres-inventory-status' : (quarantineDraft || quarantineSaving) ? 'postgres-quarantine-status' : deliveryCloseDraft ? 'postgres-close-delivery-status' : deliveryEditDraft ? 'delivery-edit-status' : 'postgres-product-form-status').textContent = 'Terminez ou annulez la saisie avant de changer de page.';
             return;
         }
+        // Historique : registre des clôtures et sorties d'avant Q.box toujours repliés à l'ouverture de l'écran.
+        if (view === 'history' && activeView !== 'history') collapseHistoryBlocks();
         activeView = view;
         const dashboard = view === 'dashboard';
         const native = nativeViewIds.includes(view);
@@ -8321,7 +8932,7 @@
                 if (group) group.open = true;
             }
         }
-        if (dashboard) refreshDashboard(); else if (view === 'transfers') refreshTransfers(); else if (view === 'products') refreshCatalog(); else if (view === 'csb') refreshCsbs(); else if (view === 'ports') refreshPorts(); else if (['planning', 'archives'].includes(view)) refreshPlanCards(view); else if (view === 'stock-analysis') refreshStockAnalysis(); else if (['drones', 'history', 'sorties'].includes(view)) refreshDeliveries(view); else if (view === 'inventory') refreshInventories(); else if (view === 'quarantine') refreshQuarantines(); else if (view === 'stock-history') refreshStockHistory(); else if (view === 'logistics-report') refreshLogisticsReport(); else if (view === 'national') refreshNationalView(); else if (native) refreshNativeView(view); else refreshReadView();
+        if (dashboard) refreshDashboard(); else if (view === 'transfers') refreshTransfers(); else if (view === 'products') refreshCatalog(); else if (view === 'csb') refreshCsbs(); else if (view === 'ports') refreshPorts(); else if (['planning', 'archives'].includes(view)) refreshPlanCards(view); else if (view === 'stock-analysis') refreshStockAnalysis(); else if (['drones', 'history', 'sorties'].includes(view)) refreshDeliveries(view); else if (view === 'inventory') refreshInventories(); else if (view === 'quarantine') refreshQuarantines(); else if (view === 'stock-history') refreshStockHistory(); else if (view === 'logistics-report') refreshLogisticsReport(); else if (view === 'national') refreshNationalView(); else if (view === 'statistics') refreshDeliveryStats(); else if (native) refreshNativeView(view); else refreshReadView();
     }
 
     const operationSections = {
@@ -8533,9 +9144,29 @@
         $('national-filter-alerts').addEventListener('click', () => setNationalFilter({ alertsOnly: true }));
         $('indicators-export').addEventListener('click', exportPerformanceIndicators);
         // Historique : statistiques de livraison et sorties d'avant Q.box.
-        $('delivery-stats-period').addEventListener('change', refreshDeliveryStats);
+        $('delivery-stats-period').addEventListener('change', changeStatsPeriod);
+        $('delivery-stats-from').addEventListener('change', changeStatsPeriod);
+        $('delivery-stats-to').addEventListener('change', changeStatsPeriod);
+        $('history-closed-from').addEventListener('change', changeHistoryClosedPeriod);
+        $('history-closed-to').addEventListener('change', changeHistoryClosedPeriod);
+        $('history-closed-clear').addEventListener('click', clearHistoryClosedPeriod);
+        $('history-closed-more').addEventListener('click', () => loadClosedFlights(false));
         for (const source of ['all', 'app', 'legacy']) $(`delivery-stats-source-${source}`).addEventListener('click', () => setDeliveryStatsSource(source));
         $('delivery-stats-export').addEventListener('click', exportDeliveryStats);
+        $('delivery-stats-print').addEventListener('click', openDeliveryStatsPrint);
+        $('stats-scope').addEventListener('change', refreshDeliveryStats);
+        $('cyp-populations').addEventListener('click', openPopulations);
+        for (const id of ['population-close', 'population-cancel']) $(id).addEventListener('click', closePopulations);
+        $('population-form').addEventListener('submit', submitPopulations);
+        for (const id of HISTORY_COLLAPSIBLES) $(`${id}-toggle`).addEventListener('click', () => toggleHistoryBlock(id));
+        // Couples-Année de Protection livrés (05-couples-annee-protection.js).
+        $('cyp-include-other').addEventListener('change', refreshCyp);
+        for (const tab of ['products', 'districts', 'destinations']) $(`cyp-tab-${tab}`).addEventListener('click', () => setCypTab(tab));
+        $('cyp-search').addEventListener('input', renderCypTable);
+        $('cyp-export').addEventListener('click', exportCyp);
+        $('cyp-print').addEventListener('click', openCypPrint);
+        $('stats-print-confirm').addEventListener('click', printStats);
+        $('stats-print-close').addEventListener('click', closeStatsPrint);
         $('legacy-deliveries-filters').addEventListener('submit', event => { event.preventDefault(); refreshLegacyDeliveries(true); });
         $('legacy-deliveries-more').addEventListener('click', () => refreshLegacyDeliveries(false));
         $('legacy-deliveries-export').addEventListener('click', exportLegacyDeliveries);
@@ -8557,8 +9188,8 @@
         $('transfer-add').addEventListener('click', addTransferItem);
         $('transfer-destination').addEventListener('change', transferDestinationChanged);
         $('dashboard-storage-link').addEventListener('click', () => selectView('transfers'));
-        setText('auth-network-status', 'version 3.4');
-        setText('auth-version', 'copyright Radoniaina @2026');
+        setText('auth-network-status', 'Test local PostgreSQL');
+        setText('auth-version', 'TEST LOCAL');
         setText('dashboard-live-label', 'Instantané');
         setText('dashboard-fefo-label', 'Lots datés par péremption');
         $('login-username').value = '';
@@ -8776,6 +9407,7 @@
             document.body.classList.remove('report-print-mode');
             document.body.classList.remove('postgres-inventory-print');
             document.body.classList.remove('logistics-report-print-mode');
+            document.body.classList.remove('stats-print-mode');
         });
         setText('history-bl-heading', 'N° BL');
         for (const view of ['drones', 'history', 'sorties']) {
@@ -8812,7 +9444,7 @@
         portSelect.addEventListener('change', () => {
             updateSiteNavigation();
             if (frameConnected) sendFrame({ type: 'qbox-set-port', port: portSelect.value });
-            if (isStorage() && ['planning', 'archives', 'stock-analysis', 'drones', 'history', 'sorties', 'csb'].includes(activeView)) {
+            if (isStorage() && ['planning', 'archives', 'stock-analysis', 'drones', 'history', 'statistics', 'sorties', 'csb'].includes(activeView)) {
                 selectView('dashboard');
                 return;
             }
@@ -8829,6 +9461,7 @@
             else if (activeView === 'stock-history') refreshStockHistory();
             else if (activeView === 'logistics-report') refreshLogisticsReport();
             else if (activeView === 'national') return; // vue indépendante du site sélectionné
+            else if (activeView === 'statistics') refreshDeliveryStats();
             else if (['stocks', 'salama'].includes(activeView)) refreshNativeView(activeView);
             else refreshReadView();
         });

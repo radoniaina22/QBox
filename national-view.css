@@ -75,7 +75,7 @@
     #view-national .nv-kpis {
         grid-column: 1 / -1;
         display: grid;
-        grid-template-columns: auto repeat(4, minmax(0, 1fr));
+        grid-template-columns: auto repeat(5, minmax(0, 1fr));
         gap: .75rem;
         align-items: stretch;
     }
@@ -171,6 +171,8 @@
     #view-national .nv-facts li i { font-size: .9rem; color: var(--qb-faint); }
     #view-national .nv-facts li b { color: var(--qb-text); font-variant-numeric: tabular-nums; }
     #view-national .nv-facts li.nv-hot b, #view-national .nv-facts li.nv-hot i { color: var(--qb-danger); }
+    #view-national .nv-facts li.nv-cyp { grid-column: 1 / -1; }
+    #view-national .nv-facts li.nv-cyp i { color: var(--qb-success); }
     #view-national .nv-open { display: inline-flex; align-items: center; gap: .3rem; color: var(--qb-primary-ink); font-size: .72rem; font-weight: 700; }
     #view-national .nv-site:hover .nv-open i { transform: translateX(3px); }
     #view-national .nv-open i { transition: transform .2s var(--qb-ease); }

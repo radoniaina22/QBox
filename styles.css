@@ -508,6 +508,11 @@ body {
         .stock-print-signature { min-height: 80px; padding: 8px; border: 1px solid #94a3b8; border-radius: 6px; font-size: 10px; font-weight: 700; color: #334155; }
         .planning-print-header .stock-report-organization strong { color: #0f172a; font-size: 11px; }
         #stock-history-print-content h2 { padding-bottom: 5px; border-bottom: 1px solid #cbd5e1; }
+        #stats-print-content h2 { padding-bottom: 5px; border-bottom: 1px solid #cbd5e1; }
+        #stats-print-content > p { margin: 5px 0; color: #475569; }
+        #stats-print-content .stats-print-total { color: #0f172a; font-weight: 700; }
+        #stats-print-content .ds-num { text-align: right; white-space: nowrap; }
+        #stats-print-content .ds-cyp-total td { border-top: 2px solid #0f172a; font-weight: 700; }
         #stock-history-print-content > p { margin: 5px 0; color: #475569; }
         .report-header { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #0f172a; padding-bottom: 12px; }
         .report-logo { width: 110px; height: 48px; object-fit: contain; }
@@ -688,7 +693,8 @@ body {
             body.report-print-mode .report-header,
             body.report-print-mode .report-summary,
             body.report-print-mode .report-chart { break-inside: avoid; }
-            body.stock-history-print-mode {
+            body.stock-history-print-mode,
+            body.stats-print-mode {
                 display: block !important;
                 height: auto !important;
                 overflow: visible !important;
@@ -696,6 +702,8 @@ body {
                 print-color-adjust: exact;
             }
             body.stock-history-print-mode > :not(#stock-history-print-modal) { display: none !important; }
+            body.stats-print-mode > :not(#stats-print-modal) { display: none !important; }
+            body.stats-print-mode #stats-print-modal,
             body.stock-history-print-mode #stock-history-print-modal {
                 display: block !important;
                 position: static !important;
@@ -708,6 +716,10 @@ body {
             body.stock-history-print-mode .report-preview-scroll { overflow: visible; padding: 0; background: white; }
             body.stock-history-print-mode .dashboard-report { max-width: none; padding: 0; box-shadow: none; }
             body.stock-history-print-mode .stock-report-header { break-inside: avoid; }
+            body.stats-print-mode .report-preview-scroll { overflow: visible; padding: 0; background: white; }
+            body.stats-print-mode .dashboard-report { max-width: none; padding: 0; box-shadow: none; }
+            body.stats-print-mode #stats-print-content tr { break-inside: avoid; }
+            body.stats-print-mode #stats-print-content h2 { break-after: avoid; }
             @page {
                 size: A4 portrait;
                 margin: 15mm;

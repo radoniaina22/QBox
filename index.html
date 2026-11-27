@@ -27,16 +27,16 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=52d129f76a">
+    <link rel="stylesheet" href="styles.css?v=f184b78551">
     <link rel="stylesheet" href="modern-theme.css?v=d950f60083">
     <link rel="stylesheet" href="dark-theme.css?v=5c6c497a0a">
     <link rel="stylesheet" href="motion.css?v=1251c2b346">
-    <link rel="stylesheet" href="national-view.css?v=6c99d6819e">
+    <link rel="stylesheet" href="national-view.css?v=12016aaa5e">
     <link rel="stylesheet" href="logistics-report.css?v=2e0cfd87ed">
-    <link rel="stylesheet" href="delivery-stats.css?v=c242a759b3">
+    <link rel="stylesheet" href="delivery-stats.css?v=224edefa54">
     <link rel="stylesheet" href="stock-history.css?v=9af34fe94c">
     <!-- Tailwind compilé (npm run build:assets), chargé en dernier comme l'ancien CDN -->
-    <link rel="stylesheet" href="tailwind.css?v=7828e1c15a">
+    <link rel="stylesheet" href="tailwind.css?v=520e24ddc6">
     <script src="theme-toggle.js?v=f439f0b4ec"></script>
     <script src="app-bootstrap.js?v=85d7a116e6"></script>
 </head>
@@ -171,6 +171,10 @@
                 <button id="nav-national" class="postgres-hidden nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all">
                     <i class="ph ph-globe-hemisphere-east text-base mr-3 shrink-0"></i>
                     <span>Vue nationale</span>
+                </button>
+                <button id="nav-statistics" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all">
+                    <i class="ph ph-chart-bar text-base mr-3 shrink-0"></i>
+                    <span>Statistiques</span>
                 </button>
                 <details class="sidebar-group">
                     <summary>
@@ -1079,6 +1083,75 @@
 
                 <!-- ================= VIEW 8: HISTORIQUE VOLS ================= -->
                 <section id="view-history" class="tab-content hidden space-y-4">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm"><button id="history-closed-toggle" type="button" class="qb-collapse-toggle" aria-expanded="false" aria-controls="history-closed-panel"><i class="ph ph-caret-right" aria-hidden="true"></i>Historique des Livraisons Clôturées<span id="history-closed-count" class="qb-collapse-count"></span></button></h3>
+                                <p class="text-xs text-slate-500">Registre des missions terminées avec réimpression des BL, filtrable par date de clôture</p>
+                            </div>
+                            <button id="delete-missing-csb-history" type="button" class="hidden px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold">
+                                Supprimer les clôtures sans CSB
+                            </button>
+                        </div>
+
+                        <div id="history-closed-panel" hidden>
+                        <div class="ds-filters" role="group" aria-label="Période de clôture">
+                            <label><span>Clôturé du</span><input id="history-closed-from" type="date"></label>
+                            <label><span>au</span><input id="history-closed-to" type="date"></label>
+                            <button id="history-closed-clear" type="button" class="ds-button"><i class="ph ph-x" aria-hidden="true"></i>Toutes les dates</button>
+                        </div>
+                        <p id="postgres-history-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider border-b border-slate-200">
+                                        <th id="history-bl-heading" class="py-3 px-4 font-semibold">N° Drone & BL</th>
+                                        <th class="py-3 px-4 font-semibold">Date Clôture</th>
+                                        <th class="py-3 px-4 font-semibold">CSB Livré</th>
+                                        <th class="py-3 px-4 font-semibold">Intrants Largués</th>
+                                        <th class="py-3 px-4 font-semibold">Statut</th>
+                                        <th class="py-3 px-4 font-semibold text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-table-body" class="divide-y divide-slate-100 text-xs">
+                                    <!-- Rempli en JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="ds-more"><button id="history-closed-more" type="button" class="ds-button" hidden>Afficher plus de vols</button></div>
+                        </div>
+                    </div>
+
+                    <!-- Sorties d'avant Q.box (qbox.legacy_deliveries) : consultation seule, hors stock -->
+                    <section id="legacy-deliveries" class="ds ds-panel ds-legacy no-print" aria-labelledby="legacy-deliveries-title">
+                        <div class="ds-panel-head">
+                            <div class="ds-panel-title"><i class="ph ph-file-xls" aria-hidden="true"></i>
+                                <div><h4 id="legacy-deliveries-title"><button id="legacy-deliveries-toggle" type="button" class="qb-collapse-toggle" aria-expanded="false" aria-controls="legacy-deliveries-panel"><i class="ph ph-caret-right" aria-hidden="true"></i>Sorties avant Q.box<span id="legacy-deliveries-count" class="qb-collapse-count"></span></button> <span class="ds-badge">Hors stock</span></h4>
+                                    <p>Livraisons importées du fichier Excel du drone port, regroupées par BL. Consultation seule : elles ne modifient aucun stock.</p></div></div>
+                            <button id="legacy-deliveries-export" type="button" class="ds-button" disabled><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter CSV</button>
+                        </div>
+                        <div id="legacy-deliveries-panel" hidden>
+                        <form id="legacy-deliveries-filters" class="ds-filters">
+                            <label><span>Du</span><input id="legacy-deliveries-from" type="date"></label>
+                            <label><span>Au</span><input id="legacy-deliveries-to" type="date"></label>
+                            <label><span>Intrant</span><select id="legacy-deliveries-product"><option value="">Tous les intrants</option></select></label>
+                            <label class="ds-filter-search"><span>Recherche</span><input id="legacy-deliveries-search" type="search" placeholder="BL, CSB, district, lot…" autocomplete="off"></label>
+                            <button type="submit" class="ds-button ds-button-primary"><i class="ph ph-funnel" aria-hidden="true"></i>Filtrer</button>
+                        </form>
+                        <p id="legacy-deliveries-status" class="ds-status" role="status" aria-live="polite"></p>
+                        <div class="ds-table-scroll">
+                            <table id="legacy-deliveries-table" class="ds-table">
+                                <thead><tr><th>N° BL</th><th>Date</th><th>Destinataire</th><th>District</th><th>Intrants livrés (lot)</th><th class="ds-num">Quantité</th></tr></thead>
+                                <tbody id="legacy-deliveries-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="ds-more"><button id="legacy-deliveries-more" type="button" class="ds-button" hidden>Afficher plus de BL</button></div>
+                        </div>
+                    </section>
+                </section>
+
+                <!-- Statistiques : livraisons et Couples-Année de Protection (déplacées de l'Historique, 05-statistiques-livraison.js et 05-couples-annee-protection.js) -->
+                <section id="view-statistics" class="tab-content hidden space-y-4">
                     <!-- Statistiques de livraison (style : delivery-stats.css, code : 05-statistiques-livraison.js) -->
                     <div id="delivery-stats" class="ds no-print">
                         <header class="ds-hero">
@@ -1088,7 +1161,7 @@
                             </span></span>
                             <div class="ds-hero-text">
                                 <span class="ds-eyebrow"><i class="ph ph-chart-bar" aria-hidden="true"></i>Statistiques de livraison</span>
-                                <h3>Ce que le drone port a livré</h3>
+                                <h3 id="delivery-stats-heading">Ce que le drone port a livré</h3>
                                 <p class="ds-hero-sub">Vols drone et expéditions terrestres clôturés dans Q.box, et sorties enregistrées avant Q.box (fichier Excel, hors stock).</p>
                                 <p id="delivery-stats-status" role="status" aria-live="polite"></p>
                             </div>
@@ -1098,18 +1171,26 @@
                                 <span id="delivery-stats-total-hint" class="ds-total-hint">unités, tous intrants confondus</span>
                             </div>
                             <div class="ds-controls">
+                                <label id="stats-scope-wrap" class="ds-select" hidden><i class="ph ph-globe-hemisphere-east" aria-hidden="true"></i><span class="sr-only">Sites pris en compte</span>
+                                    <select id="stats-scope"><option value="port">Site sélectionné</option><option value="all">Tous les sites</option></select></label>
                                 <label class="ds-select"><i class="ph ph-calendar-blank" aria-hidden="true"></i><span class="sr-only">Période</span>
                                     <select id="delivery-stats-period">
                                         <option value="all">Tout l’historique</option>
                                         <option value="12m">12 derniers mois</option>
                                         <option value="year">Année en cours</option>
                                         <option value="3m">3 derniers mois</option>
+                                        <option value="custom">Période personnalisée…</option>
                                     </select></label>
+                                <div id="delivery-stats-range" class="ds-range" role="group" aria-label="Période personnalisée" hidden>
+                                    <label><span>Du</span><input id="delivery-stats-from" type="date"></label>
+                                    <label><span>Au</span><input id="delivery-stats-to" type="date"></label>
+                                </div>
                                 <div class="ds-toggle" role="group" aria-label="Origine des livraisons">
                                     <button id="delivery-stats-source-all" type="button" aria-pressed="true">Tout</button>
                                     <button id="delivery-stats-source-app" type="button" aria-pressed="false">Q.box</button>
                                     <button id="delivery-stats-source-legacy" type="button" aria-pressed="false">Avant Q.box</button>
                                 </div>
+                                <button id="delivery-stats-print" type="button" class="ds-hero-button" disabled><i class="ph ph-printer" aria-hidden="true"></i>Imprimer</button>
                             </div>
                             <div id="delivery-stats-kpis" class="ds-kpis"></div>
                             <div id="delivery-stats-mix" class="ds-mix"></div>
@@ -1151,60 +1232,33 @@
                         </section>
                     </div>
 
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                        <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                                <h3 class="font-bold text-slate-900 text-sm">Historique des Livraisons Clôturées</h3>
-                                <p class="text-xs text-slate-500">Registre complet des missions terminées avec réimpression des BL</p>
-                            </div>
-                            <button id="delete-missing-csb-history" type="button" class="hidden px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold">
-                                Supprimer les clôtures sans CSB
-                            </button>
-                        </div>
-
-                        <p id="postgres-history-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse">
-                                <thead>
-                                    <tr class="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider border-b border-slate-200">
-                                        <th id="history-bl-heading" class="py-3 px-4 font-semibold">N° Drone & BL</th>
-                                        <th class="py-3 px-4 font-semibold">Date Clôture</th>
-                                        <th class="py-3 px-4 font-semibold">CSB Livré</th>
-                                        <th class="py-3 px-4 font-semibold">Intrants Largués</th>
-                                        <th class="py-3 px-4 font-semibold">Statut</th>
-                                        <th class="py-3 px-4 font-semibold text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="history-table-body" class="divide-y divide-slate-100 text-xs">
-                                    <!-- Rempli en JS -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- Sorties d'avant Q.box (qbox.legacy_deliveries) : consultation seule, hors stock -->
-                    <section id="legacy-deliveries" class="ds ds-panel ds-legacy no-print" aria-labelledby="legacy-deliveries-title">
+                    <!-- Couples-Année de Protection livrés (qbox_cyp_estimate) : période et origine du bandeau ci-dessus -->
+                    <section id="cyp" class="ds ds-panel ds-cyp" aria-labelledby="cyp-title">
                         <div class="ds-panel-head">
-                            <div class="ds-panel-title"><i class="ph ph-file-xls" aria-hidden="true"></i>
-                                <div><h4 id="legacy-deliveries-title">Sorties avant Q.box <span class="ds-badge">Hors stock</span></h4>
-                                    <p>Livraisons importées du fichier Excel du drone port, regroupées par BL. Consultation seule : elles ne modifient aucun stock.</p></div></div>
-                            <button id="legacy-deliveries-export" type="button" class="ds-button" disabled><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter CSV</button>
+                            <div class="ds-panel-title"><i class="ph ph-shield-check" aria-hidden="true"></i>
+                                <div><h4 id="cyp-title">Couples-Année de Protection (CAP) livrés <span class="ds-badge">Estimation</span></h4>
+                                    <p>Quantités livrées × facteur de conversion standard de la méthode · période et origine choisies en haut de l’écran.</p></div></div>
+                            <div class="ds-cyp-actions">
+                                <label class="ds-cyp-check"><input id="cyp-include-other" type="checkbox">Inclure les sorties vers d’autres sites</label>
+                                <button id="cyp-export" type="button" class="ds-button" disabled><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter CSV</button>
+                                <button id="cyp-print" type="button" class="ds-button" disabled><i class="ph ph-printer" aria-hidden="true"></i>Imprimer</button>
+                            </div>
                         </div>
-                        <form id="legacy-deliveries-filters" class="ds-filters">
-                            <label><span>Du</span><input id="legacy-deliveries-from" type="date"></label>
-                            <label><span>Au</span><input id="legacy-deliveries-to" type="date"></label>
-                            <label><span>Intrant</span><select id="legacy-deliveries-product"><option value="">Tous les intrants</option></select></label>
-                            <label class="ds-filter-search"><span>Recherche</span><input id="legacy-deliveries-search" type="search" placeholder="BL, CSB, district, lot…" autocomplete="off"></label>
-                            <button type="submit" class="ds-button ds-button-primary"><i class="ph ph-funnel" aria-hidden="true"></i>Filtrer</button>
-                        </form>
-                        <p id="legacy-deliveries-status" class="ds-status" role="status" aria-live="polite"></p>
-                        <div class="ds-table-scroll">
-                            <table id="legacy-deliveries-table" class="ds-table">
-                                <thead><tr><th>N° BL</th><th>Date</th><th>Destinataire</th><th>District</th><th>Intrants livrés (lot)</th><th class="ds-num">Quantité</th></tr></thead>
-                                <tbody id="legacy-deliveries-body"></tbody>
-                            </table>
+                        <p id="cyp-status" class="ds-status" role="status" aria-live="polite"></p>
+                        <div id="cyp-summary" class="ds-cyp-summary"></div>
+                        <div id="cyp-months" class="ds-cyp-months"></div>
+                        <div class="ds-cyp-toolbar">
+                            <div class="ds-cyp-tabs" role="tablist" aria-label="Regroupement des CAP">
+                                <button id="cyp-tab-products" type="button" role="tab" aria-selected="true" aria-controls="cyp-table">Par intrant</button>
+                                <button id="cyp-tab-districts" type="button" role="tab" aria-selected="false" aria-controls="cyp-table">Par district</button>
+                                <button id="cyp-tab-destinations" type="button" role="tab" aria-selected="false" aria-controls="cyp-table">Par CSB</button>
+                            </div>
+                            <button id="cyp-populations" type="button" class="ds-button" hidden><i class="ph ph-users-three" aria-hidden="true"></i>Populations des districts</button>
+                            <label id="cyp-search-wrap" class="ds-cyp-field ds-cyp-search" hidden><span class="sr-only">Rechercher un CSB</span>
+                                <i class="ph ph-magnifying-glass" aria-hidden="true"></i><input id="cyp-search" type="search" placeholder="CSB ou district…" autocomplete="off"></label>
                         </div>
-                        <div class="ds-more"><button id="legacy-deliveries-more" type="button" class="ds-button" hidden>Afficher plus de BL</button></div>
+                        <div class="ds-table-scroll"><table id="cyp-table" class="ds-table ds-cyp-table" role="tabpanel"></table></div>
+                        <p id="cyp-unmapped" class="ds-cyp-note"></p>
                     </section>
                 </section>
 
@@ -1403,6 +1457,13 @@
                     <button id="product-gtin-scan" type="button" class="shrink-0 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold flex items-center"><i class="ph ph-barcode mr-1" aria-hidden="true"></i>Scanner</button>
                 </div>
                 <p class="text-[10px] text-slate-500 mt-1">Permet de reconnaître l'intrant en scannant la boîte lors des réceptions et inventaires.</p>
+            </div>
+            <div>
+                <label for="product-cyp-method" class="block text-xs font-semibold text-slate-700 mb-1">Méthode contraceptive (CAP)</label>
+                <select id="product-cyp-method" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-400 bg-white">
+                    <option value="">Non renseignée</option>
+                </select>
+                <p class="text-[10px] text-slate-500 mt-1">Facteur de conversion standard utilisé pour estimer les Couples-Année de Protection livrés (une unité de l'intrant = une unité de la méthode).</p>
             </div>
             </div>
             <div class="p-4 border-t border-slate-100 bg-white shrink-0 space-y-2">
@@ -1793,7 +1854,40 @@
         <div class="report-preview-scroll"><article id="stock-history-print-content" class="dashboard-report"></article></div>
     </div>
 
-    <div id="planning-print-modal" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[95vh] flex flex-col overflow-hidden">
+    <!-- Populations de référence des districts (CAP pour 1 000 femmes) : admin et logistique -->
+    <div id="population-modal" class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[95vh] flex flex-col overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="population-title">
+        <div class="p-4 border-b flex items-center justify-between">
+            <h3 id="population-title" class="font-bold text-sm">Femmes en âge de procréer (15-49 ans) par district</h3>
+            <button id="population-close" type="button" class="px-3 py-2 text-xs" aria-label="Fermer">Fermer</button>
+        </div>
+        <form id="population-form" class="flex flex-col min-h-0">
+            <div class="p-4 overflow-y-auto space-y-3">
+                <p class="text-xs text-slate-500">Sert à calculer les CAP livrés pour 1 000 femmes par district. Laissez l’effectif vide pour effacer la population d’un district.</p>
+                <div class="overflow-x-auto"><table class="w-full text-left text-xs">
+                    <thead><tr class="text-slate-500"><th class="py-2 pr-2">District</th><th class="py-2 pr-2">CSB</th><th class="py-2 pr-2">Femmes 15-49 ans</th><th class="py-2">Année de référence</th></tr></thead>
+                    <tbody id="population-rows"></tbody>
+                </table></div>
+            </div>
+            <div class="p-4 border-t space-y-2">
+                <p id="population-status" class="text-xs text-rose-700" role="status" aria-live="polite"></p>
+                <div class="flex justify-end gap-2">
+                    <button id="population-cancel" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Annuler</button>
+                    <button id="population-submit" type="submit" class="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-bold">Enregistrer</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div id="stats-print-modal"class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[95vh] flex flex-col overflow-hidden">
+        <div class="p-4 border-b flex items-center justify-between no-print">
+            <h3 id="stats-print-title" class="font-bold text-sm">Aperçu avant impression</h3>
+            <div class="flex gap-2"><button id="stats-print-confirm" type="button" class="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold">Imprimer</button>
+                <button id="stats-print-close" type="button" class="px-3 py-2 text-xs" aria-label="Fermer">Fermer</button></div>
+        </div>
+        <div class="report-preview-scroll"><article id="stats-print-content" class="dashboard-report"></article></div>
+    </div>
+
+    <div id="planning-print-modal"class="modal-box fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl bg-white rounded-2xl shadow-2xl z-50 hidden max-h-[95vh] flex flex-col overflow-hidden">
         <div class="p-4 border-b flex items-center justify-between no-print">
             <h3 id="planning-print-title" class="font-bold text-sm">Aperçu des besoins par CSB</h3>
             <div class="flex gap-2">
@@ -1973,6 +2067,6 @@
     <script src="dashboard-notice.js?v=1bdc6e1598"></script>
     <script src="layout-nav.js?v=40b93e2a36"></script>
     <script src="motion.js?v=7bd162fd50"></script>
-    <script src="app-entry.js?v=4d49a4049c"></script>
+    <script src="app-entry.js?v=821f7f0100"></script>
 </body>
 </html>
