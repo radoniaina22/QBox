@@ -94,7 +94,7 @@
         if (remaining > 0) lockedForms.set(id, remaining);
         else lockedForms.delete(id);
     }
-    const nativeViewIds = ['stocks', 'salama', 'products', 'csb', 'ports', 'planning', 'archives', 'stock-analysis', 'drones', 'history', 'sorties', 'inventory', 'quarantine', 'stock-history', 'logistics-report', 'transfers', 'national', 'statistics'];
+    const nativeViewIds = ['stocks', 'salama', 'products', 'csb', 'ports', 'planning', 'archives', 'stock-analysis', 'drones', 'history', 'sorties', 'inventory', 'quarantine', 'stock-history', 'logistics-report', 'transfers', 'national', 'statistics', 'technical'];
     const portSelect = $('drone-port-select');
     const login = $('main-login');
     const notice = $('postgres-dashboard-notice');
@@ -150,7 +150,8 @@
         'stock-analysis': { title: 'Analyse des stocks et de la CMM des CSB' },
         transfers: { title: 'Transferts et expéditions terrestres' },
         national: { title: 'Vue nationale' },
-        statistics: { title: 'Statistiques de livraison' }
+        statistics: { title: 'Statistiques de livraison' },
+        technical: { title: 'Statistiques techniques des vols' }
     };
 
     function setText(id, value) { $(id).textContent = value; }
@@ -267,7 +268,16 @@
         $('drones-groups').replaceChildren();
         $('history-table-body').replaceChildren();
         $('history-closed-count').textContent = '';
+        // Registre des clôtures : résumé, districts et planning en cours propres au compte précédent.
+        $('history-closed-summary').replaceChildren();
+        $('history-closed-district').replaceChildren(dsOption('', 'Tous les districts'));
+        $('history-closed-district').value = '';
+        historyClosedPlanning = null;
+        $('history-closed-preset-planning').disabled = true;
         $('legacy-deliveries-count').textContent = '';
+        // Statistiques techniques : données du compte précédent effacées (la carte est conservée, vide).
+        clearTechnicalStats();
+        $('technical-status').textContent = '';
         cypSequence++;
         clearCyp();
         $('cyp-status').textContent = '';
@@ -2245,13 +2255,24 @@
         { key: 'districts', label: 'Par district' },
         { key: 'destinations', label: 'Par CSB' }
     ];
+    // Familles de méthodes (répartition des CAP) : ordre et couleur fixes (classe ds-cyp-f-<clé>, delivery-stats.css),
+    // une famille garde sa couleur quel que soit son rang. Longue durée = implants et DIU.
+    const CYP_FAMILIES = [
+        { key: 'implant', label: 'Implants', long: true, match: code => code.startsWith('implant') },
+        { key: 'iud', label: 'DIU', long: true, match: code => code.startsWith('iud') },
+        { key: 'injectable', label: 'Injectables', match: code => code.startsWith('injectable') },
+        { key: 'pill', label: 'Pilules', match: code => ['coc', 'pop', 'emergency'].includes(code) },
+        { key: 'condom', label: 'Préservatifs', match: code => code === 'condom' },
+        { key: 'other', label: 'Autres méthodes', match: () => true }
+    ];
     let cypSequence = 0;
     let cypState = null;
     let cypTab = 'products';
     let statsPrintOpen = false;
 
     function cypValue(value) {
-        return Number(value || 0).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+        // Espace insécable ordinaire : l'espace fine (U+202F) n'est pas dessinée par la police des grands chiffres.
+        return Number(value || 0).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).replace(/ /g, ' ');
     }
 
     function cypFactor(value) {
@@ -2262,9 +2283,13 @@
         return total > 0 ? dsPercent(Number(part || 0), total) : '—';
     }
 
+    function cypFamily(code) {
+        return CYP_FAMILIES.find(family => family.match(String(code || ''))) || CYP_FAMILIES.at(-1);
+    }
+
     function clearCyp() {
         cypState = null;
-        for (const id of ['cyp-summary', 'cyp-months', 'cyp-table', 'cyp-unmapped']) $(id).replaceChildren();
+        for (const id of ['cyp-summary', 'cyp-months', 'cyp-methods', 'cyp-table', 'cyp-unmapped']) $(id).replaceChildren();
         $('cyp-export').disabled = true;
         $('cyp-print').disabled = true;
     }
@@ -2301,8 +2326,9 @@
     function renderCyp() {
         const { data } = cypState;
         const totals = data.totals || {};
-        renderCypSummary(totals);
+        renderCypSummary(totals, data.months || []);
         renderCypMonths(data.months || []);
+        renderCypMethods(data.products || [], Number(totals.cyp || 0));
         renderCypTable();
         const unmapped = data.unmapped || [];
         const note = $('cyp-unmapped');
@@ -2315,38 +2341,129 @@
         $('cyp-print').disabled = empty;
     }
 
-    function renderCypSummary(totals) {
-        const kpi = (icon, label, value, hint, main = false) => {
-            const card = dsElement('div', main ? 'ds-cyp-kpi ds-cyp-kpi-main' : 'ds-cyp-kpi');
+    function cypCardHead(icon, title, text) {
+        const head = dsElement('div', 'ds-cyp-card-head');
+        const label = dsElement('div');
+        label.append(dsElement('h5', '', title), dsElement('p', '', text));
+        head.append(dsIcon(icon), label);
+        return head;
+    }
+
+    function renderCypSummary(totals, months) {
+        const kpi = (icon, tone, label, value, hint) => {
+            const card = dsElement('div', `ds-cyp-kpi ds-cyp-tone-${tone}`);
             const head = dsElement('span', 'ds-cyp-kpi-label');
             head.append(dsIcon(icon), dsElement('span', '', label));
             card.append(head, dsElement('strong', 'ds-cyp-kpi-value', value), dsElement('span', 'ds-cyp-kpi-hint', hint));
             return card;
         };
-        const period = totals.first_date ? `du ${dsDate(totals.first_date)} au ${dsDate(totals.last_date)}` : 'aucune livraison comptée';
-        $('cyp-summary').replaceChildren(
-            kpi('ph-shield-check', 'CAP livrés (estimation)', cypValue(totals.cyp), period, true),
-            kpi('ph-first-aid-kit', cypState.csbOnly ? 'CSB desservis' : 'Destinataires', dsNumber(totals.destinations), `${dsNumber(totals.deliveries)} livraison(s)`),
-            kpi('ph-map-pin-area', 'Districts', dsNumber(totals.districts), 'couverts sur la période'),
-            kpi('ph-pill', 'Intrants comptés', dsNumber(totals.products), 'méthodes contraceptives'));
+        const period = totals.first_date ? `Du ${dsDate(totals.first_date)} au ${dsDate(totals.last_date)}` : 'Aucune livraison comptée';
+        const main = dsElement('div', 'ds-cyp-kpi ds-cyp-kpi-main');
+        const head = dsElement('span', 'ds-cyp-kpi-label');
+        head.append(dsIcon('ph-shield-check'), dsElement('span', '', 'CAP livrés (estimation)'));
+        const value = dsElement('strong', 'ds-cyp-kpi-value', cypValue(totals.cyp));
+        value.append(dsElement('small', '', 'CAP'));
+        main.append(head, value, dsElement('span', 'ds-cyp-kpi-hint', period));
+        const active = months.filter(month => Number(month.cyp) > 0);
+        if (active.length) {
+            const average = active.reduce((sum, month) => sum + Number(month.cyp), 0) / active.length;
+            main.append(dsElement('span', 'ds-cyp-kpi-pill', `≈ ${cypValue(average)} CAP par mois livré (${active.length} mois)`));
+        }
+        $('cyp-summary').replaceChildren(main,
+            kpi('ph-first-aid-kit', 'blue', cypState.csbOnly ? 'CSB desservis' : 'Destinataires', dsNumber(totals.destinations), `${dsNumber(totals.deliveries)} livraison(s)`),
+            kpi('ph-map-pin-area', 'violet', 'Districts', dsNumber(totals.districts), 'couverts sur la période'),
+            kpi('ph-pill', 'amber', 'Intrants comptés', dsNumber(totals.products), 'avec une méthode contraceptive'));
     }
 
     function renderCypMonths(months) {
         const container = $('cyp-months');
-        if (!months.length) return;
-        const max = Math.max(...months.map(month => Number(month.cyp) || 0), 0);
-        const list = dsElement('ol', 'ds-cyp-bars');
+        const values = months.map(month => Number(month.cyp) || 0);
+        const max = Math.max(...values, 0);
+        container.append(cypCardHead('ph-chart-bar', 'Évolution mensuelle', 'CAP livrés chaque mois · survolez une barre pour la valeur.'));
+        if (!months.length || max <= 0) {
+            container.append(dsElement('p', 'ds-empty', 'Aucun CAP livré sur cette période.'));
+            return;
+        }
+        const active = values.filter(value => value > 0);
+        const average = active.reduce((sum, value) => sum + value, 0) / active.length;
+        const best = values.indexOf(max);
+        const chart = dsElement('div', 'ds-cyp-chart');
+        const axis = dsElement('div', 'ds-cyp-axis');
+        axis.setAttribute('aria-hidden', 'true');
+        for (const ratio of [1, .5]) {
+            const tick = dsElement('span', 'ds-cyp-tick', cypValue(max * ratio));
+            tick.style.bottom = `${ratio * 100}%`;
+            axis.append(tick);
+        }
+        const mean = dsElement('span', 'ds-cyp-mean');
+        mean.append(dsElement('span', '', `Moyenne ${cypValue(average)}`));
+        mean.style.bottom = `${average * 100 / max}%`;
+        axis.append(mean);
+        const list = dsElement('ol', months.length > 12 ? 'ds-cyp-bars ds-cyp-bars-dense' : 'ds-cyp-bars');
         list.setAttribute('aria-label', 'CAP livrés par mois');
-        for (const month of months) {
-            const item = dsElement('li', 'ds-cyp-bar');
-            item.title = `${dsMonth(month.month, true)} : ${cypValue(month.cyp)} CAP`;
+        months.forEach((month, index) => {
+            const item = dsElement('li', index === best ? 'ds-cyp-bar ds-cyp-bar-best' : 'ds-cyp-bar');
+            const label = `${dsMonth(month.month, true)} : ${cypValue(month.cyp)} CAP`;
+            item.title = label;
+            item.tabIndex = 0;
+            item.setAttribute('aria-label', label);
             const bar = dsElement('span', 'ds-cyp-bar-fill');
-            bar.style.height = `${max > 0 ? Math.max(2, Number(month.cyp) * 100 / max) : 0}%`;
-            // Une étiquette sur trois est affichée (CSS) : toujours avec l'année pour rester lisible.
-            item.append(bar, dsElement('span', 'ds-cyp-bar-label', `${dsMonth(month.month)} ${String(month.month).slice(2, 4)}`));
+            bar.style.height = `${values[index] > 0 ? Math.max(2, values[index] * 100 / max) : 0}%`;
+            const tip = dsElement('span', 'ds-cyp-bar-tip');
+            tip.append(dsElement('b', '', cypValue(month.cyp)), dsElement('span', '', dsMonth(month.month, true)));
+            tip.setAttribute('aria-hidden', 'true');
+            const track = dsElement('span', 'ds-cyp-bar-track');
+            track.append(bar, tip);
+            // Étiquettes : toutes jusqu'à 12 mois, sinon une sur trois (CSS), toujours avec l'année.
+            item.append(track, dsElement('span', 'ds-cyp-bar-label', `${dsMonth(month.month)} ${String(month.month).slice(2, 4)}`));
+            list.append(item);
+        });
+        chart.append(axis, list);
+        const foot = dsElement('p', 'ds-cyp-chart-foot');
+        foot.append(dsIcon('ph-trophy'), dsElement('span', '', `Meilleur mois : ${dsMonth(months[best].month, true)} (${cypValue(max)} CAP)`));
+        container.append(chart, foot);
+    }
+
+    // Répartition des CAP par famille de méthodes : barre segmentée, légende avec valeurs, part de longue durée.
+    function renderCypMethods(products, total) {
+        const container = $('cyp-methods');
+        container.append(cypCardHead('ph-chart-pie-slice', 'Répartition par méthode', 'Part des CAP livrés par famille de méthodes contraceptives.'));
+        const groups = new Map();
+        for (const product of products) {
+            const family = cypFamily(product.method);
+            const group = groups.get(family.key) || { family, cyp: 0, names: [] };
+            group.cyp += Number(product.cyp || 0);
+            group.names.push(product.name);
+            groups.set(family.key, group);
+        }
+        const rows = CYP_FAMILIES.map(family => groups.get(family.key)).filter(group => group && group.cyp > 0);
+        if (!rows.length || total <= 0) {
+            container.append(dsElement('p', 'ds-empty', 'Aucun CAP livré sur cette période.'));
+            return;
+        }
+        const bar = dsElement('div', 'ds-cyp-mix');
+        bar.setAttribute('aria-hidden', 'true');
+        const list = dsElement('ul', 'ds-cyp-mix-keys');
+        for (const group of rows) {
+            const segment = dsElement('span', `ds-cyp-seg ds-cyp-f-${group.family.key}`);
+            segment.style.flexGrow = String(group.cyp);
+            segment.title = `${group.family.label} : ${cypValue(group.cyp)} CAP (${dsPercent(group.cyp, total)})`;
+            bar.append(segment);
+            const item = dsElement('li', `ds-cyp-mix-key ds-cyp-f-${group.family.key}`);
+            item.title = group.names.join(', ');
+            const name = dsElement('span', 'ds-cyp-mix-name');
+            name.append(dsElement('i', 'ds-cyp-swatch'), dsElement('span', '', group.family.label));
+            const meter = dsElement('span', 'ds-cyp-mix-meter');
+            const fill = dsElement('i');
+            fill.style.width = `${Math.min(100, group.cyp * 100 / total)}%`;
+            meter.append(fill);
+            item.append(name, meter, dsElement('b', '', cypValue(group.cyp)), dsElement('span', 'ds-cyp-mix-share', dsPercent(group.cyp, total)));
             list.append(item);
         }
-        container.append(dsElement('p', 'ds-cyp-bars-title', 'Évolution mensuelle des CAP livrés'), list);
+        const long = rows.filter(group => group.family.long).reduce((sum, group) => sum + group.cyp, 0);
+        const note = dsElement('p', 'ds-cyp-chart-foot');
+        note.append(dsIcon('ph-hourglass-medium'), dsElement('span', '', `Méthodes de longue durée (implants, DIU) : ${dsPercent(long, total)} des CAP`));
+        container.append(bar, list, note);
     }
 
     function setCypTab(key) {
@@ -2363,7 +2480,8 @@
         if (key === 'products') {
             return {
                 head: ['Intrant', 'Méthode', 'Facteur (CAP / unité)', 'Quantité livrée', 'CAP', 'Part'],
-                rows: (data.products || []).map(item => [item.name, item.method_label || '—', cypFactor(item.factor),
+                rows: (data.products || []).map(item => [item.name,
+                    { text: item.method_label || '—', family: cypFamily(item.method).key }, cypFactor(item.factor),
                     `${dsNumber(item.quantity)}${item.unit ? ` ${item.unit}` : ''}`, cypValue(item.cyp), cypShare(item.cyp, total)]),
                 numeric: [2, 3, 4], total
             };
@@ -2409,6 +2527,11 @@
                     fill.style.width = value === '—' ? '0%' : `${Math.min(100, Number(String(value).replace(/[^\d,]/g, '').replace(',', '.')) || 0)}%`;
                     bar.append(fill);
                     cell.append(bar, dsElement('span', '', value));
+                } else if (value && typeof value === 'object') {
+                    // Méthode : pastille de la famille (même couleur que la répartition) puis libellé.
+                    const chip = dsElement('span', `ds-cyp-method ds-cyp-f-${value.family}`);
+                    chip.append(dsElement('i', 'ds-cyp-swatch'), dsElement('span', '', value.text));
+                    cell.append(chip);
                 } else cell.textContent = value;
                 if (index === 0) cell.className = 'ds-cyp-name';
                 tr.append(cell);
@@ -2827,6 +2950,12 @@
         });
         tr.children[0].className += ' font-mono font-bold';
         tr.children[2].className += ' font-bold text-slate-900';
+        tr.append(deliveryActionsCell(view, entry));
+        return tr;
+    }
+
+    // Cellule « Actions » d'une ligne du registre des clôtures ou des expéditions terrestres.
+    function deliveryActionsCell(view, entry) {
         const cell = document.createElement('td');
         cell.className = 'py-3 px-4 text-right';
         cell.dataset.label = 'Actions';
@@ -2877,8 +3006,139 @@
         history.className = 'mt-2 text-right';
         appendDeliveryHistory(history, view, entry.id, DELIVERY_BUTTON.secondary);
         cell.append(history);
-        tr.append(cell);
+        return cell;
+    }
+
+    // ---------- Registre des clôtures : une ligne par vol, intrants regroupés par produit (lots en étiquettes) ----------
+    const HC_WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+
+    function hcToday() {
+        return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Indian/Antananarivo' }).format(new Date());
+    }
+
+    // Écart en jours entre deux dates ISO (AAAA-MM-JJ), sans fuseau.
+    function hcDaysBetween(from, to) {
+        return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
+    }
+
+    function hcRelative(day) {
+        const days = hcDaysBetween(day, hcToday());
+        if (!Number.isFinite(days)) return '';
+        if (days <= 0) return 'aujourd’hui';
+        if (days === 1) return 'hier';
+        if (days < 7) return `il y a ${days} jours`;
+        if (days < 60) return `il y a ${Math.round(days / 7)} sem.`;
+        if (days < 730) return `il y a ${Math.round(days / 30.4)} mois`;
+        return `il y a ${Math.floor(days / 365)} ans`;
+    }
+
+    // Départ du vol : « 27/11/2026 à 09:00 » (heure de Madagascar, sans les secondes).
+    function hcDeparture(value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '';
+        const day = date.toLocaleDateString('fr-FR', { timeZone: 'Indian/Antananarivo' });
+        const time = date.toLocaleTimeString('fr-FR', { timeZone: 'Indian/Antananarivo', hour: '2-digit', minute: '2-digit' });
+        return `${day} à ${time}`;
+    }
+
+    function hcLongDate(day) {
+        const date = new Date(`${day}T00:00:00Z`);
+        if (Number.isNaN(date.getTime())) return String(day || '—');
+        const text = `${HC_WEEKDAYS[date.getUTCDay()]} ${date.getUTCDate()} ${DS_MONTHS_LONG[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+        return text.charAt(0).toUpperCase() + text.slice(1);
+    }
+
+    // Intrants d'un vol regroupés par produit : quantité totale, lots et péremption.
+    function hcProducts(items) {
+        const products = new Map();
+        for (const item of items || []) {
+            const key = item.product_id || item.product_name;
+            const product = products.get(key) || { name: item.product_name || item.name || 'Intrant', unit: item.unit || '', quantity: 0, lots: [] };
+            product.quantity += Number(item.quantity || 0);
+            product.lots.push(item);
+            products.set(key, product);
+        }
+        return [...products.values()];
+    }
+
+    function hcCargo(items) {
+        const products = hcProducts(items);
+        const list = deliveryElement('ul', 'hc-cargo');
+        if (!products.length) {
+            list.append(deliveryElement('li', 'hc-cargo-empty', 'Aucun détail'));
+            return list;
+        }
+        for (const product of products) {
+            const item = deliveryElement('li', 'hc-cargo-item');
+            const head = deliveryElement('div', 'hc-cargo-head');
+            const quantity = deliveryElement('span', 'hc-qty');
+            quantity.append(deliveryElement('b', '', number(product.quantity)));
+            if (product.unit) quantity.append(deliveryElement('small', '', product.unit));
+            head.append(deliveryElement('span', 'hc-cargo-name', product.name), quantity);
+            const lots = deliveryElement('div', 'hc-lots');
+            for (const lot of product.lots) {
+                const chip = deliveryElement('span', 'hc-lot', `Lot ${lot.lot || '—'}`);
+                const details = [`Lot ${lot.lot || '—'} : ${number(lot.quantity)}${product.unit ? ` ${product.unit}` : ''}`];
+                if (lot.expiry_date) details.push(`péremption ${dsDate(lot.expiry_date)}`);
+                chip.title = details.join(' · ');
+                if (product.lots.length > 1) chip.append(deliveryElement('em', '', number(lot.quantity)));
+                lots.append(chip);
+            }
+            item.append(head, lots);
+            list.append(item);
+        }
+        if (products.length > 1) {
+            const total = products.reduce((sum, product) => sum + product.quantity, 0);
+            list.append(deliveryElement('li', 'hc-cargo-total', `${products.length} intrants · ${number(total)} unités au total`));
+        }
+        return list;
+    }
+
+    function closedFlightRow(entry) {
+        const tr = deliveryElement('tr', entry.status === 'Annulé' ? 'hc-row hc-row-cancelled' : 'hc-row');
+        const cell = (label, className = '') => { const td = deliveryElement('td', className); td.dataset.label = label; tr.append(td); return td; };
+        const bl = cell('N° BL', 'hc-bl');
+        bl.append(deliveryElement('span', 'hc-bl-code', entry.bl));
+        if (entry.planning_code) {
+            const planning = deliveryElement('span', 'hc-planning');
+            planning.append(dsIcon('ph-clipboard-text'), deliveryElement('span', '', entry.planning_code));
+            bl.append(planning);
+        }
+        const date = cell('Clôture', 'hc-date');
+        if (entry.closed_date) {
+            // Le jour relatif est déjà dans le séparateur : on montre plutôt le départ du vol.
+            date.append(deliveryElement('b', '', dsDate(entry.closed_date)));
+            if (entry.departed_at) date.append(deliveryElement('span', '', `départ ${hcDeparture(entry.departed_at)}`));
+        } else {
+            date.append(deliveryElement('b', 'hc-muted', 'Non renseignée'));
+            if (entry.departed_at) date.append(deliveryElement('span', '', `départ le ${hcDeparture(entry.departed_at)}`));
+        }
+        const csb = cell('CSB livré', 'hc-csb');
+        csb.append(deliveryElement('b', '', entry.csb_name || '—'));
+        if (entry.district) {
+            const district = deliveryElement('span', 'hc-district-chip');
+            district.append(dsIcon('ph-map-pin'), deliveryElement('span', '', entry.district));
+            csb.append(district);
+        }
+        cell('Intrants largués', 'hc-cargo-cell').append(hcCargo(entry.items));
+        cell('Statut', 'hc-status-cell').append(deliveryStatusBadge(entry.status));
+        tr.append(deliveryActionsCell('history', entry));
         return tr;
+    }
+
+    // Séparateur de jour (ligne fusionnée) : « Lundi 24 novembre 2026 · 3 vols », compteur mis à jour en pagination.
+    function closedDaySeparator(day) {
+        const tr = deliveryElement('tr', 'hc-day');
+        const td = deliveryElement('td');
+        td.colSpan = 6;
+        const label = deliveryElement('span', 'hc-day-label');
+        label.append(dsIcon('ph-calendar-check'), deliveryElement('b', '', hcLongDate(day)));
+        const count = deliveryElement('span', 'hc-day-count');
+        const relative = hcRelative(day);
+        if (relative) label.append(deliveryElement('span', 'hc-day-relative', relative));
+        td.append(label, count);
+        tr.append(td);
+        return { element: tr, count, flights: 0 };
     }
 
     async function refreshDeliveries(view, { keepLegacy = false } = {}) {
@@ -2926,8 +3186,11 @@
         const port = portSelect.value, requestGeneration = sessionGeneration;
         const container = $('history-table-body'), message = $('postgres-history-status'), more = $('history-closed-more');
         if (reset) {
-            historyClosedState = { port, period: historyClosedPeriod(), offset: 0 };
+            // Un autre site : le district choisi n'y existe sans doute pas, on repart de « Tous les districts ».
+            if (historyClosedState && historyClosedState.port !== port) resetHistoryClosedDistrict();
+            historyClosedState = { port, period: historyClosedPeriod(), district: $('history-closed-district').value || null, offset: 0, day: null };
             container.replaceChildren();
+            $('history-closed-summary').replaceChildren();
             $('history-closed-count').textContent = '';
         }
         const state = historyClosedState;
@@ -2940,19 +3203,35 @@
         try {
             const data = await api('/rest/v1/rpc/qbox_list_closed_flights', {
                 selected_port: port, from_date: state.period.from, to_date: state.period.to,
-                page_limit: CLOSED_PAGE_SIZE, page_offset: state.offset
+                page_limit: CLOSED_PAGE_SIZE, page_offset: state.offset, district_filter: state.district
             }, true);
             if (state !== historyClosedState || sequence !== closedSequence || activeView !== 'history' || port !== portSelect.value || sessionGeneration !== requestGeneration) return;
             const rows = data.rows || [];
-            for (const entry of rows) container.append(deliveryTableRow('history', entry));
+            if (!state.offset) {
+                applyHistoryClosedMeta(data);
+                renderHistoryClosedSummary(data.summary);
+            }
+            for (const entry of rows) {
+                const day = entry.day || entry.closed_date || String(entry.departed_at || '').slice(0, 10);
+                if (!state.day || state.day.key !== day) {
+                    state.day = { key: day, ...closedDaySeparator(day) };
+                    container.append(state.day.element);
+                }
+                state.day.flights += 1;
+                state.day.count.textContent = `${state.day.flights} vol${state.day.flights > 1 ? 's' : ''}`;
+                container.append(closedFlightRow(entry));
+            }
             state.offset += rows.length;
             const total = Number(data.total || 0);
-            const filtered = Boolean(state.period.from || state.period.to);
-            if (!state.offset) container.append(emptyTableRow(filtered ? 'Aucun vol clôturé sur cette période.' : 'Aucun vol dans l’historique.', 6));
+            const filtered = Boolean(state.period.from || state.period.to || state.district);
+            if (!state.offset) container.append(emptyTableRow(filtered ? 'Aucun vol clôturé pour ces filtres.' : 'Aucun vol dans l’historique.', 6));
             more.hidden = state.offset >= total;
+            if (!more.hidden) more.replaceChildren(dsIcon('ph-arrow-down'), deliveryElement('span', '',
+                `Afficher ${number(Math.min(CLOSED_PAGE_SIZE, total - state.offset))} vols de plus (${number(total - state.offset)} restants)`));
             $('history-closed-count').textContent = `${number(total)} vol(s)`;
+            const scope = [state.period.from || state.period.to ? state.period.label : '', state.district ? `District ${state.district}` : ''].filter(Boolean).join(' · ');
             message.textContent = `${state.offset < total ? `${number(state.offset)} affiché(s) sur ` : ''}${number(total)} vol(s)`
-                + `${filtered ? ` · ${state.period.label}` : ''} · Actualisé le ${localDateTime(new Date())} (heure de Madagascar).`;
+                + `${scope ? ` · ${scope}` : ''} · Actualisé le ${localDateTime(new Date())} (heure de Madagascar).`;
         } catch (error) {
             if (state === historyClosedState && sequence === closedSequence && activeView === 'history' && sessionGeneration === requestGeneration)
                 message.textContent = `Lecture indisponible : ${error.message}`;
@@ -3930,25 +4209,155 @@
         return dsPeriod($('delivery-stats-period').value);
     }
 
-    // Période du registre des livraisons clôturées (écran Historique) : dates Du/Au propres au registre.
+    // ---------- Registre des livraisons clôturées (écran Historique) : période, district et résumé ----------
+    // Raccourcis de période : ils remplissent les dates Du/Au, qui restent modifiables (une saisie passe en
+    // « Personnalisée »). « Planning actif » = dates du planning en cours du site (renvoyé par qbox_list_closed_flights).
+    const HISTORY_CLOSED_PRESETS = ['all', 'week', 'month', 'year', 'planning', 'custom'];
+    const HISTORY_CLOSED_PRESET_LABELS = { week: 'Semaine en cours', month: 'Mois en cours', year: 'Année en cours' };
+    let historyClosedPreset = 'all';
+    let historyClosedPlanning = null;
+
     function historyClosedPeriod() {
         const from = $('history-closed-from').value || null, to = $('history-closed-to').value || null;
         if (from && to && from > to) return { from, to, error: 'La date de début doit précéder la date de fin.' };
-        const label = from && to ? `Du ${dsDate(from)} au ${dsDate(to)}`
+        const range = from && to ? `Du ${dsDate(from)} au ${dsDate(to)}`
             : from ? `Depuis le ${dsDate(from)}` : to ? `Jusqu’au ${dsDate(to)}` : 'Tout l’historique';
-        return { from, to, label };
+        const name = historyClosedPreset === 'planning' && historyClosedPlanning ? `Planning ${historyClosedPlanning.code}`
+            : HISTORY_CLOSED_PRESET_LABELS[historyClosedPreset];
+        return { from, to, label: name && (from || to) ? `${name} (${range.charAt(0).toLowerCase()}${range.slice(1)})` : range };
     }
 
-    function changeHistoryClosedPeriod() {
+    function historyClosedPresetRange(preset) {
+        const today = dsToday();
+        const [year, month, day] = today.split('-').map(Number);
+        if (preset === 'week') {
+            // Semaine du lundi au jour même.
+            const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+            return { from: new Date(Date.UTC(year, month - 1, day - ((weekday + 6) % 7))).toISOString().slice(0, 10), to: today };
+        }
+        if (preset === 'month') return { from: `${today.slice(0, 8)}01`, to: today };
+        if (preset === 'year') return { from: `${year}-01-01`, to: today };
+        if (preset === 'planning' && historyClosedPlanning) return { from: historyClosedPlanning.start_date, to: historyClosedPlanning.end_date };
+        return { from: '', to: '' };
+    }
+
+    function dsToday() {
+        return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Indian/Antananarivo' }).format(new Date());
+    }
+
+    function markHistoryClosedPreset(preset) {
+        historyClosedPreset = preset;
+        for (const key of HISTORY_CLOSED_PRESETS) $(`history-closed-preset-${key}`).setAttribute('aria-pressed', String(key === preset));
+    }
+
+    function syncHistoryClosedBounds() {
         $('history-closed-to').min = $('history-closed-from').value || '';
         $('history-closed-from').max = $('history-closed-to').value || '';
+    }
+
+    function selectHistoryClosedPreset(preset) {
+        if (preset === 'planning' && !historyClosedPlanning) return;
+        markHistoryClosedPreset(preset);
+        if (preset === 'custom') {
+            // Personnalisée : garde les dates affichées et place le curseur sur « Du ».
+            $('history-closed-from').focus?.();
+            return;
+        }
+        const range = historyClosedPresetRange(preset);
+        $('history-closed-from').value = range.from;
+        $('history-closed-to').value = range.to;
+        syncHistoryClosedBounds();
         refreshDeliveries('history', { keepLegacy: true });
+    }
+
+    // Saisie manuelle des dates : période personnalisée (ou « Tout » si les deux dates sont vides).
+    function changeHistoryClosedPeriod() {
+        const empty = !$('history-closed-from').value && !$('history-closed-to').value;
+        markHistoryClosedPreset(empty ? 'all' : 'custom');
+        syncHistoryClosedBounds();
+        refreshDeliveries('history', { keepLegacy: true });
+    }
+
+    function changeHistoryClosedDistrict() {
+        refreshDeliveries('history', { keepLegacy: true });
+    }
+
+    function resetHistoryClosedDistrict() {
+        $('history-closed-district').value = '';
     }
 
     function clearHistoryClosedPeriod() {
         $('history-closed-from').value = '';
         $('history-closed-to').value = '';
+        resetHistoryClosedDistrict();
         changeHistoryClosedPeriod();
+    }
+
+    // Districts du site et planning en cours, renvoyés avec la première page.
+    function applyHistoryClosedMeta(data) {
+        const select = $('history-closed-district');
+        const current = select.value;
+        const options = [dsOption('', 'Tous les districts')];
+        for (const item of data.districts || []) options.push(dsOption(item.district, `${item.district} (${item.flights})`));
+        if (current && !(data.districts || []).some(item => item.district === current)) options.push(dsOption(current, current));
+        select.replaceChildren(...options);
+        select.value = current;
+        historyClosedPlanning = data.active_planning || null;
+        const button = $('history-closed-preset-planning');
+        button.disabled = !historyClosedPlanning;
+        button.title = historyClosedPlanning
+            ? `${historyClosedPlanning.code} : du ${dsDate(historyClosedPlanning.start_date)} au ${dsDate(historyClosedPlanning.end_date)}`
+            : 'Aucun planning en cours sur ce site';
+    }
+
+    function dsOption(value, label) {
+        const option = dsElement('option', '', label);
+        option.value = value;
+        return option;
+    }
+
+    // Résumé de la sélection : vols, unités larguées, CSB et districts, intrants les plus largués.
+    function renderHistoryClosedSummary(summary) {
+        const container = $('history-closed-summary');
+        if (!summary || !Number(summary.flights || 0) && !Number(summary.cancelled || 0)) { container.replaceChildren(); return; }
+        const tile = (icon, tone, label, value, hint) => {
+            const card = dsElement('div', `hc-tile hc-tone-${tone}`);
+            const head = dsElement('span', 'hc-tile-label');
+            head.append(dsIcon(icon), dsElement('span', '', label));
+            card.append(head, dsElement('strong', '', value), dsElement('span', 'hc-tile-hint', hint));
+            return card;
+        };
+        const cancelled = Number(summary.cancelled || 0);
+        const span = summary.first_day ? (summary.first_day === summary.last_day ? `le ${dsDate(summary.first_day)}`
+            : `du ${dsDate(summary.first_day)} au ${dsDate(summary.last_day)}`) : '';
+        const tiles = dsElement('div', 'hc-tiles');
+        tiles.append(
+            tile('ph-drone', 'blue', 'Vols clôturés', dsNumber(summary.flights), cancelled ? `+ ${dsNumber(cancelled)} annulé(s) · ${span}` : span),
+            tile('ph-package', 'green', 'Unités larguées', dsNumber(summary.units), `${dsNumber(summary.products)} intrant(s) différent(s)`),
+            tile('ph-first-aid-kit', 'violet', 'CSB livrés', dsNumber(summary.csbs), `${dsNumber(summary.districts)} district(s)`));
+        const top = summary.top || [];
+        const parts = [tiles];
+        if (top.length) {
+            const box = dsElement('div', 'hc-top');
+            box.append(dsElement('p', 'hc-top-title', 'Intrants les plus largués'));
+            const list = dsElement('ol', 'hc-top-list');
+            const max = Math.max(...top.map(item => Number(item.quantity) || 0), 1);
+            for (const item of top) {
+                const li = dsElement('li');
+                li.title = `${item.name} : ${dsNumber(item.quantity)}${item.unit ? ` ${item.unit}` : ''} en ${dsNumber(item.flights)} vol(s)`;
+                const bar = dsElement('span', 'hc-top-bar');
+                const fill = dsElement('i');
+                fill.style.width = `${Math.max(3, Number(item.quantity) * 100 / max)}%`;
+                bar.append(fill);
+                const value = dsElement('b', '', dsNumber(item.quantity));
+                if (item.unit) value.append(dsElement('small', '', item.unit));
+                li.append(dsElement('span', 'hc-top-name', item.name), bar, value);
+                list.append(li);
+            }
+            box.append(list);
+            parts.push(box);
+        }
+        container.replaceChildren(...parts);
     }
 
     // Blocs dépliables de l'écran Historique (registre des clôtures, sorties d'avant Q.box) : repliés à chaque
@@ -7860,6 +8269,581 @@
         QBoxScanner.open({ title: 'Scanner un lot inventorié', onResult: parsed => applyInventoryScan(parsed) });
     }
 
+    // ---------- Statistiques techniques des vols drone — style : technical-stats.css (préfixe ts-) ----------
+    // Données : qbox_technical_statistics (copie nocturne, en lecture seule, de la base de l'application de
+    // maintenance des pilotes). Tous les drone ports à la fois, comme la vue nationale ; grand total du projet
+    // (tout l'historique) en haut, puis la période choisie (raccourcis ou dates Du/Au).
+    // Seules les livraisons réussies (vol de livraison sans retour anticipé) sont mises en avant ; les retours
+    // anticipés (QRF) et les vols de contrôle sont seulement comptés à part. La consommation n'est pas affichée.
+    // Carte : Leaflet (leaflet.js, hébergé avec le site, chargé à la demande) + tuiles gratuites OpenStreetMap.
+    const TECHNICAL_PRESETS = ['all', '12m', 'year', 'month'];
+    // Couleur d'un drone port : palette catégorielle validée (daltonisme), ordre fixe par date de mise en service.
+    const TECHNICAL_COLORS = {
+        light: ['#257de0', '#f47230', '#00b894', '#ee7fac', '#6a4ce2', '#008a17'],
+        dark: ['#338ced', '#e76624', '#00a888', '#e24d8b', '#9887ef', '#0aac23']
+    };
+    const TECHNICAL_CSB_LIMIT = 8;
+    let technicalSequence = 0;
+    let technicalData = null;
+    let technicalPreset = 'all';
+    let technicalCsbsAll = false;
+    let technicalMap = null;
+    let technicalMapLayers = null;
+    let technicalTiles = null;
+    let leafletLoading = null;
+
+    function tsElement(tag, className = '', text = '') {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text !== '' && text !== null && text !== undefined) element.textContent = String(text);
+        return element;
+    }
+
+    function tsDark() {
+        return Boolean(document.documentElement?.classList?.contains?.('qb-dark'));
+    }
+
+    function tsColors() {
+        return TECHNICAL_COLORS[tsDark() ? 'dark' : 'light'];
+    }
+
+    function tsInt(value) {
+        return Math.round(Number(value || 0)).toLocaleString('fr-FR').replace(/ /g, ' ');
+    }
+
+    function tsDecimal(value, digits = 1) {
+        return Number(value || 0).toLocaleString('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits }).replace(/ /g, ' ');
+    }
+
+    function tsHours(minutes) {
+        return tsInt(Number(minutes || 0) / 60);
+    }
+
+    function tsDuration(minutes) {
+        const value = Math.round(Number(minutes || 0));
+        return value >= 60 ? `${Math.floor(value / 60)} h ${String(value % 60).padStart(2, '0')}` : `${value} min`;
+    }
+
+    function tsDaysBetween(from, to) {
+        return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
+    }
+
+    function tsFrame(callback) {
+        if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(() => window.requestAnimationFrame(callback));
+        else callback();
+    }
+
+    // Compteur animé (0 → valeur) ; valeur finale écrite directement sans animation possible.
+    function tsCountUp(element, target, format) {
+        element.textContent = format(target);
+        const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+        if (reduce || typeof window.requestAnimationFrame !== 'function' || !(target > 0)) return;
+        const start = performance.now(), duration = 1100;
+        const step = now => {
+            const progress = Math.min(1, (now - start) / duration);
+            const eased = 1 - Math.pow(1 - progress, 3);
+            element.textContent = format(target * eased);
+            if (progress < 1) window.requestAnimationFrame(step);
+        };
+        window.requestAnimationFrame(step);
+    }
+
+    // Période choisie : raccourci, ou dates saisies (période personnalisée).
+    function technicalPresetRange(preset) {
+        const today = dsToday();
+        const [year, month, day] = today.split('-').map(Number);
+        if (preset === '12m') return { from: new Date(Date.UTC(year - 1, month - 1, day + 1)).toISOString().slice(0, 10), to: today };
+        if (preset === 'year') return { from: `${year}-01-01`, to: today };
+        if (preset === 'month') return { from: `${today.slice(0, 8)}01`, to: today };
+        return { from: '', to: '' };
+    }
+
+    function technicalPeriod() {
+        const from = $('technical-from').value || null, to = $('technical-to').value || null;
+        if (from && to && from > to) return { from, to, error: 'La date de début doit précéder la date de fin.' };
+        const labels = { all: 'Depuis le début', '12m': '12 derniers mois', year: 'Année en cours', month: 'Mois en cours' };
+        const range = from && to ? `du ${dsDate(from)} au ${dsDate(to)}` : from ? `depuis le ${dsDate(from)}` : to ? `jusqu’au ${dsDate(to)}` : '';
+        const name = technicalPreset === 'custom' ? 'Période personnalisée' : labels[technicalPreset];
+        return { from, to, label: range ? `${name} (${range})` : name };
+    }
+
+    function markTechnicalPreset(preset) {
+        technicalPreset = preset;
+        for (const key of TECHNICAL_PRESETS) $(`technical-preset-${key}`).setAttribute('aria-pressed', String(key === preset));
+    }
+
+    function selectTechnicalPreset(preset) {
+        markTechnicalPreset(preset);
+        const range = technicalPresetRange(preset);
+        $('technical-from').value = range.from;
+        $('technical-to').value = range.to;
+        $('technical-to').min = range.from;
+        $('technical-from').max = range.to;
+        refreshTechnicalStats();
+    }
+
+    function changeTechnicalDates() {
+        const empty = !$('technical-from').value && !$('technical-to').value;
+        markTechnicalPreset(empty ? 'all' : 'custom');
+        $('technical-to').min = $('technical-from').value || '';
+        $('technical-from').max = $('technical-to').value || '';
+        refreshTechnicalStats();
+    }
+
+    function clearTechnicalStats() {
+        technicalSequence++;
+        technicalData = null;
+        for (const id of ['technical-grand', 'technical-kpis', 'technical-ports', 'technical-months', 'technical-hours', 'technical-orgs',
+            'technical-csbs', 'technical-map-legend']) $(id).replaceChildren();
+        $('technical-grand-flights').textContent = '—';
+        $('technical-grand-since').textContent = '';
+        $('technical-map-status').textContent = '';
+        $('technical-csbs-more').hidden = true;
+        technicalMapLayers?.clearLayers?.();
+    }
+
+    async function refreshTechnicalStats() {
+        clearTechnicalStats();
+        const status = $('technical-status');
+        $('technical-refresh').hidden = userRole !== 'admin';
+        const period = technicalPeriod();
+        if (period.error) { status.textContent = period.error; return; }
+        const sequence = technicalSequence, requestGeneration = sessionGeneration;
+        status.textContent = 'Chargement des statistiques techniques…';
+        try {
+            const data = await api('/rest/v1/rpc/qbox_technical_statistics', { from_date: period.from, to_date: period.to }, true);
+            if (sequence !== technicalSequence || activeView !== 'technical' || sessionGeneration !== requestGeneration) return;
+            technicalData = data;
+            renderTechnicalStats(data, period);
+        } catch (error) {
+            if (sequence === technicalSequence && activeView === 'technical' && sessionGeneration === requestGeneration)
+                status.textContent = `Statistiques techniques indisponibles : ${error.message}`;
+        }
+    }
+
+    async function refreshTechnicalCopy() {
+        if (userRole !== 'admin') return;
+        const button = $('technical-refresh');
+        button.disabled = true;
+        $('technical-status').textContent = 'Copie des données des pilotes en cours…';
+        try {
+            const message = await api('/rest/v1/rpc/qbox_refresh_technical_statistics', {}, true);
+            $('technical-status').textContent = String(message || '');
+            await refreshTechnicalStats();
+        } catch (error) {
+            $('technical-status').textContent = `Copie impossible : ${error.message}`;
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    // Couleur par drone port (ordre de mise en service, puis nom) : stable quel que soit le filtre.
+    function technicalPortColors(ports) {
+        const colors = tsColors();
+        const ordered = [...ports].sort((a, b) => String(a.first_ever).localeCompare(String(b.first_ever)) || String(a.name).localeCompare(String(b.name)));
+        return new Map(ordered.map((port, index) => [port.id, colors[index % colors.length]]));
+    }
+
+    function renderTechnicalStats(data, period) {
+        const sync = data.sync;
+        const colors = technicalPortColors(data.ports || []);
+        let message;
+        if (!sync) message = 'Aucune donnée : la connexion à la base des pilotes n’est pas encore configurée (voir GUIDE-MISE-EN-LIGNE.md).';
+        else if (!sync.ok) message = `Dernière copie échouée le ${localDateTime(sync.attempted_at)} : ${sync.message || 'erreur inconnue'}.`
+            + (sync.synced_at ? ` Données affichées : copie du ${localDateTime(sync.synced_at)}.` : '');
+        else message = `${period.label} · données des pilotes copiées le ${localDateTime(sync.synced_at)} (heure de Madagascar).`;
+        $('technical-status').textContent = message;
+        renderTechnicalGrand(data);
+        renderTechnicalKpis(data.totals || {});
+        renderTechnicalPorts(data, colors);
+        renderTechnicalMonths(data, colors);
+        renderTechnicalHours(data.hours || []);
+        renderTechnicalOrgs(data.organizations || []);
+        renderTechnicalCsbs(data.csbs || [], colors);
+        renderTechnicalLegend(data.ports || [], colors);
+        renderTechnicalMap(data, colors);
+    }
+
+    // Encadré « À part » : retours anticipés (QRF) et vols de contrôle, seulement comptés.
+    function technicalAside(className, qrf, controls) {
+        const box = tsElement('div', className);
+        const head = tsElement('span', 'ts-aside-label');
+        head.append(dsIcon('ph-note'), tsElement('span', '', 'À part'));
+        const list = tsElement('ul');
+        for (const [icon, value, label] of [['ph-arrow-u-up-left', qrf, 'retour(s) anticipé(s) (QRF)'], ['ph-wrench', controls, 'vol(s) de contrôle']]) {
+            const item = tsElement('li');
+            item.append(dsIcon(icon), tsElement('b', '', tsInt(value)), tsElement('span', '', label));
+            list.append(item);
+        }
+        box.append(head, list);
+        return box;
+    }
+
+    // Grand total du projet (tout l'historique, tous les drone ports) : livraisons réussies.
+    function renderTechnicalGrand(data) {
+        const project = data.project || {};
+        tsCountUp($('technical-grand-flights'), Number(project.deliveries || 0), tsInt);
+        $('technical-grand-since').textContent = data.since
+            ? `depuis le ${dsDate(data.since)} · ${tsInt(project.ports)} drone port(s) · ${tsInt(project.days)} jour(s) de livraison`
+            : 'aucun vol enregistré';
+        const strip = $('technical-grand');
+        const items = [
+            ['ph-timer', Number(project.minutes || 0) / 60, tsInt, 'heures de vol'],
+            ['ph-path', Number(project.km || 0), tsInt, 'km parcourus'],
+            ['ph-package', Number(project.kg || 0), value => tsDecimal(value, 0), 'kg livrés'],
+            ['ph-first-aid-kit', Number(project.csbs || 0), tsInt, 'CSB desservis']
+        ];
+        items.forEach(([icon, value, format, label], index) => {
+            const item = tsElement('div', 'ts-grand-item');
+            item.style.setProperty?.('--i', String(index));
+            const figure = tsElement('b');
+            item.append(dsIcon(icon), figure, tsElement('span', '', label));
+            strip.append(item);
+            tsCountUp(figure, value, format);
+        });
+        const aside = technicalAside('ts-grand-aside', project.qrf, project.controls);
+        aside.style.setProperty?.('--i', String(items.length));
+        strip.append(aside);
+    }
+
+    function renderTechnicalKpis(totals) {
+        const kpis = $('technical-kpis');
+        const tiles = [
+            ['ph-seal-check', 'Livraisons réussies', Number(totals.deliveries || 0), tsInt,
+                totals.first_day ? `du ${dsDate(totals.first_day)} au ${dsDate(totals.last_day)} · ${tsInt(totals.days)} jour(s) de livraison` : 'aucune livraison sur la période', 'green ts-kpi-main'],
+            ['ph-timer', 'Heures de vol', Number(totals.minutes || 0) / 60, value => tsDecimal(value, 0), `durée moyenne d’une livraison : ${tsDuration(totals.avg_minutes)}`, 'violet'],
+            ['ph-path', 'Distance parcourue', Number(totals.km || 0), tsInt, `km · vitesse moyenne ${tsInt(totals.avg_speed)} km/h`, 'aqua'],
+            ['ph-package', 'Poids livré', Number(totals.kg || 0), value => tsDecimal(value, 1), `kg · ${tsDecimal(totals.avg_payload, 1)} kg en moyenne par livraison`, 'orange'],
+            ['ph-first-aid-kit', 'CSB desservis', Number(totals.csbs || 0), tsInt, `livraison la plus lointaine : ${tsInt(totals.longest_km)} km`, 'blue']
+        ];
+        tiles.forEach(([icon, label, value, format, hint, tone], index) => {
+            const tile = tsElement('div', `ts-kpi ts-tone-${tone}`);
+            tile.style.setProperty?.('--i', String(index));
+            const head = tsElement('span', 'ts-kpi-label');
+            head.append(dsIcon(icon), tsElement('span', '', label));
+            const figure = tsElement('strong', 'ts-kpi-value');
+            tile.append(head, figure, tsElement('span', 'ts-kpi-hint', hint));
+            kpis.append(tile);
+            tsCountUp(figure, value, format);
+        });
+        const aside = technicalAside('ts-kpi ts-kpi-aside', totals.qrf, totals.controls);
+        aside.style.setProperty?.('--i', String(tiles.length));
+        kpis.append(aside);
+    }
+
+    function renderTechnicalPorts(data, colors) {
+        const container = $('technical-ports');
+        const ports = data.ports || [];
+        if (!ports.length) {
+            container.append(tsElement('p', 'ts-empty', 'Aucun drone port avec des vols enregistrés.'));
+            return;
+        }
+        const max = Math.max(...ports.map(port => Number(port.deliveries || 0)), 1);
+        ports.forEach((port, index) => {
+            const card = tsElement('button', port.deliveries ? 'ts-port' : 'ts-port ts-port-idle');
+            card.type = 'button';
+            card.style.setProperty?.('--c', colors.get(port.id));
+            card.style.setProperty?.('--i', String(index));
+            card.title = port.latitude != null ? `Centrer la carte sur ${port.name}` : port.name;
+            card.addEventListener('click', () => focusTechnicalPort(port));
+            const head = tsElement('div', 'ts-port-head');
+            const icon = tsElement('span', 'ts-port-icon');
+            icon.append(dsIcon('ph-drone'));
+            const name = tsElement('div', 'ts-port-name');
+            name.append(tsElement('strong', '', port.name),
+                tsElement('span', '', [port.district, port.region].filter(Boolean).join(' · ') || 'Drone port'));
+            head.append(icon, name);
+            const total = Number(port.total_ever || 0);
+            const service = tsElement('p', 'ts-port-since');
+            service.append(dsIcon('ph-flag-banner'), tsElement('span', '',
+                port.first_ever ? `En service depuis le ${dsDate(port.first_ever)} · ${tsInt(total)} livraison${total > 1 ? 's' : ''} réussie${total > 1 ? 's' : ''} au total` : 'Aucun vol'));
+            if (!port.active) service.append(tsElement('em', 'ts-port-off', 'inactif'));
+            const figure = tsElement('div', 'ts-port-figure');
+            const deliveries = tsElement('strong');
+            figure.append(deliveries, tsElement('span', '', 'livraisons réussies sur la période'));
+            tsCountUp(deliveries, Number(port.deliveries || 0), tsInt);
+            const meter = tsElement('span', 'ts-port-meter');
+            const fill = tsElement('i');
+            fill.style.width = '0%';
+            meter.append(fill);
+            tsFrame(() => { fill.style.width = `${Number(port.deliveries || 0) * 100 / max}%`; });
+            const facts = tsElement('ul', 'ts-port-facts');
+            for (const [icon, value, label] of [
+                ['ph-timer', tsHours(port.minutes), 'h de vol'], ['ph-path', tsInt(port.km), 'km'],
+                ['ph-package', tsDecimal(port.kg, 0), 'kg'], ['ph-first-aid-kit', tsInt(port.csbs), 'CSB']
+            ]) {
+                const fact = tsElement('li');
+                fact.append(dsIcon(icon), tsElement('b', '', value), tsElement('span', '', label));
+                facts.append(fact);
+            }
+            card.append(head, service, figure, meter, facts, technicalSparkline(port.months || []));
+            if ((port.top || []).length) {
+                const top = tsElement('div', 'ts-port-top');
+                top.append(tsElement('span', 'ts-port-top-title', 'CSB les plus desservis'));
+                for (const item of port.top) top.append(tsElement('span', 'ts-chip', `${item.name} · ${tsInt(item.deliveries)}`));
+                card.append(top);
+            }
+            if (Number(port.qrf || 0) || Number(port.controls || 0))
+                card.append(tsElement('span', 'ts-port-aside', `À part : ${tsInt(port.qrf)} QRF · ${tsInt(port.controls)} vol(s) de contrôle`));
+            container.append(card);
+        });
+    }
+
+    // Petite courbe en barres des livraisons réussies par mois d'un drone port.
+    function technicalSparkline(months) {
+        const spark = tsElement('div', 'ts-spark');
+        spark.setAttribute('aria-hidden', 'true');
+        const recent = months.slice(-18);
+        const max = Math.max(...recent.map(month => Number(month.deliveries || 0)), 1);
+        recent.forEach((month, index) => {
+            const bar = tsElement('i');
+            bar.style.setProperty?.('--h', `${Math.max(6, Number(month.deliveries || 0) * 100 / max)}%`);
+            bar.style.setProperty?.('--i', String(index));
+            bar.title = `${dsMonth(month.month, true)} : ${tsInt(month.deliveries)} livraison(s) réussie(s)`;
+            spark.append(bar);
+        });
+        return spark;
+    }
+
+    function renderTechnicalLegend(ports, colors) {
+        const legend = $('technical-map-legend');
+        for (const port of ports) {
+            const item = tsElement('span', 'ts-legend-item');
+            const dot = tsElement('i', 'ts-dot');
+            dot.style.setProperty?.('--c', colors.get(port.id));
+            item.append(dot, tsElement('span', '', port.name));
+            legend.append(item);
+        }
+    }
+
+    // Livraisons réussies par mois, empilées par drone port.
+    function renderTechnicalMonths(data, colors) {
+        const container = $('technical-months');
+        const months = data.months || [];
+        if (!months.length) { container.append(tsElement('p', 'ts-empty', 'Aucune livraison réussie sur cette période.')); return; }
+        const max = Math.max(...months.map(month => Number(month.deliveries || 0)), 1);
+        const best = months.reduce((top, month) => Number(month.deliveries) > Number(top.deliveries) ? month : top, months[0]);
+        const names = new Map((data.ports || []).map(port => [port.id, port.name]));
+        const chart = tsElement('ol', months.length > 14 ? 'ts-bars ts-bars-dense' : 'ts-bars');
+        chart.setAttribute('aria-label', 'Livraisons réussies par mois');
+        months.forEach((month, index) => {
+            const item = tsElement('li', month === best ? 'ts-bar ts-bar-best' : 'ts-bar');
+            item.tabIndex = 0;
+            const label = `${dsMonth(month.month, true)} : ${tsInt(month.deliveries)} livraison(s) réussie(s), ${tsDecimal(month.hours, 0)} h, ${tsInt(month.km)} km, ${tsDecimal(month.kg, 0)} kg`;
+            item.title = label;
+            item.setAttribute('aria-label', label);
+            const stack = tsElement('span', 'ts-stack');
+            stack.style.setProperty?.('--h', `${Number(month.deliveries || 0) * 100 / max}%`);
+            stack.style.setProperty?.('--i', String(index));
+            for (const part of month.ports || []) {
+                const segment = tsElement('i');
+                segment.style.flexGrow = String(part.deliveries);
+                segment.style.setProperty?.('--c', colors.get(part.port_id) || 'var(--qb-muted)');
+                segment.title = `${names.get(part.port_id) || 'Drone port'} : ${tsInt(part.deliveries)} livraison(s)`;
+                stack.append(segment);
+            }
+            const tip = tsElement('span', 'ts-bar-tip');
+            tip.setAttribute('aria-hidden', 'true');
+            tip.append(tsElement('b', '', `${tsInt(month.deliveries)} livraisons`), tsElement('span', '', dsMonth(month.month, true)));
+            const track = tsElement('span', 'ts-bar-track');
+            track.append(stack, tip);
+            item.append(track, tsElement('span', 'ts-bar-label', `${dsMonth(month.month)} ${String(month.month).slice(2, 4)}`));
+            chart.append(item);
+        });
+        const foot = tsElement('p', 'ts-foot');
+        foot.append(dsIcon('ph-trophy'), tsElement('span', '', `Mois record : ${dsMonth(best.month, true)} avec ${tsInt(best.deliveries)} livraisons réussies`));
+        container.append(chart, foot);
+    }
+
+    function renderTechnicalHours(hours) {
+        const container = $('technical-hours');
+        if (!hours.length) return;
+        const byHour = new Map(hours.map(item => [Number(item.hour), Number(item.deliveries)]));
+        const first = Math.min(6, ...hours.map(item => Number(item.hour)));
+        const last = Math.max(18, ...hours.map(item => Number(item.hour)));
+        const max = Math.max(...hours.map(item => Number(item.deliveries)), 1);
+        const peak = hours.reduce((top, item) => Number(item.deliveries) > Number(top.deliveries) ? item : top, hours[0]);
+        const row = tsElement('div', 'ts-hours-row');
+        for (let hour = first; hour <= last; hour++) {
+            const count = byHour.get(hour) || 0;
+            const cell = tsElement('span', 'ts-hour');
+            cell.style.setProperty?.('--a', String(count / max));
+            cell.style.setProperty?.('--i', String(hour - first));
+            cell.title = `${String(hour).padStart(2, '0')} h : ${tsInt(count)} décollage(s)`;
+            const bar = tsElement('i');
+            bar.style.setProperty?.('--h', `${Math.max(count ? 8 : 2, count * 100 / max)}%`);
+            cell.append(bar, tsElement('b', '', `${hour}h`));
+            row.append(cell);
+        }
+        const foot = tsElement('p', 'ts-foot');
+        foot.append(dsIcon('ph-sun-horizon'), tsElement('span', '', `Pic d’activité entre ${peak.hour} h et ${Number(peak.hour) + 1} h (${tsInt(peak.deliveries)} décollages)`));
+        container.append(row, foot);
+    }
+
+    function renderTechnicalOrgs(orgs) {
+        const container = $('technical-orgs');
+        if (!orgs.length) return;
+        const total = orgs.reduce((sum, item) => sum + Number(item.deliveries || 0), 0) || 1;
+        container.append(tsElement('p', 'ts-subtitle', 'Livraisons réussies par bénéficiaire'));
+        const bar = tsElement('div', 'ts-orgs-bar');
+        bar.setAttribute('aria-hidden', 'true');
+        const list = tsElement('ul', 'ts-orgs-list');
+        orgs.forEach((org, index) => {
+            const segment = tsElement('i', `ts-org-${index % 5}`);
+            segment.style.flexGrow = String(org.deliveries);
+            bar.append(segment);
+            const item = tsElement('li', `ts-org-${index % 5}`);
+            item.append(tsElement('i', 'ts-dot'), tsElement('span', '', org.name),
+                tsElement('b', '', `${tsInt(org.deliveries)} · ${Math.round(Number(org.deliveries) * 100 / total)} %`));
+            list.append(item);
+        });
+        container.append(bar, list);
+    }
+
+    function renderTechnicalCsbs(csbs, colors) {
+        const list = $('technical-csbs');
+        list.replaceChildren();
+        if (!csbs.length) { list.append(tsElement('li', 'ts-empty', 'Aucune livraison réussie sur cette période.')); return; }
+        const shown = technicalCsbsAll ? csbs : csbs.slice(0, TECHNICAL_CSB_LIMIT);
+        const max = Math.max(...csbs.map(csb => Number(csb.deliveries || 0)), 1);
+        shown.forEach((csb, index) => {
+            const item = tsElement('li', 'ts-csb');
+            item.style.setProperty?.('--i', String(index));
+            item.style.setProperty?.('--c', colors.get(csb.port_id) || 'var(--qb-primary)');
+            const rank = tsElement('span', index < 3 ? 'ts-rank ts-rank-top' : 'ts-rank', String(index + 1));
+            const body = tsElement('div', 'ts-csb-body');
+            const head = tsElement('div', 'ts-csb-head');
+            const name = tsElement('span', 'ts-csb-name', csb.name);
+            name.title = [csb.name, csb.district, csb.port_name].filter(Boolean).join(' · ');
+            head.append(name, tsElement('b', '', `${tsInt(csb.deliveries)} livr.`));
+            const meter = tsElement('span', 'ts-csb-meter');
+            const fill = tsElement('i');
+            fill.style.width = '0%';
+            meter.append(fill);
+            tsFrame(() => { fill.style.width = `${Number(csb.deliveries || 0) * 100 / max}%`; });
+            const meta = tsElement('span', 'ts-csb-meta',
+                [csb.district, `${tsDecimal(csb.kg, 0)} kg`, csb.distance_km ? `${tsInt(csb.distance_km)} km` : '', csb.avg_minutes ? tsDuration(csb.avg_minutes) : '']
+                    .filter(Boolean).join(' · '));
+            body.append(head, meter, meta);
+            item.append(rank, body);
+            list.append(item);
+        });
+        const more = $('technical-csbs-more');
+        more.hidden = csbs.length <= TECHNICAL_CSB_LIMIT;
+        more.textContent = technicalCsbsAll ? 'Réduire la liste' : `Voir les ${tsInt(csbs.length)} CSB`;
+    }
+
+    function toggleTechnicalCsbs() {
+        technicalCsbsAll = !technicalCsbsAll;
+        if (technicalData) renderTechnicalCsbs(technicalData.csbs || [], technicalPortColors(technicalData.ports || []));
+    }
+
+    // ---------- Carte (Leaflet, chargé à la demande) ----------
+    function loadLeaflet() {
+        if (window.L?.map) return Promise.resolve(window.L);
+        if (!document.head) return Promise.reject(new Error('Carte indisponible dans ce navigateur.'));
+        if (!leafletLoading) {
+            leafletLoading = new Promise((resolve, reject) => {
+                const style = document.createElement('link');
+                style.rel = 'stylesheet';
+                style.href = 'leaflet.css';
+                const script = document.createElement('script');
+                script.src = 'leaflet.js';
+                script.onload = () => window.L?.map ? resolve(window.L) : reject(new Error('Bibliothèque de carte invalide.'));
+                script.onerror = () => { leafletLoading = null; reject(new Error('Bibliothèque de carte non chargée (hors ligne ?).')); };
+                document.head.append(style, script);
+            });
+        }
+        return leafletLoading;
+    }
+
+    function technicalPopup(title, lines) {
+        const box = tsElement('div', 'ts-popup');
+        box.append(tsElement('strong', '', title));
+        for (const line of lines.filter(Boolean)) box.append(tsElement('span', '', line));
+        return box;
+    }
+
+    async function renderTechnicalMap(data, colors) {
+        const status = $('technical-map-status');
+        const ports = (data.ports || []).filter(port => port.latitude != null && port.longitude != null);
+        const csbs = (data.csbs || []).filter(csb => csb.latitude != null && csb.longitude != null);
+        if (!ports.length && !csbs.length) { status.textContent = 'Aucune coordonnée disponible pour la carte.'; return; }
+        const sequence = technicalSequence;
+        let L;
+        try { L = await loadLeaflet(); } catch (error) { status.textContent = error.message; return; }
+        if (sequence !== technicalSequence || activeView !== 'technical') return;
+        const container = $('technical-map');
+        if (!technicalMap) {
+            technicalMap = L.map(container, { scrollWheelZoom: false, zoomSnap: 0.25, attributionControl: true });
+            technicalMapLayers = L.layerGroup().addTo(technicalMap);
+        }
+        // Fond de carte gratuit OpenStreetMap (sans clé, attribution obligatoire) ; le mode sombre est
+        // obtenu par un filtre CSS sur les tuiles (technical-stats.css), sans autre fournisseur.
+        if (!technicalTiles) {
+            technicalTiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 18, className: 'ts-tiles',
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">contributeurs OpenStreetMap</a>'
+            }).addTo(technicalMap);
+        }
+        technicalMapLayers.clearLayers();
+        const portById = new Map(ports.map(port => [port.id, port]));
+        const max = Math.max(...csbs.map(csb => Number(csb.deliveries || 0)), 1);
+        const points = [];
+        // Routes drone port → CSB (pointillés animés), épaisseur selon le nombre de livraisons.
+        for (const csb of csbs) {
+            const port = portById.get(csb.port_id);
+            if (!port) continue;
+            L.polyline([[port.latitude, port.longitude], [csb.latitude, csb.longitude]], {
+                color: colors.get(port.id), weight: 1.5 + 3 * Number(csb.deliveries) / max, opacity: 0.7,
+                dashArray: '6 9', className: 'ts-route', interactive: false
+            }).addTo(technicalMapLayers);
+        }
+        for (const csb of csbs) {
+            const color = colors.get(csb.port_id) || '#64748b';
+            L.circleMarker([csb.latitude, csb.longitude], {
+                radius: 5 + 11 * Math.sqrt(Number(csb.deliveries || 0) / max), color: '#ffffff', weight: 2,
+                fillColor: color, fillOpacity: 0.9, className: 'ts-csb-dot'
+            }).bindTooltip(`${csb.name} · ${tsInt(csb.deliveries)} livraison(s) réussie(s)`, { direction: 'top', offset: [0, -6] })
+                .bindPopup(technicalPopup(csb.name, [
+                    [csb.category, csb.district].filter(Boolean).join(' · '),
+                    `${tsInt(csb.deliveries)} livraison(s) réussie(s) · ${tsDecimal(csb.kg, 1)} kg`,
+                    csb.distance_km ? `Distance du vol : ${tsInt(csb.distance_km)} km` : '',
+                    csb.avg_minutes ? `Durée moyenne : ${tsDuration(csb.avg_minutes)}` : '',
+                    csb.last_day ? `Dernière livraison : ${dsDate(csb.last_day)}` : '',
+                    `Depuis ${csb.port_name || 'le drone port'}`
+                ]))
+                .addTo(technicalMapLayers);
+            points.push([csb.latitude, csb.longitude]);
+        }
+        for (const port of ports) {
+            const color = colors.get(port.id);
+            const icon = L.divIcon({
+                className: 'ts-port-pin', iconSize: [38, 38], iconAnchor: [19, 19],
+                html: `<span class="ts-pin-pulse" style="--c:${color}"></span><span class="ts-pin-pulse ts-pin-pulse-2" style="--c:${color}"></span><span class="ts-pin-core" style="--c:${color}"><i class="ph ph-drone"></i></span>`
+            });
+            L.marker([port.latitude, port.longitude], { icon, zIndexOffset: 1000, title: port.name })
+                .bindPopup(technicalPopup(port.name, [
+                    port.first_ever ? `En service depuis le ${dsDate(port.first_ever)}` : '',
+                    `${tsInt(port.deliveries)} livraison(s) réussie(s) sur la période · ${tsHours(port.minutes)} h`,
+                    `${tsInt(port.km)} km · ${tsDecimal(port.kg, 0)} kg livrés · ${tsInt(port.csbs)} CSB`
+                ]))
+                .addTo(technicalMapLayers);
+            points.push([port.latitude, port.longitude]);
+        }
+        const hidden = (data.csbs || []).length - csbs.length;
+        status.textContent = hidden > 0 ? `${tsInt(hidden)} CSB sans coordonnées ne figurent pas sur la carte.` : '';
+        setTimeout(() => {
+            technicalMap.invalidateSize();
+            if (points.length) technicalMap.fitBounds(points, { padding: [36, 36], maxZoom: 11 });
+        }, 60);
+    }
+
+    function focusTechnicalPort(port) {
+        if (!technicalMap || port.latitude == null || port.longitude == null) return;
+        technicalMap.flyTo([port.latitude, port.longitude], 10, { duration: 1.2 });
+        $('technical-map').scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    }
     function renderDashboardExpirations(data) {
         const container = $('dash-expirations-list');
         container.replaceChildren();
@@ -8932,7 +9916,7 @@
                 if (group) group.open = true;
             }
         }
-        if (dashboard) refreshDashboard(); else if (view === 'transfers') refreshTransfers(); else if (view === 'products') refreshCatalog(); else if (view === 'csb') refreshCsbs(); else if (view === 'ports') refreshPorts(); else if (['planning', 'archives'].includes(view)) refreshPlanCards(view); else if (view === 'stock-analysis') refreshStockAnalysis(); else if (['drones', 'history', 'sorties'].includes(view)) refreshDeliveries(view); else if (view === 'inventory') refreshInventories(); else if (view === 'quarantine') refreshQuarantines(); else if (view === 'stock-history') refreshStockHistory(); else if (view === 'logistics-report') refreshLogisticsReport(); else if (view === 'national') refreshNationalView(); else if (view === 'statistics') refreshDeliveryStats(); else if (native) refreshNativeView(view); else refreshReadView();
+        if (dashboard) refreshDashboard(); else if (view === 'transfers') refreshTransfers(); else if (view === 'products') refreshCatalog(); else if (view === 'csb') refreshCsbs(); else if (view === 'ports') refreshPorts(); else if (['planning', 'archives'].includes(view)) refreshPlanCards(view); else if (view === 'stock-analysis') refreshStockAnalysis(); else if (['drones', 'history', 'sorties'].includes(view)) refreshDeliveries(view); else if (view === 'inventory') refreshInventories(); else if (view === 'quarantine') refreshQuarantines(); else if (view === 'stock-history') refreshStockHistory(); else if (view === 'logistics-report') refreshLogisticsReport(); else if (view === 'national') refreshNationalView(); else if (view === 'statistics') refreshDeliveryStats(); else if (view === 'technical') refreshTechnicalStats(); else if (native) refreshNativeView(view); else refreshReadView();
     }
 
     const operationSections = {
@@ -9150,6 +10134,16 @@
         $('history-closed-from').addEventListener('change', changeHistoryClosedPeriod);
         $('history-closed-to').addEventListener('change', changeHistoryClosedPeriod);
         $('history-closed-clear').addEventListener('click', clearHistoryClosedPeriod);
+        $('history-closed-district').addEventListener('change', changeHistoryClosedDistrict);
+        // Statistiques techniques : période, liste des CSB, recopie manuelle (administrateurs).
+        for (const preset of TECHNICAL_PRESETS)
+            $(`technical-preset-${preset}`).addEventListener('click', () => selectTechnicalPreset(preset));
+        $('technical-from').addEventListener('change', changeTechnicalDates);
+        $('technical-to').addEventListener('change', changeTechnicalDates);
+        $('technical-csbs-more').addEventListener('click', toggleTechnicalCsbs);
+        $('technical-refresh').addEventListener('click', refreshTechnicalCopy);
+        for (const preset of HISTORY_CLOSED_PRESETS)
+            $(`history-closed-preset-${preset}`).addEventListener('click', () => selectHistoryClosedPreset(preset));
         $('history-closed-more').addEventListener('click', () => loadClosedFlights(false));
         for (const source of ['all', 'app', 'legacy']) $(`delivery-stats-source-${source}`).addEventListener('click', () => setDeliveryStatsSource(source));
         $('delivery-stats-export').addEventListener('click', exportDeliveryStats);

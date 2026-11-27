@@ -10,7 +10,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- Politique de sécurité : seuls les scripts du site et Chart.js (versions figées) peuvent s'exécuter ;
          aucun script en ligne (les anciens attributs onclick sont inactifs, la logique est dans postgres-main.js). -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co http://127.0.0.1:56521 http://localhost:56521; frame-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://tile.openstreetmap.org; connect-src 'self' https://*.supabase.co http://127.0.0.1:56521 http://localhost:56521; frame-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
     <title>Q.box - Plateforme Logistique Santé & Drones</title>
 
     <!-- Phosphor Icons 2.1.2 (style regular), hébergées avec le site : npm run build:assets -->
@@ -33,10 +33,11 @@
     <link rel="stylesheet" href="motion.css?v=1251c2b346">
     <link rel="stylesheet" href="national-view.css?v=12016aaa5e">
     <link rel="stylesheet" href="logistics-report.css?v=2e0cfd87ed">
-    <link rel="stylesheet" href="delivery-stats.css?v=224edefa54">
+    <link rel="stylesheet" href="delivery-stats.css?v=03f3a2601f">
     <link rel="stylesheet" href="stock-history.css?v=9af34fe94c">
+    <link rel="stylesheet" href="technical-stats.css?v=57604aa495">
     <!-- Tailwind compilé (npm run build:assets), chargé en dernier comme l'ancien CDN -->
-    <link rel="stylesheet" href="tailwind.css?v=520e24ddc6">
+    <link rel="stylesheet" href="tailwind.css?v=887d5869a6">
     <script src="theme-toggle.js?v=f439f0b4ec"></script>
     <script src="app-bootstrap.js?v=85d7a116e6"></script>
 </head>
@@ -175,6 +176,10 @@
                 <button id="nav-statistics" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all">
                     <i class="ph ph-chart-bar text-base mr-3 shrink-0"></i>
                     <span>Statistiques</span>
+                </button>
+                <button id="nav-technical" class="nav-item w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all">
+                    <i class="ph ph-airplane-tilt text-base mr-3 shrink-0"></i>
+                    <span>Statistiques techniques</span>
                 </button>
                 <details class="sidebar-group">
                     <summary>
@@ -1083,44 +1088,60 @@
 
                 <!-- ================= VIEW 8: HISTORIQUE VOLS ================= -->
                 <section id="view-history" class="tab-content hidden space-y-4">
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                        <div class="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                                <h3 class="font-bold text-slate-900 text-sm"><button id="history-closed-toggle" type="button" class="qb-collapse-toggle" aria-expanded="false" aria-controls="history-closed-panel"><i class="ph ph-caret-right" aria-hidden="true"></i>Historique des Livraisons Clôturées<span id="history-closed-count" class="qb-collapse-count"></span></button></h3>
-                                <p class="text-xs text-slate-500">Registre des missions terminées avec réimpression des BL, filtrable par date de clôture</p>
-                            </div>
+                    <!-- Registre des vols clôturés (qbox_list_closed_flights, 05-livraisons.js ; style hc-* dans delivery-stats.css) -->
+                    <section id="history-closed" class="ds ds-panel hc" aria-labelledby="history-closed-title">
+                        <div class="ds-panel-head hc-head">
+                            <div class="ds-panel-title"><i class="ph ph-seal-check" aria-hidden="true"></i>
+                                <div><h4 id="history-closed-title"><button id="history-closed-toggle" type="button" class="qb-collapse-toggle" aria-expanded="false" aria-controls="history-closed-panel"><i class="ph ph-caret-right" aria-hidden="true"></i>Historique des livraisons clôturées<span id="history-closed-count" class="qb-collapse-count"></span></button></h4>
+                                    <p>Missions terminées, intrants largués et réimpression des BL · filtrez par période et par district.</p></div></div>
                             <button id="delete-missing-csb-history" type="button" class="hidden px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold">
                                 Supprimer les clôtures sans CSB
                             </button>
                         </div>
 
                         <div id="history-closed-panel" hidden>
-                        <div class="ds-filters" role="group" aria-label="Période de clôture">
-                            <label><span>Clôturé du</span><input id="history-closed-from" type="date"></label>
-                            <label><span>au</span><input id="history-closed-to" type="date"></label>
-                            <button id="history-closed-clear" type="button" class="ds-button"><i class="ph ph-x" aria-hidden="true"></i>Toutes les dates</button>
+                        <div class="hc-filters">
+                            <div class="hc-presets" role="group" aria-label="Période de clôture">
+                                <button id="history-closed-preset-all" type="button" aria-pressed="true"><i class="ph ph-infinity" aria-hidden="true"></i>Tout</button>
+                                <button id="history-closed-preset-week" type="button" aria-pressed="false"><i class="ph ph-calendar-dots" aria-hidden="true"></i>Semaine en cours</button>
+                                <button id="history-closed-preset-month" type="button" aria-pressed="false"><i class="ph ph-calendar-blank" aria-hidden="true"></i>Mois en cours</button>
+                                <button id="history-closed-preset-year" type="button" aria-pressed="false"><i class="ph ph-calendar" aria-hidden="true"></i>Année en cours</button>
+                                <button id="history-closed-preset-planning" type="button" aria-pressed="false"><i class="ph ph-clipboard-text" aria-hidden="true"></i>Planning actif</button>
+                                <button id="history-closed-preset-custom" type="button" aria-pressed="false"><i class="ph ph-sliders-horizontal" aria-hidden="true"></i>Personnalisée</button>
+                            </div>
+                            <div class="hc-filter-row">
+                                <div class="hc-range" role="group" aria-label="Dates de clôture">
+                                    <label><span>Du</span><input id="history-closed-from" type="date"></label>
+                                    <i class="ph ph-arrow-right" aria-hidden="true"></i>
+                                    <label><span>Au</span><input id="history-closed-to" type="date"></label>
+                                </div>
+                                <label class="hc-district"><i class="ph ph-map-pin-area" aria-hidden="true"></i><span class="sr-only">District du CSB</span>
+                                    <select id="history-closed-district"><option value="">Tous les districts</option></select></label>
+                                <button id="history-closed-clear" type="button" class="ds-button"><i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i>Réinitialiser</button>
+                            </div>
                         </div>
-                        <p id="postgres-history-status" class="px-5 py-2 text-xs text-slate-600 postgres-hidden" role="status"></p>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse">
+                        <div id="history-closed-summary" class="hc-summary" aria-live="polite"></div>
+                        <p id="postgres-history-status" class="ds-status hc-status postgres-hidden" role="status"></p>
+                        <div class="hc-table-scroll">
+                            <table class="hc-table">
                                 <thead>
-                                    <tr class="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider border-b border-slate-200">
-                                        <th id="history-bl-heading" class="py-3 px-4 font-semibold">N° Drone & BL</th>
-                                        <th class="py-3 px-4 font-semibold">Date Clôture</th>
-                                        <th class="py-3 px-4 font-semibold">CSB Livré</th>
-                                        <th class="py-3 px-4 font-semibold">Intrants Largués</th>
-                                        <th class="py-3 px-4 font-semibold">Statut</th>
-                                        <th class="py-3 px-4 font-semibold text-right">Actions</th>
+                                    <tr>
+                                        <th id="history-bl-heading">N° Drone & BL</th>
+                                        <th>Clôture</th>
+                                        <th>CSB livré</th>
+                                        <th>Intrants largués</th>
+                                        <th>Statut</th>
+                                        <th class="hc-actions-head">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody id="history-table-body" class="divide-y divide-slate-100 text-xs">
+                                <tbody id="history-table-body">
                                     <!-- Rempli en JS -->
                                 </tbody>
                             </table>
                         </div>
-                        <div class="ds-more"><button id="history-closed-more" type="button" class="ds-button" hidden>Afficher plus de vols</button></div>
+                        <div class="ds-more"><button id="history-closed-more" type="button" class="ds-button" hidden><i class="ph ph-arrow-down" aria-hidden="true"></i>Afficher plus de vols</button></div>
                         </div>
-                    </div>
+                    </section>
 
                     <!-- Sorties d'avant Q.box (qbox.legacy_deliveries) : consultation seule, hors stock -->
                     <section id="legacy-deliveries" class="ds ds-panel ds-legacy no-print" aria-labelledby="legacy-deliveries-title">
@@ -1234,19 +1255,29 @@
 
                     <!-- Couples-Année de Protection livrés (qbox_cyp_estimate) : période et origine du bandeau ci-dessus -->
                     <section id="cyp" class="ds ds-panel ds-cyp" aria-labelledby="cyp-title">
-                        <div class="ds-panel-head">
-                            <div class="ds-panel-title"><i class="ph ph-shield-check" aria-hidden="true"></i>
-                                <div><h4 id="cyp-title">Couples-Année de Protection (CAP) livrés <span class="ds-badge">Estimation</span></h4>
-                                    <p>Quantités livrées × facteur de conversion standard de la méthode · période et origine choisies en haut de l’écran.</p></div></div>
+                        <header class="ds-cyp-hero">
+                            <span class="ds-cyp-hero-mark" aria-hidden="true"><i class="ph ph-shield-check"></i></span>
+                            <div class="ds-cyp-hero-text">
+                                <span class="ds-cyp-eyebrow"><i class="ph ph-heartbeat" aria-hidden="true"></i>Planification familiale <span class="ds-badge">Estimation</span></span>
+                                <h4 id="cyp-title">Couples-Année de Protection (CAP) livrés</h4>
+                                <p>Protection contraceptive apportée par les intrants livrés, pour la période et l’origine choisies en haut de l’écran.</p>
+                                <p class="ds-cyp-formula" aria-label="CAP égale quantité livrée multipliée par le facteur de conversion standard de la méthode">
+                                    <span><i class="ph ph-package" aria-hidden="true"></i>Quantité livrée</span><b aria-hidden="true">×</b>
+                                    <span><i class="ph ph-scales" aria-hidden="true"></i>Facteur standard</span><b aria-hidden="true">=</b>
+                                    <span class="ds-cyp-formula-result"><i class="ph ph-shield-check" aria-hidden="true"></i>CAP</span></p>
+                            </div>
                             <div class="ds-cyp-actions">
                                 <label class="ds-cyp-check"><input id="cyp-include-other" type="checkbox">Inclure les sorties vers d’autres sites</label>
-                                <button id="cyp-export" type="button" class="ds-button" disabled><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter CSV</button>
-                                <button id="cyp-print" type="button" class="ds-button" disabled><i class="ph ph-printer" aria-hidden="true"></i>Imprimer</button>
+                                <button id="cyp-export" type="button" class="ds-hero-button" disabled><i class="ph ph-file-csv" aria-hidden="true"></i>Exporter CSV</button>
+                                <button id="cyp-print" type="button" class="ds-hero-button" disabled><i class="ph ph-printer" aria-hidden="true"></i>Imprimer</button>
                             </div>
-                        </div>
+                        </header>
                         <p id="cyp-status" class="ds-status" role="status" aria-live="polite"></p>
                         <div id="cyp-summary" class="ds-cyp-summary"></div>
-                        <div id="cyp-months" class="ds-cyp-months"></div>
+                        <div class="ds-cyp-grid">
+                            <div id="cyp-months" class="ds-cyp-card ds-cyp-months"></div>
+                            <div id="cyp-methods" class="ds-cyp-card ds-cyp-methods"></div>
+                        </div>
                         <div class="ds-cyp-toolbar">
                             <div class="ds-cyp-tabs" role="tablist" aria-label="Regroupement des CAP">
                                 <button id="cyp-tab-products" type="button" role="tab" aria-selected="true" aria-controls="cyp-table">Par intrant</button>
@@ -1260,6 +1291,90 @@
                         <div class="ds-table-scroll"><table id="cyp-table" class="ds-table ds-cyp-table" role="tabpanel"></table></div>
                         <p id="cyp-unmapped" class="ds-cyp-note"></p>
                     </section>
+                </section>
+
+                <!-- Statistiques techniques des vols drone (base des pilotes copiée chaque nuit : qbox_technical_statistics ;
+                     code : 12-statistiques-techniques.js ; style : technical-stats.css, préfixe ts-) -->
+                <section id="view-technical" class="tab-content hidden">
+                    <div class="ts no-print">
+                        <header class="ts-hero">
+                            <span class="ts-hero-orbit" aria-hidden="true"><i></i><i></i><i></i></span>
+                            <span class="ts-hero-flight" aria-hidden="true">
+                                <svg viewBox="0 0 600 160" preserveAspectRatio="none" focusable="false"><path d="M -10 140 C 120 40, 240 150, 360 70 S 540 20, 620 50"></path></svg><span class="ts-hero-drone"><i class="ph ph-airplane-tilt"></i></span>
+                            </span>
+                            <div class="ts-hero-text">
+                                <span class="ts-eyebrow"><span class="ts-live"></span>Réseau drone · tous les drone ports</span>
+                                <h3>Statistiques techniques des vols</h3>
+                                <p class="ts-hero-sub">Livraisons réussies enregistrées par les pilotes dans l’application de maintenance (copie nocturne en lecture seule). Retours anticipés et vols de contrôle comptés à part.</p>
+                                <p id="technical-status" class="ts-status" role="status" aria-live="polite"></p>
+                            </div>
+                            <div class="ts-grand">
+                                <span class="ts-grand-label"><i class="ph ph-trophy" aria-hidden="true"></i>Grand total du projet</span>
+                                <strong id="technical-grand-flights" class="ts-grand-value">—</strong>
+                                <span class="ts-grand-unit">livraisons réussies</span>
+                                <span id="technical-grand-since" class="ts-grand-since"></span>
+                            </div>
+                            <div id="technical-grand" class="ts-grand-strip"></div>
+                        </header>
+
+                        <div class="ts-toolbar">
+                            <div class="ts-presets" role="group" aria-label="Période des statistiques">
+                                <button id="technical-preset-all" type="button" aria-pressed="true"><i class="ph ph-infinity" aria-hidden="true"></i>Depuis le début</button>
+                                <button id="technical-preset-12m" type="button" aria-pressed="false"><i class="ph ph-calendar-dots" aria-hidden="true"></i>12 derniers mois</button>
+                                <button id="technical-preset-year" type="button" aria-pressed="false"><i class="ph ph-calendar" aria-hidden="true"></i>Année en cours</button>
+                                <button id="technical-preset-month" type="button" aria-pressed="false"><i class="ph ph-calendar-blank" aria-hidden="true"></i>Mois en cours</button>
+                            </div>
+                            <div class="ts-range" role="group" aria-label="Dates des vols">
+                                <label><span>Du</span><input id="technical-from" type="date"></label>
+                                <i class="ph ph-arrow-right" aria-hidden="true"></i>
+                                <label><span>Au</span><input id="technical-to" type="date"></label>
+                            </div>
+                            <button id="technical-refresh" type="button" class="ts-ghost" title="Recopier maintenant les données de la base des pilotes" hidden><i class="ph ph-arrows-clockwise" aria-hidden="true"></i>Recopier</button>
+                        </div>
+
+                        <div id="technical-kpis" class="ts-kpis"></div>
+
+                        <section class="ts-panel ts-map-panel" aria-labelledby="technical-map-title">
+                            <div class="ts-panel-head">
+                                <div class="ts-panel-title"><i class="ph ph-map-trifold" aria-hidden="true"></i>
+                                    <div><h4 id="technical-map-title">Carte du réseau</h4><p>Drone ports et CSB desservis sur la période · taille des points = nombre de livraisons réussies.</p></div></div>
+                                <div id="technical-map-legend" class="ts-legend"></div>
+                            </div>
+                            <div class="ts-map-wrap">
+                                <div id="technical-map" class="ts-map" role="region" aria-label="Carte des drone ports et des CSB desservis"></div>
+                                <p id="technical-map-status" class="ts-map-status"></p>
+                            </div>
+                        </section>
+
+                        <div id="technical-ports" class="ts-ports"></div>
+
+                        <div class="ts-grid">
+                            <section class="ts-panel" aria-labelledby="technical-months-title">
+                                <div class="ts-panel-head">
+                                    <div class="ts-panel-title"><i class="ph ph-chart-bar" aria-hidden="true"></i>
+                                        <div><h4 id="technical-months-title">Livraisons réussies par mois</h4><p>Empilés par drone port · survolez une barre pour le détail.</p></div></div>
+                                </div>
+                                <div id="technical-months" class="ts-months"></div>
+                            </section>
+                            <section class="ts-panel" aria-labelledby="technical-hours-title">
+                                <div class="ts-panel-head">
+                                    <div class="ts-panel-title"><i class="ph ph-clock" aria-hidden="true"></i>
+                                        <div><h4 id="technical-hours-title">Heures de décollage</h4><p>Répartition des livraisons réussies dans la journée, puis par bénéficiaire.</p></div></div>
+                                </div>
+                                <div id="technical-hours" class="ts-hours"></div>
+                                <div id="technical-orgs" class="ts-orgs"></div>
+                            </section>
+                        </div>
+
+                        <section class="ts-panel" aria-labelledby="technical-csbs-title">
+                                <div class="ts-panel-head">
+                                    <div class="ts-panel-title"><i class="ph ph-first-aid-kit" aria-hidden="true"></i>
+                                        <div><h4 id="technical-csbs-title">CSB les plus desservis</h4><p>Livraisons réussies, kg livrés, distance du vol et durée moyenne.</p></div></div>
+                                    <button id="technical-csbs-more" type="button" class="ts-ghost ts-ghost-light" hidden>Voir tous les CSB</button>
+                                </div>
+                                <ol id="technical-csbs" class="ts-csbs"></ol>
+                            </section>
+                    </div>
                 </section>
 
                 <section id="view-transfers" class="tab-content hidden space-y-4">
@@ -2067,6 +2182,6 @@
     <script src="dashboard-notice.js?v=1bdc6e1598"></script>
     <script src="layout-nav.js?v=40b93e2a36"></script>
     <script src="motion.js?v=7bd162fd50"></script>
-    <script src="app-entry.js?v=821f7f0100"></script>
+    <script src="app-entry.js?v=179a8055a3"></script>
 </body>
 </html>
