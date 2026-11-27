@@ -6015,7 +6015,8 @@
                     const row = tableRow([`${item.product_name} · Lot ${item.lot}`, number(expected),
                         number(item.in_delivery), number(item.counted), '']);
                     row.className = `border-t border-slate-100 ${inventoryGapRowClass(item.difference)}`;
-                    row.children.forEach((cell, index) => { if (index) cell.classList.add('inv-num'); });
+                    // children est une HTMLCollection dans le navigateur (pas de forEach).
+                    Array.from(row.children).forEach((cell, index) => { if (index) cell.classList.add('inv-num'); });
                     row.children[4].replaceChildren(inventoryGapBadge(item.difference));
                     body.append(row);
                 }
