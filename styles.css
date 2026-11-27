@@ -803,3 +803,59 @@ html.postgres-mode:not(.postgres-ready) #main-app { visibility: hidden !importan
 #postgres-read-refresh { background: #0c4a6e; color: white; border-radius: 6px; padding: 6px 10px; }
 #postgres-read-manage { background: #0c4a6e; color: white; border-radius: 6px; padding: 6px 10px; }
 #postgres-frame-container iframe { width: 100%; min-height: 75vh; border: 0; background: white; }
+
+/* ---------- Inventaire physique (#view-inventory) : badges d'écart ----------
+   Code : src/postgres-main/07-inventaires-et-quarantaine.js (inventoryGapBadge).
+   Variables --qb-* : le mode sombre suit. Écran seulement (le rapport imprimé a sa propre mise en page). */
+@media screen {
+    #view-inventory .inv-gap {
+        --c: var(--qb-muted, #64748b);
+        --bg: color-mix(in srgb, var(--c) 12%, transparent);
+        display: inline-flex; align-items: center; gap: .35rem;
+        padding: .2rem .6rem;
+        border-radius: 999px;
+        background: var(--bg);
+        color: var(--c);
+        font-size: .68rem; font-weight: 700; line-height: 1.2;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+    #view-inventory .inv-gap::before {
+        content: ''; width: .42rem; height: .42rem; border-radius: 50%; background: currentColor; flex: none;
+    }
+    #view-inventory .inv-gap-none::before { display: none; }
+    #view-inventory .inv-gap-ok { --c: var(--qb-success, #059669); --bg: var(--qb-success-soft, #e1f5ec); }
+    #view-inventory .inv-gap-surplus { --c: var(--qb-accent-ink, #b45309); --bg: var(--qb-accent-soft, #fff4dc); }
+    #view-inventory .inv-gap-missing { --c: var(--qb-danger, #e11d48); --bg: var(--qb-danger-soft, #ffe8ed); }
+
+    #view-inventory .inv-num { text-align: right; font-variant-numeric: tabular-nums; }
+    #view-inventory .inv-table td, #view-inventory .inv-table th { vertical-align: middle; }
+    #view-inventory .inv-table thead th {
+        font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+        color: var(--qb-muted, #64748b);
+        border-bottom: 1px solid var(--qb-line, #e2e8f0);
+    }
+    #view-inventory tr.inv-row-missing > td { background: color-mix(in srgb, var(--qb-danger, #e11d48) 5%, transparent); }
+    #view-inventory tr.inv-row-surplus > td { background: color-mix(in srgb, var(--qb-accent-ink, #b45309) 5%, transparent); }
+    #view-inventory tr.inv-row-missing > td:first-child { box-shadow: inset 3px 0 0 var(--qb-danger, #e11d48); }
+    #view-inventory tr.inv-row-surplus > td:first-child { box-shadow: inset 3px 0 0 var(--qb-accent-ink, #b45309); }
+
+    #view-inventory .inv-count-input { max-width: 9rem; text-align: right; font-variant-numeric: tabular-nums; }
+
+    #view-inventory .inv-card { transition: box-shadow .15s ease, border-color .15s ease; }
+    #view-inventory .inv-card[open] { border-color: var(--qb-primary, #1d58c9); box-shadow: 0 4px 14px rgba(15, 23, 42, .06); }
+    #view-inventory .inv-summary { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; list-style: none; }
+    #view-inventory .inv-summary::-webkit-details-marker { display: none; }
+    #view-inventory .inv-summary::before {
+        content: ''; width: .45rem; height: .45rem; flex: none;
+        border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+        transform: rotate(-45deg); transition: transform .15s ease; opacity: .6;
+    }
+    #view-inventory .inv-card[open] > .inv-summary::before { transform: rotate(45deg); }
+    #view-inventory .inv-summary-text { flex: 1 1 14rem; min-width: 0; }
+    #view-inventory .inv-summary-badges { display: inline-flex; flex-wrap: wrap; gap: .35rem; }
+    #view-inventory .inv-summary-id {
+        flex-basis: 100%; padding-left: 1.05rem;
+        font-size: .62rem; font-weight: 500; color: var(--qb-muted, #64748b); overflow-wrap: anywhere;
+    }
+}

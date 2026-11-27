@@ -5926,6 +5926,52 @@
         nav.append(splitLegend);
     }
 
+    // Écart d'inventaire (compté − théorique) : null = pas encore saisi.
+    function inventoryGapKind(difference) {
+        if (difference === null || difference === undefined || difference === '') return 'none';
+        const gap = BigInt(difference);
+        return gap === 0n ? 'ok' : gap > 0n ? 'surplus' : 'missing';
+    }
+
+    function inventoryGapRowClass(difference) {
+        const kind = inventoryGapKind(difference);
+        return kind === 'surplus' || kind === 'missing' ? `inv-row-${kind}` : '';
+    }
+
+    function inventoryGapBadge(difference) {
+        const kind = inventoryGapKind(difference);
+        const badge = document.createElement('span');
+        badge.className = `inv-gap inv-gap-${kind}`;
+        if (kind === 'none') {
+            badge.textContent = '—';
+            badge.title = 'Quantité pas encore comptée';
+            return badge;
+        }
+        const gap = BigInt(difference);
+        const size = number(gap < 0n ? -gap : gap);
+        badge.textContent = kind === 'ok' ? '0 · Conforme' : kind === 'surplus' ? `+${size} · Surplus` : `−${size} · Manquant`;
+        badge.title = kind === 'ok' ? 'Le comptage correspond au stock théorique'
+            : kind === 'surplus' ? `${size} unité(s) de plus que le stock théorique` : `${size} unité(s) de moins que le stock théorique`;
+        return badge;
+    }
+
+    function inventoryGapSummary(items) {
+        const wrap = document.createElement('span');
+        wrap.className = 'inv-summary-badges';
+        const missing = items.filter(item => inventoryGapKind(item.difference) === 'missing').length;
+        const surplus = items.filter(item => inventoryGapKind(item.difference) === 'surplus').length;
+        const add = (kind, text) => {
+            const badge = document.createElement('span');
+            badge.className = `inv-gap inv-gap-${kind}`;
+            badge.textContent = text;
+            wrap.append(badge);
+        };
+        if (!missing && !surplus) add('ok', 'Aucun écart');
+        if (missing) add('missing', `${missing} lot(s) manquant(s)`);
+        if (surplus) add('surplus', `${surplus} lot(s) en surplus`);
+        return wrap;
+    }
+
     async function refreshInventories() {
         const port = portSelect.value, sequence = ++requestSequence, requestGeneration = sessionGeneration;
         const list = $('inventory-history');
@@ -5938,20 +5984,26 @@
             if (!inventories.length) addLine(list, 'Aucun inventaire pour ce port.');
             for (const inventory of inventories) {
                 const card = document.createElement('details');
-                card.className = 'border border-slate-200 rounded-xl overflow-hidden';
+                card.className = 'inv-card border border-slate-200 rounded-xl overflow-hidden';
                 const summary = document.createElement('summary');
-                summary.className = 'p-3 cursor-pointer text-xs font-bold text-slate-800';
-                summary.textContent = `${localDateTime(inventory.created_at)} (Madagascar) · ${inventory.created_by_name || 'Nom non renseigné'} · ${inventory.items.length} lot(s) · ${inventory.id}`;
+                summary.className = 'inv-summary p-3 cursor-pointer text-xs font-bold text-slate-800';
+                const summaryText = document.createElement('span');
+                summaryText.className = 'inv-summary-text';
+                summaryText.textContent = `${localDateTime(inventory.created_at)} (Madagascar) · ${inventory.created_by_name || 'Nom non renseigné'} · ${inventory.items.length} lot(s)`;
+                const summaryId = document.createElement('span');
+                summaryId.className = 'inv-summary-id';
+                summaryId.textContent = inventory.id;
+                summary.append(summaryText, inventoryGapSummary(inventory.items), summaryId);
                 const scroll = document.createElement('div');
                 scroll.className = 'overflow-x-auto border-t border-slate-200';
                 const table = document.createElement('table');
-                table.className = 'w-full text-xs text-left';
+                table.className = 'inv-table w-full text-xs text-left';
                 const header = document.createElement('tr');
                 header.className = 'text-slate-500';
-                for (const label of ['Intrant / lot', 'Théorique physique', 'En livraison', 'Compté', 'Écart']) {
+                for (const [index, label] of ['Intrant / lot', 'Théorique physique', 'En livraison', 'Compté', 'Écart'].entries()) {
                     const th = document.createElement('th');
                     th.scope = 'col';
-                    th.className = 'p-2';
+                    th.className = index ? 'p-2 text-right' : 'p-2';
                     th.textContent = label;
                     header.append(th);
                 }
@@ -5961,8 +6013,10 @@
                 for (const item of inventory.items) {
                     const expected = BigInt(item.system_quantity) - BigInt(item.in_delivery);
                     const row = tableRow([`${item.product_name} · Lot ${item.lot}`, number(expected),
-                        number(item.in_delivery), number(item.counted), number(item.difference)]);
-                    row.className = 'border-t border-slate-100';
+                        number(item.in_delivery), number(item.counted), '']);
+                    row.className = `border-t border-slate-100 ${inventoryGapRowClass(item.difference)}`;
+                    row.children.forEach((cell, index) => { if (index) cell.classList.add('inv-num'); });
+                    row.children[4].replaceChildren(inventoryGapBadge(item.difference));
                     body.append(row);
                 }
                 table.append(head, body);
@@ -6045,9 +6099,9 @@
             rows.replaceChildren();
             for (const item of snapshot.items) {
                 const row = document.createElement('tr');
-                for (const value of [`${item.product_name} · Lot ${item.lot}`, number(item.expected), number(item.in_delivery)]) {
+                for (const [index, value] of [`${item.product_name} · Lot ${item.lot}`, number(item.expected), number(item.in_delivery)].entries()) {
                     const cell = document.createElement('td');
-                    cell.className = 'p-2';
+                    cell.className = index ? 'p-2 inv-num' : 'p-2';
                     cell.textContent = value;
                     row.append(cell);
                 }
@@ -6060,14 +6114,17 @@
                 input.required = true;
                 input.dataset.stockId = item.stock_id;
                 inventoryDraft.inputs.set(item.stock_id, input);
-                input.className = 'postgres-inventory-count w-full border rounded-lg p-2';
+                input.className = 'postgres-inventory-count inv-count-input w-full border rounded-lg p-2';
+                input.setAttribute('aria-label', `Quantité comptée : ${item.product_name}, lot ${item.lot}`);
                 const difference = document.createElement('td');
                 difference.className = 'p-2 text-right';
-                difference.textContent = '—';
+                difference.replaceChildren(inventoryGapBadge(null));
                 input.addEventListener('input', () => {
                     const value = Number(input.value);
-                    difference.textContent = input.value !== '' && Number.isSafeInteger(value) && value >= 0
-                        ? number(BigInt(value) - BigInt(item.expected)) : '—';
+                    const gap = input.value !== '' && Number.isSafeInteger(value) && value >= 0
+                        ? BigInt(value) - BigInt(item.expected) : null;
+                    difference.replaceChildren(inventoryGapBadge(gap));
+                    row.className = inventoryGapRowClass(gap);
                 });
                 cell.append(input);
                 row.append(cell, difference);
